@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<title>Game Take 3</title>
+		<link href="styles.css" type="text/css" rel="stylesheet">
+
+		<script type = "text/javascript">
+			var tileW = 16, tileH = 16;
+			var mapW = 20, mapH = 20;
+      console.log("hello");
+
+		</script>
+	</head>
+	<body>
+
+        <div id="wrapper">
+			<canvas id="myCanvas" width="640" height="640" style="border:1px solid #000000;"></canvas>
+			<canvas id="myCanvas2" width="640" height="640"></canvas>
+
+            <button id="connectButton" onclick="bundle.connect()">Connect</button>
+            
+            <button id="withdrawButton" onclick="bundle.withdraw()">Withdraw</button>
+            <button id="getBalanceButton" onclick="bundle.getBalance()">getBalance</button>
+            <button id="getMasterBalanceButton" onclick="bundle.getMasterBalance()">getMasterBalance</button>
+		</div>
+
+        <script src="/socket.io/socket.io.js"></script>
+        <script>
+            const socket = io();
+          </script>
+        <script src="./dist/bundle.js"></script>
+
+        
+
+    </body>
+</html>

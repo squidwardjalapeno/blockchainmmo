@@ -1,0 +1,16 @@
+#wrapper{
+    position:relative;
+    width:1600px;
+    height:1600px;
+}
+
+#myCanvas2{
+    position:absolute; top:60px; left:60px;   
+}
+#myCanvas{
+    position:absolute; top:60px; left:60px;
+    z-index: 1;
+}
+body {
+    overflow: hidden;
+}
