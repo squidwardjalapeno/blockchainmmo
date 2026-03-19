@@ -119,7 +119,7 @@ setInterval(() => {
 }, 1000 / 60);
 
 // 5. START SERVER
-const PORT = 3000;
+const PORT = process.env.PORT || 10000;
 http.listen(PORT, () => {
     console.log(`
     🎮 MOBA Ecosystem Server Active!
