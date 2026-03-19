@@ -1,0 +1,56 @@
+#wrapper {
+    position: relative;
+    /* Use 100vw/vh for a true mobile full-screen feel */
+    width: 100vw; 
+    height: 100vh;
+    background-color: #000; /* Black background for any gaps */
+    overflow: hidden;
+}
+
+canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    /* CRITICAL: Keep pixels sharp (The "Lo-Fi" look) */
+    image-rendering: -moz-pixelated;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+}
+
+/* LAYER 1: The Ground (Bottom) */
+#myCanvas {
+    z-index: 1;
+}
+
+/* LAYER 2: Entities (Hero, Animals, Projectiles) */
+#myCanvas2 {
+    z-index: 2;
+    /* Allow touches to pass through to the UI layer if needed */
+    pointer-events: none; 
+}
+
+/* LAYER 3: UI & INPUT (Top) */
+#myCanvas3 {
+    z-index: 3;
+    /* This layer MUST be the one your initInput(canvas3) listens to! */
+    pointer-events: auto; 
+}
+
+/* BUTTONS (Overlaying everything) */
+.connect-btn {
+    position: fixed;
+    z-index: 10; 
+    padding: 10px 20px;
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: 1px solid white;
+    border-radius: 5px;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    /* Prevent accidental "Pull-to-Refresh" on mobile */
+    touch-action: none; 
+}
