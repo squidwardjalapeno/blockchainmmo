@@ -5,20 +5,35 @@ import { CONFIG } from './config.js';
 const isWalkableInside = (id) => id === 35 || id === 42;
 
 // HELPER: One place to handle the 100x100 cell math
+// js/physics.js
+
 export function getTileData(pxX, pxY, worldMatrix, roomMatrix) {
+    // 1. Convert Pixels to Global Tiles (16px per tile)
     const gx = Math.floor(pxX / 16);
     const gy = Math.floor(pxY / 16);
+
+    // 2. Convert Global Tiles to Cell Coordinates (100 tiles per cell)
     const cx = Math.floor(gx / 100);
     const cy = Math.floor(gy / 100);
-    const lx = gx % 100;
-    const ly = gy % 100;
+
+    // 3. Local Tiles inside that 100x100 cell
+    const lx = ((gx % 100) + 100) % 100;
+    const ly = ((gy % 100) + 100) % 100;
+
+    // 4. THE FLAT INDEX (The Big Fix)
+    const cellIdx = (ly * 100) + lx;
+
+    // 5. Safely check if the Cell exists in the 20x20 world
+    const cell = worldMatrix[cx]?.[cy];
+    const room = roomMatrix[cx]?.[cy];
 
     return {
-        tileID: worldMatrix[cx]?.[cy]?.[lx]?.[ly],
-        roomID: roomMatrix[cx]?.[cy]?.[lx]?.[ly] || 0,
+        tileID: cell ? cell[cellIdx] : undefined,
+        roomID: room ? room[cellIdx] : 0,
         gx, gy, cx, cy, lx, ly
     };
 }
+
 
 // js/physics.js
 

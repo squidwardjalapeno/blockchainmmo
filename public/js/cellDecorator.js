@@ -13,18 +13,26 @@ let nextHouseId = 1;
  */
 // js/cellDecorator.js
 
+// js/cellDecorator.js
+
 function setGlobalTile(gx, gy, tileID, roomID, worldMatrix, roomMatrix) {
     const cx = Math.floor(gx / 100);
     const cy = Math.floor(gy / 100);
     const lx = ((gx % 100) + 100) % 100;
     const ly = ((gy % 100) + 100) % 100;
 
-    // Safety check: ensure the cell and row exist before writing
-    if (worldMatrix[cx]?.[cy]?.[lx]) {
-        worldMatrix[cx][cy][lx][ly] = tileID;
-        roomMatrix[cx][cy][lx][ly] = roomID;
+    // 1. Check if the Cell exists in the 20x20 world
+    if (worldMatrix[cx] && worldMatrix[cx][cy]) {
+        
+        // 2. Calculate the flat index for the 100x100 internal grid
+        const cellIdx = (ly * 100) + lx;
+
+        // 3. Write to the Uint8Arrays
+        worldMatrix[cx][cy][cellIdx] = tileID;
+        roomMatrix[cx][cy][cellIdx] = roomID;
     }
 }
+
 
 
 
@@ -436,105 +444,57 @@ function paintCorner(matrix, startH, startV, cornerType) {
 
 export function populateWorld(worldMap) {
     nextHouseId = 1;
-    const size = worldMap.length;
+    const size = 100; // Your worldMap is 20x20 cells (from game.js)
 
-    // --- STEP 1: INITIALIZE EMPTY 4D MATRICES ---
+    // --- STEP 1: INITIALIZE 2D ARRAY OF FLAT BUFFERS ---
+    // We keep the [cx][cy] 2D grid for the cells, 
+    // but the 10,000 tiles INSIDE each cell are now one flat array.
     let worldMatrix = new Array(size);
     let roomMatrix = new Array(size);
-    let fertilityMatrix = new Array(size); // 👈 New layer
+    let fertilityMatrix = new Array(size);
 
-    for (let k = 0; k < size; k++) {
-        worldMatrix[k] = new Array(size);
-        roomMatrix[k] = new Array(size);
-        fertilityMatrix[k] = new Array(size); // 👈 New layer
+    for (let cx = 0; cx < size; cx++) {
+        worldMatrix[cx] = new Array(size);
+        roomMatrix[cx] = new Array(size);
+        fertilityMatrix[cx] = new Array(size);
 
-        for (let l = 0; l < size; l++) {
-            // World and Room use nested arrays
-            worldMatrix[k][l] = Array.from({ length: 100 }, () => new Array(100).fill(17));
-            roomMatrix[k][l] = Array.from({ length: 100 }, () => new Array(100).fill(0));
-            
-            // Fertility also using nested arrays for consistency with your lx/ly math
-            fertilityMatrix[k][l] = Array.from({ length: 100 }, () => new Array(100).fill(0)); 
+        for (let cy = 0; cy < size; cy++) {
+            // Each cell is now a high-performance 10,000-byte buffer (100x100)
+            worldMatrix[cx][cy] = new Uint8Array(10000).fill(17); // 17 = Water
+            roomMatrix[cx][cy] = new Uint16Array(10000).fill(0);  // Uint16 for higher House IDs
+            fertilityMatrix[cx][cy] = new Uint8Array(10000).fill(0);
         }
     }
 
-    // --- STEP 2: PASS 1 - FILL ALL TERRAIN FIRST ---
-    for (let k = 0; k < size; k++) {
-        for (let l = 0; l < size; l++) {
-            if (worldMap[k][l] >= 67) {
-                for (let ix = 0; ix < 100; ix++) {
-                    for (let iy = 0; iy < 100; iy++) {
-                        //worldMatrix[k][l][ix][iy] = (Math.random() > 0.2) ? 63 : 6;
-                        worldMatrix[k][l][ix][iy] = 63;
-                        // 5% chance to start with a plant sprout
-            if (Math.random() > 0.95) {
-                //createGrass((k * 100) + ix, (l * 100) + iy);
-            }
-                    }
-                }
-            }
-        }
-    }
+    // --- STEP 2: FILL TERRAIN USING FLAT INDEXING ---
+    for (let cx = 0; cx < size; cx++) {
+        for (let cy = 0; cy < size; cy++) {
+            // Check the flat worldMap from mapGenerator
+            const worldMapIdx = (cy * size) + cx; 
 
-    // --- STEP 3: PASS 2 - PLACE STRUCTURES ON TOP OF FINISHED TERRAIN ---
-    for (let k = 0; k < size; k++) {
-        for (let l = 0; l < size; l++) {
-            if (worldMap[k][l] >= 67) {
+            if (worldMap[worldMapIdx] >= 67) { // Land Threshold
+                const cellData = worldMatrix[cx][cy];
                 
-                // js/cellDecorator.js -> populateWorld()
-// Check every single tile in this 100x100 cell
-            for (let ix = 0; ix < 100; ix++) {
-                for (let iy = 0; iy < 100; iy++) {
-                    
-                    // 1 in 200 chance as requested
-                    if (Math.floor(Math.random() * 20000) === 7) {
-                        const gx = (k * 100) + ix;
-                        const gy = (l * 100) + iy;
-                        
-                        // Spawn the house
-                        //drawHouse(gx, gy, worldMatrix, roomMatrix);
-                    }
+                for (let i = 0; i < 10000; i++) {
+                    cellData[i] = 63; // Fill the whole cell with Land (Tile 63)
                 }
-            }
 
-                // Roll for Villages
+                // Random Structure Rolls
+                if (Math.floor(Math.random() * 20) === 7) {
+                    // Position them in the middle of the 100x100 cell
+                    drawVillage((cx * 100) + 50, (cy * 100) + 50, worldMatrix, roomMatrix);
+                }
                 
-                if (Math.floor(Math.random() * 12) === 7) {
-                    console.log(`🏘️ Spawning village at Cell [${k}, ${l}]`);
-                    //drawVillage((k * 100) + 50, (l * 100) + 50, worldMatrix, roomMatrix);
+                if (Math.floor(Math.random() * 25) === 3) {
+                    drawTown((cx * 100) + 50, (cy * 100) + 50, worldMatrix, roomMatrix, fertilityMatrix);
                 }
-
-                if (Math.floor(Math.random() * 12) === 3) {
-                // Pick a random spot inside the 100x100 cell
-                const rx = Math.floor(Math.random() * 80) + 10;
-                const ry = Math.floor(Math.random() * 80) + 10;
-
-                console.log(`🏘️ Spawning miningArea at Cell [${k}, ${l}, [${rx}, [${ry}]`);
-                
-                //drawMiningArea((k * 100) + rx, (l * 100) + ry, worldMatrix, roomMatrix, fertilityMatrix);
-                }
-
-                // Inside your cell-by-cell loop in populateWorld
-if (Math.floor(Math.random() * 24) === 7) { // 1 in 100 cells is a Town Hub
-    const tx = (k * 100) + 50;
-    const ty = (l * 100) + 50;
-    //drawTown(tx, ty, worldMatrix, roomMatrix, fertilityMatrix);
-}
-
-if (Math.floor(Math.random() * 24) === 7) { // 1 in 100 cells is a Town Hub
-    const tx = (k * 100) + 50;
-    const ty = (l * 100) + 50;
-    //drawCastle(tx, ty, worldMatrix, roomMatrix, fertilityMatrix);
-}
-   
-                    
             }
         }
     }
 
-    // --- STEP 4: RETURN ALL THREE ---
-    return { worldMatrix, roomMatrix, fertilityMatrix }; // 👈 Don't forget to return it!
+    return { worldMatrix, roomMatrix, fertilityMatrix };
 }
+
 
 
 

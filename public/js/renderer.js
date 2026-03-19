@@ -54,21 +54,24 @@ export function initRenderer() {
 // js/renderer.js
 
 function getCellData(k, l, worldMatrix, roomMatrix) {
-    // k and l are global tiles (0 to 10,000)
-    // 100 is the size of one cell's internal tile grid
     const cx = Math.floor(k / 100); 
     const cy = Math.floor(l / 100);
     const lx = ((k % 100) + 100) % 100;
     const ly = ((l % 100) + 100) % 100;
 
-    // IMPORTANT: Check if the CELL exists first
     if (!worldMatrix[cx] || !worldMatrix[cx][cy]) return { tileID: undefined, roomID: 0 };
 
+    // 1. Calculate the flat index for the 100x100 internal grid
+    // Row (ly) * Width (100) + Column (lx)
+    const cellIdx = (ly * 100) + lx;
+
     return {
-        tileID: worldMatrix[cx][cy][lx][ly],
-        roomID: roomMatrix[cx][cy][lx][ly] || 0
+        // 2. Access the data using that single index
+        tileID: worldMatrix[cx][cy][cellIdx],
+        roomID: roomMatrix[cx][cy][cellIdx] || 0
     };
 }
+
 
 
 export function drawMap(worldMatrix, roomMatrix) {

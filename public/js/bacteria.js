@@ -178,92 +178,92 @@ if (typeID === 5) {
     }
 } 
 
-if (typeID === 4) { 
-    if (h > 0) {
-        // 🛡️ THE FIX: 10% chance to drop by a WHOLE number
-        if (Math.random() < 0.1) {
-           h = Math.max(0, h - 1); 
+    if (typeID === 4) { 
+        if (h > 0) {
+            // 🛡️ THE FIX: 10% chance to drop by a WHOLE number
+            if (Math.random() < 0.1) {
+            h = Math.max(0, h - 1); 
+            }
+            
+        } else {
+            // 🛡️ THE FIX: 10% chance to drop by a WHOLE number
+            if (Math.random() < 0.1) {
+                v = Math.max(0, v - 1); 
+            }
         }
+    } 
+    else if (typeID === 3) { 
+        // --- UPROOTED GRASS: The "Compost" Lifecycle ---
         
-    } else {
-        // 🛡️ THE FIX: 10% chance to drop by a WHOLE number
-        if (Math.random() < 0.1) {
-            v = Math.max(0, v - 1); 
+        if (h > 0) {
+            // STAGE 1: FRESH (Stays green, slowly drying out)
+            // Note: Using 12 as your new max health base
+            // 🛡️ THE FIX: 10% chance to drop by a WHOLE number
+            if (Math.random() < 0.1) {
+            h = Math.max(0, h - 1); 
+            }
+            
+        } 
+        else if (!hasPeaked) {
+            // STAGE 2: MOLDING (Climbing to the peak of 8)
+            // 🛡️ THE FIX: 10% chance to up by a WHOLE number
+            if (Math.random() < 0.1) {
+                v += 1; 
+            }
+            if (v >= 8) {
+                v = 8;
+                hasPeaked = 1; // Flip the bit 31 flag to start the fall
+            }
+        } 
+        else {
+            // STAGE 3: MULCHING (Fading away into the soil)
+            // 🛡️ THE FIX: 10% chance to drop by a WHOLE number
+            if (Math.random() < 0.1) {
+                v = Math.max(0, v - 1); 
+            }
         }
     }
-} 
-else if (typeID === 3) { 
-    // --- UPROOTED GRASS: The "Compost" Lifecycle ---
-    
-    if (h > 0) {
-        // STAGE 1: FRESH (Stays green, slowly drying out)
-        // Note: Using 12 as your new max health base
-        // 🛡️ THE FIX: 10% chance to drop by a WHOLE number
-        if (Math.random() < 0.1) {
-           h = Math.max(0, h - 1); 
-        }
-        
+
+
+    else if (typeID === 2) { 
+        // PLANT: Immortal Hive
+        //h = 12; 
+        if (v > 0 && v < 50 && Math.random() < 0.1) v += 1; 
     } 
-    else if (!hasPeaked) {
-        // STAGE 2: MOLDING (Climbing to the peak of 8)
-        // 🛡️ THE FIX: 10% chance to up by a WHOLE number
-        if (Math.random() < 0.1) {
-            v += 1; 
-        }
-        if (v >= 8) {
-            v = 8;
-            hasPeaked = 1; // Flip the bit 31 flag to start the fall
+    else if (typeID === 1) { 
+        // FISH: 3-Stage Lifecycle (Fresh -> Rotting -> Bones)
+
+        if (h > 0) {
+            // STAGE 1: FRESH (Losing Health)
+            // Renderer: If h > 0, draw Tile 57
+            h = Math.max(0, h - 1); 
+        } 
+        else if (!hasPeaked) {
+            // STAGE 2A: ROTTING (Ramping Up Virulence)
+            // Renderer: If h <= 0 and v < 50, draw Tile 58
+            v += 2;
+            if (v >= 50) {
+                v = 50;
+                hasPeaked = 1; // Set bit 31 so we know to start the taper
+            }
+        } 
+        else if (v > 10) {
+            // STAGE 2B: ROTTING (Tapering Off Virulence)
+            // Renderer: If h <= 0 and v > 10, draw Tile 58
+            v = Math.max(10, v - 2); 
+        } 
+        else {
+            // STAGE 3: BONES (Desiccated)
+            // Renderer: If h <= 0 and v <= 10, draw Tile 59
+            // Slowly bleed off the last of the virulence until the tile disappears
+            v = Math.max(0, v - 1); 
         }
     } 
     else {
-        // STAGE 3: MULCHING (Fading away into the soil)
-        // 🛡️ THE FIX: 10% chance to drop by a WHOLE number
-        if (Math.random() < 0.1) {
-            v = Math.max(0, v - 1); 
-        }
+        // SURFACE (Type 0): Instant Wipe
+        // Triggers your "Final Breath" cascade logic
+        v = 0; 
     }
-}
-
-
-else if (typeID === 2) { 
-    // PLANT: Immortal Hive
-    //h = 12; 
-    if (v > 0 && v < 50 && Math.random() < 0.1) v += 1; 
-} 
-else if (typeID === 1) { 
-    // FISH: 3-Stage Lifecycle (Fresh -> Rotting -> Bones)
-
-    if (h > 0) {
-        // STAGE 1: FRESH (Losing Health)
-        // Renderer: If h > 0, draw Tile 57
-        h = Math.max(0, h - 1); 
-    } 
-    else if (!hasPeaked) {
-        // STAGE 2A: ROTTING (Ramping Up Virulence)
-        // Renderer: If h <= 0 and v < 50, draw Tile 58
-        v += 2;
-        if (v >= 50) {
-            v = 50;
-            hasPeaked = 1; // Set bit 31 so we know to start the taper
-        }
-    } 
-    else if (v > 10) {
-        // STAGE 2B: ROTTING (Tapering Off Virulence)
-        // Renderer: If h <= 0 and v > 10, draw Tile 58
-        v = Math.max(10, v - 2); 
-    } 
-    else {
-        // STAGE 3: BONES (Desiccated)
-        // Renderer: If h <= 0 and v <= 10, draw Tile 59
-        // Slowly bleed off the last of the virulence until the tile disappears
-        v = Math.max(0, v - 1); 
-    }
-} 
-else {
-    // SURFACE (Type 0): Instant Wipe
-    // Triggers your "Final Breath" cascade logic
-    v = 0; 
-}
 
 
 

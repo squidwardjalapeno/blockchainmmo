@@ -1,95 +1,69 @@
-// 1. THE SEED ENGINE
 let currentSeed = 1;
 
-/**
- * A Deterministic Random function.
- * Given the same seed, it will ALWAYS return the same sequence of numbers.
- */
-function seededRandom() {
-    // LCG (Linear Congruential Generator) algorithm
-    currentSeed = (currentSeed * 1664525 + 1013904223) % 4294967296;
-    return currentSeed / 4294967296;
+export function seededRandom() {
+    // Bitwise ops keep this fast and within 32-bit range
+    currentSeed = (Math.imul(currentSeed, 1664525) + 1013904223) | 0;
+    return (currentSeed >>> 0) / 4294967296;
 }
 
-/**
- * Call this when receiving the 'secret' event from the server
- */
 export function setWorldSeed(seed) {
-    currentSeed = seed;
-    console.log(`🌱 World Seed Locked to: ${seed}`);
+    currentSeed = seed | 0;
 }
 
 /**
- * Initializes a 2D array with seeded values.
+ * Uses a flat Uint8Array for high performance
  */
-export function generateInitialMap(width, height) {
-    let map = [];
-    for (let i = 0; i < width; i++) {
-        map[i] = [];
-        for (let j = 0; j < height; j++) {
-            // Use seededRandom instead of Math.random
-            map[i][j] = Math.floor(seededRandom() * 100) + 1;
-        }
+export function generateWorld(width, height, iterations = 8) {
+    const size = width * height;
+    let map = new Uint8Array(size);
+    let nextMap = new Uint8Array(size);
+
+    // Initial Random Fill
+    for (let i = 0; i < size; i++) {
+        map[i] = (seededRandom() * 100) + 1;
     }
-    return map;
-}
 
-/**
- * Optimized Cellular Automata
- */
-export function cellularAutomata(map) {
-    const width = map.length;
-    const height = map[0].length;
-    
-    // FASTER COPY: Avoids JSON.parse overhead
-    const newMap = map.map(row => [...row]);
-
-    for (let i = 1; i < width - 1; i++) {
-        for (let j = 1; j < height - 1; j++) {
-            const neighbors = [
-                map[i-1][j], map[i+1][j], map[i][j-1], map[i][j+1],
-                map[i+1][j+1], map[i-1][j+1], map[i-1][j-1], map[i+1][j-1]
-            ];
-            
-            // Use seededRandom to pick the neighbor
-            const idx = Math.floor(seededRandom() * neighbors.length);
-            newMap[i][j] = neighbors[idx];
+    for (let iter = 0; iter < iterations; iter++) {
+        for (let y = 1; y < height - 1; y++) {
+            for (let x = 1; x < width - 1; x++) {
+                const i = y * width + x;
+                
+                // Directly pick a random neighbor index without creating an array
+                const offsetX = (seededRandom() * 3 | 0) - 1; // -1, 0, or 1
+                const offsetY = (seededRandom() * 3 | 0) - 1;
+                
+                // Deterministic neighbor picking
+                nextMap[i] = map[(y + offsetY) * width + (x + offsetX)];
+            }
         }
+        // Swap buffers instead of copying
+        let temp = map;
+        map = nextMap;
+        nextMap = temp;
     }
-    return newMap;
+
+    return cleanUpMap(map, width, height);
 }
 
-/**
- * Cleans up isolated tiles using seeded randoms
- */
-export function cleanUpMap(map) {
-    const width = map.length;
-    const height = map[0].length;
+function cleanUpMap(map, width, height) {
+    for (let y = 1; y < height - 1; y++) {
+        for (let x = 1; x < width - 1; x++) {
+            const i = y * width + x;
+            const isLand = map[i] >= 67;
 
-    for (let i = 1; i < width - 1; i++) {
-        for (let j = 1; j < height - 1; j++) {
-            const isLand = map[i][j] >= 67;
-            const neighbors = [map[i-1][j], map[i][j-1], map[i+1][j], map[i][j+1]];
-            const landNeighbors = neighbors.filter(v => v >= 67).length;
+            // Direct neighbor check (North, South, West, East)
+            let landNeighbors = 0;
+            if (map[i - width] >= 67) landNeighbors++;
+            if (map[i + width] >= 67) landNeighbors++;
+            if (map[i - 1]     >= 67) landNeighbors++;
+            if (map[i + 1]     >= 67) landNeighbors++;
 
             if (isLand && landNeighbors === 0) {
-                map[i][j] = Math.floor(seededRandom() * 66) + 1; 
+                map[i] = (seededRandom() * 66) + 1;
             } else if (!isLand && landNeighbors === 4) {
-                map[i][j] = Math.floor(seededRandom() * 33) + 67;
+                map[i] = (seededRandom() * 33) + 67;
             }
         }
     }
     return map;
-}
-
-/**
- * Runs the full generation sequence.
- */
-export function generateWorld(width, height, iterations = 8) {
-    // Note: With seeded neighbors, 8-10 iterations is usually enough!
-    let map = generateInitialMap(width, height);
-    for (let i = 0; i < iterations; i++) {
-        map = cellularAutomata(map);
-    }
-    return cleanUpMap(map);
 }

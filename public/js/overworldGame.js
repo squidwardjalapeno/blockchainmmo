@@ -196,10 +196,18 @@ export async function refreshOnChainPoints() {
 
 var update = function (modifier) {
     // 1. UNIFIED HERO SENSOR
-    const heroTX = Math.floor((hero.x + 8) / 16);
-    const heroTY = Math.floor((hero.y + 14) / 16);
-    const heroCX = Math.floor(hero.x / 1600);
-    const heroCY = Math.floor(hero.y / 1600);
+    // Inside update(modifier) in game.js
+const heroTX = Math.floor((hero.x + 8) / 16);
+const heroTY = Math.floor((hero.y + 14) / 16);
+
+// cx and cy should represent the 20x20 cell grid
+const heroCX = Math.floor(heroTX / 100);
+const heroCY = Math.floor(heroTY / 100);
+
+// lx and ly are the local 0-99 coordinates
+const lx = ((heroTX % 100) + 100) % 100;
+const ly = ((heroTY % 100) + 100) % 100;
+
 
     // 2. Cell Logging
     if (window.lastLoggedCell !== `${heroCX}_${heroCY}`) {
@@ -486,8 +494,11 @@ if (inputState.keyP) {
     if (bacteriaTimer >= (CONFIG.BACTERIA_TICK_RATE / 1000)) {
         updateBacteria(worldMatrix, fertilityMatrix);
         
-        const { data, idx } = getBacteriaData(heroTX, heroTY);
-        const traits = data[idx];
+        // Calculate the flat index for the tile under the hero
+    const cellIdx = (ly * 100) + lx;
+    
+    const cellData = getBacteriaData(heroTX, heroTY);
+    const traits = cellData.data[cellIdx]; // Access via flat index
         if (traits > 0) {
             const h = traits & 0xFF;
             const v = (traits >> 8) & 0xFF;
@@ -677,7 +688,7 @@ async function waitImages() {
     initRenderer();
 
     // 1. Generate the world
-    const rawShape = generateWorld(20, 20, 5); 
+    const rawShape = generateWorld(100, 100, 5); 
     const worldData = populateWorld(rawShape); 
 
     worldMatrix = worldData.worldMatrix; 

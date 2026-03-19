@@ -53,24 +53,27 @@ export const gameState = {
 export function resetEntities(worldMap) {
     let foundLand = false;
     let spawnX, spawnY;
-
-
-     // Use the ACTUAL length of the map rows and columns
-    const mapHeight = worldMap.length;
-    const mapWidth = worldMap[0].length;
-
     
-    // Keep searching until we hit a land cell (Value >= 67)
-    while (!foundLand) {
-        // Pick a random cell in the 100x100 world
-        const cellX = Math.floor(Math.random() * mapWidth);
-        const cellY = Math.floor(Math.random() * mapHeight);
+    // 1. Move these variables OUTSIDE the loop
+    let finalCellX = 0;
+    let finalCellY = 0;
 
-        if (worldMap[cellY] && worldMap[cellX][cellY] >= CONFIG.LAND_THRESHOLD) {
-            // Found a land cell! 
-            // Place hero in the middle of this cell (Cell Index * 1600 pixels + offset)
+    const mapWidth = 100; 
+    const mapHeight = 100;
+
+    while (!foundLand) {
+        let cellX = Math.floor(Math.random() * mapWidth);
+        let cellY = Math.floor(Math.random() * mapHeight);
+
+        const index = (cellY * mapWidth) + cellX;
+
+        if (worldMap[index] >= 67) { // CONFIG.LAND_THRESHOLD
             spawnX = (cellX * 1600) + 800; 
             spawnY = (cellY * 1600) + 800;
+            
+            // 2. Save the winners
+            finalCellX = cellX;
+            finalCellY = cellY;
             foundLand = true;
         }
     }
@@ -78,5 +81,8 @@ export function resetEntities(worldMap) {
     hero.x = spawnX;
     hero.y = spawnY;
     
-    console.log(`🏠 Safe Spawn Found at Cell: [${Math.floor(hero.x/1600)}, ${Math.floor(hero.y/1600)}]`);
+    // 3. Now the log can find them!
+    console.log(`🏠 Safe Spawn Found at Cell: [${finalCellX}, ${finalCellY}]`);
 }
+
+
