@@ -677,7 +677,7 @@ async function waitImages() {
     initRenderer();
 
     // 1. Generate the world
-    const rawShape = generateWorld(100, 100, 5); 
+    const rawShape = generateWorld(20, 20, 5); 
     const worldData = populateWorld(rawShape); 
 
     worldMatrix = worldData.worldMatrix; 

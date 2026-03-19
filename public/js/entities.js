@@ -54,13 +54,19 @@ export function resetEntities(worldMap) {
     let foundLand = false;
     let spawnX, spawnY;
 
+
+     // Use the ACTUAL length of the map rows and columns
+    const mapHeight = worldMap.length;
+    const mapWidth = worldMap[0].length;
+
+    
     // Keep searching until we hit a land cell (Value >= 67)
     while (!foundLand) {
         // Pick a random cell in the 100x100 world
-        const cellX = Math.floor(Math.random() * CONFIG.MAP_SIZE);
-        const cellY = Math.floor(Math.random() * CONFIG.MAP_SIZE);
+        const cellX = Math.floor(Math.random() * mapWidth);
+        const cellY = Math.floor(Math.random() * mapHeight);
 
-        if (worldMap[cellX][cellY] >= CONFIG.LAND_THRESHOLD) {
+        if (worldMap[cellY] && worldMap[cellX][cellY] >= CONFIG.LAND_THRESHOLD) {
             // Found a land cell! 
             // Place hero in the middle of this cell (Cell Index * 1600 pixels + offset)
             spawnX = (cellX * 1600) + 800; 

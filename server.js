@@ -68,12 +68,11 @@ io.on('connection', (socket) => {
         });
     });
 
-     // F. Handle Bacteria/Plant Updates (The Shared Ecosystem)
-    socket.on('syncTile', (data) => {
-        // data = { gx, gy, type, h, v }
-        // We broadcast this so every player's local bacteria bitfield updates
-        socket.broadcast.emit('remoteTileUpdate', data);
-    });
+    // server.js
+socket.on('syncTile', (data) => {
+    // Keep the name consistent: syncTile -> syncTile
+    socket.broadcast.emit('syncTile', data);
+});
 
     // G. Handle Item Drops
     socket.on('dropItem', (data) => {

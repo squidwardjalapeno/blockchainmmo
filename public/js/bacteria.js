@@ -1,3 +1,4 @@
+
 // js/bacteria.js
 import { CONFIG } from './config.js';
 import { hero } from './entities.js';
