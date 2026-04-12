@@ -1,35 +1,36 @@
 // js/viewport.js
 import { CONFIG } from './config.js';
 
-const TILE_W = CONFIG.TILE_SIZE;
-const TILE_H = CONFIG.TILE_SIZE;
-const MAP_W = CONFIG.MAP_SIZE * CONFIG.CELL_SIZE; // 100 cells * 100 tiles
-const MAP_H = CONFIG.MAP_SIZE * CONFIG.CELL_SIZE;
+const TILE_SZ = CONFIG.TILE_SIZE; // 16
+// 200 cells * 100 tiles = 20,000 tiles wide world
+const WORLD_TILE_LIMIT = CONFIG.MAP_SIZE * 100; 
 
 export const viewport = {
-    screen: [0, 0],
+    screen: [window.innerWidth, window.innerHeight],
     startTile: [0, 0],
     endTile: [0, 0],
-    offset: [0, 0],
+    offset: [0, 0], // We'll keep this for any legacy UI needs
 
-    update: function(px, py) {
-        // Calculate camera offset to center on hero
-        this.offset[0] = Math.floor((this.screen[0] / 2) - px);
-        this.offset[1] = Math.floor((this.screen[1] / 2) - py);
+    update: function(heroPX, heroPY) {
+        // 1. Where is the hero in Tile Coordinates?
+        const centerTileX = Math.floor(heroPX / TILE_SZ);
+        const centerTileY = Math.floor(heroPY / TILE_SZ);
 
-        const tile = [Math.floor(px / TILE_W), Math.floor(py / TILE_H)];
+        // 2. How many tiles fit on half the screen?
+        const halfTilesX = Math.ceil((this.screen[0] / 2) / TILE_SZ);
+        const halfTilesY = Math.ceil((this.screen[1] / 2) / TILE_SZ);
 
-        // Calculate which tiles are visible on screen
-        this.startTile[0] = tile[0] - 1 - Math.ceil((this.screen[0] / 2) / TILE_W);
-        this.startTile[1] = tile[1] - 1 - Math.ceil((this.screen[1] / 2) / TILE_H);
+        // 3. Define the visible range (The Culling Box)
+        // We add +1 for a small buffer so tiles don't "pop" at the edges
+        this.startTile[0] = Math.max(0, centerTileX - halfTilesX - 1);
+        this.startTile[1] = Math.max(0, centerTileY - halfTilesY - 1);
 
-        if (this.startTile[0] < 0) this.startTile[0] = 0;
-        if (this.startTile[1] < 0) this.startTile[1] = 0;
+        this.endTile[0] = Math.min(WORLD_TILE_LIMIT - 1, centerTileX + halfTilesX + 1);
+        this.endTile[1] = Math.min(WORLD_TILE_LIMIT - 1, centerTileY + halfTilesY + 1);
 
-        this.endTile[0] = tile[0] + 1 + Math.ceil((this.screen[0] / 2) / TILE_W);
-        this.endTile[1] = tile[1] + 1 + Math.ceil((this.screen[1] / 2) / TILE_H);
-
-        if (this.endTile[0] >= MAP_W) this.endTile[0] = MAP_W;
-        if (this.endTile[1] >= MAP_H) this.endTile[1] = MAP_H;
+        // 4. Legacy Offset (Optional)
+        // If any of your UI still uses viewport.offset, we keep it centered
+        this.offset[0] = Math.floor((this.screen[0] / 2) - heroPX);
+        this.offset[1] = Math.floor((this.screen[1] / 2) - heroPY);
     }
 };

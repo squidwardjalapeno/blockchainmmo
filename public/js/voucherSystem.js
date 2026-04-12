@@ -1,21 +1,23 @@
-const { ethers } = require("ethers");
-require("dotenv").config();
+// 1. Modern Imports
+import { ethers } from "ethers";
+import dotenv from "dotenv";
 
-// 1. Add a provider so the wallet is "connected" to the network
+// Initialize dotenv to read your .env file
+dotenv.config();
+
+// 2. Setup Provider and Wallet
 const provider = new ethers.JsonRpcProvider(process.env.POLYGON_AMOY_RPC);
-
-// 1. Setup the Admin Wallet (The Private Key for your ADMIN_ADDRESS)
 const adminPrivateKey = process.env.ADMIN_PRIVATE_KEY;
 
-// Safety check: ensure the key exists before creating the wallet
 if (!adminPrivateKey) {
     console.error("❌ ERROR: ADMIN_PRIVATE_KEY is missing from .env!");
-    process.exit(1);
+    // In ES Modules, we don't use process.exit(1) globally as often, 
+    // but it's fine for a boot-up safety check.
 }
 
 const adminWallet = new ethers.Wallet(adminPrivateKey, provider);
 
-// 2. Define the "Domain" (Must match your Solidity constructor exactly!)
+// 3. EIP-712 Domain & Types
 const domain = {
     name: "WellBank",
     version: "1",
@@ -23,7 +25,6 @@ const domain = {
     verifyingContract: "0xf3Abb89fE45059cc0AE267c40FB172cFBb49F9A6"
 };
 
-// 3. Define the "Types" (Must match the Solidity struct)
 const types = {
     Voucher: [
         { name: "player", type: "address" },
@@ -34,11 +35,12 @@ const types = {
 
 /**
  * Creates a signed voucher for a player
+ * Now using 'export' so server.js can import it!
  */
-async function createVoucher(playerAddress, amount, nonce) {
+export async function createVoucher(playerAddress, amount, nonce) {
     const voucher = { player: playerAddress, amount: amount, nonce: nonce };
     
-    // This creates the EIP-712 Signature
+    // Create the EIP-712 Signature
     const signature = await adminWallet.signTypedData(domain, types, voucher);
 
     return {
@@ -46,5 +48,3 @@ async function createVoucher(playerAddress, amount, nonce) {
         signature
     };
 }
-
-module.exports = { createVoucher };

@@ -53,7 +53,15 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, hero) {
     for (let dx = -1; dx <= 1; dx++) {
         for (let dy = -1; dy <= 1; dy++) {
             const near = getTileData(x + (dx * 8), y + (dy * 8), worldMatrix, roomMatrix);
-            if (near.tileID === 49) worldMatrix[near.cx][near.cy][near.lx][near.ly] = 35;
+        
+        // THE FIX: Calculate the 1D index
+        const nearIdx = (near.ly * 100) + near.lx;
+
+        if (near.tileID === 49) {
+            // Write to the flat index, not a 2D coordinate
+            worldMatrix[near.cx][near.cy][nearIdx] = 35;
+        }
+
         }
     }
 
@@ -68,15 +76,16 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, hero) {
         for (let dy = -2; dy <= 2; dy++) {
             const near = getTileData(doorCheckX + (dx * 16), doorCheckY + (dy * 16), worldMatrix, roomMatrix);
             
-            // If we find an OPEN door (35) that is far away from our CURRENT feet...
-            if (near.tileID === 35) {
-                const dist = Math.sqrt(Math.pow(near.gx * 16 - doorCheckX, 2) + Math.pow(near.gy * 16 - doorCheckY, 2));
-                
-                // If we are more than 24 pixels away, slam it shut!
-                if (dist > 24) {
-                    worldMatrix[near.cx][near.cy][near.lx][near.ly] = 49;
-                }
-            }
+            // ... B. CLOSE DOOR LOGIC ...
+if (near.tileID === 35) {
+    const dist = Math.sqrt(Math.pow(near.gx * 16 - doorCheckX, 2) + Math.pow(near.gy * 16 - doorCheckY, 2));
+    
+    if (dist > 24) {
+        // THE FIX: Calculate the 1D index here too
+        const nearIdx = (near.ly * 100) + near.lx;
+        worldMatrix[near.cx][near.cy][nearIdx] = 49;
+    }
+}
         }
     }
 

@@ -18,7 +18,25 @@ const imageSources = {
 
     feather: "images/feather.png",
 
-    cropTileset: "images/cropTileset.png"
+    cropTileset: "images/cropTileset.png",
+
+    gardenTileset: "images/gardenTileset.png",
+
+    spellTileset: "images/spellTileset.png",
+
+    weaponTileset: "images/weaponTileset.png",
+
+    armorTileset: "images/armorTileset.png",
+
+    jewelryTileset: "images/jewelryTileset.png",
+
+    potionTileset: "images/potionTileset.png",
+
+    craftingTileset: "images/craftingTileset.png",
+
+    jewelTileset: "images/jewelTileset.png",
+
+    keyTileset: "images/keyTileset.png"
 };
 
 // This function returns a Promise that resolves when all images are ready
