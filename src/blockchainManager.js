@@ -23,17 +23,18 @@ async function getEthers() {
     return module.ethers;
 }
 
-// 🆕 NEW: Request MetaMask Connection
+// src/blockchainManager.js
+
 export async function connectWallet() {
     if (!window.ethereum) {
-        alert("MetaMask is not installed!");
-        return null;
+        console.warn("MetaMask is not installed. Defaulting to Guest Mode.");
+        return null; // Return null silently instead of alerting
     }
     try {
         const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
         return accounts[0];
     } catch (err) {
-        console.error("Wallet connection failed:", err);
+        console.error("Wallet connection failed or rejected:", err);
         return null;
     }
 }

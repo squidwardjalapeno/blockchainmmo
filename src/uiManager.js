@@ -296,7 +296,19 @@ export function initUI() {
     if (mainConnectBtn) {
         mainConnectBtn.onclick = async () => {
             mainConnectBtn.innerText = "CONNECTING...";
-            const address = await connectWallet();
+            let address = await connectWallet();
+            
+            // 👇 GUEST MODE FALLBACK
+            if (!address) {
+                const playAsGuest = confirm("MetaMask not detected (or connection rejected).\n\nWould you like to play offline/as a Guest?");
+                if (playAsGuest) {
+                    // Generate a random ID for this session
+                    address = "Guest_" + Math.floor(Math.random() * 999999);
+                } else {
+                    mainConnectBtn.innerText = "CONNECT WALLET TO PLAY";
+                    return; // Stop here if they cancel
+                }
+            }
             
             if (address) {
                 setPlayerWallet(address);
@@ -304,12 +316,10 @@ export function initUI() {
                 if (socket) {
                     socket.emit('identifyWallet', address);
                 } else {
-                    // Fallback if server is offline (Dev Mode)
+                    // Fallback if server is completely offline (Dev Mode)
                     document.getElementById('main-menu').classList.add('hidden');
                     document.getElementById('hud').style.display = 'block';
                 }
-            } else {
-                mainConnectBtn.innerText = "CONNECT WALLET TO PLAY";
             }
         };
     }

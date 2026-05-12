@@ -1,7 +1,7 @@
 {
-  "0x49e5bc9642e507ea3075114492d810bd74ecfb17": {
-    "x": 40175.30076000015,
-    "y": 89900.73336000154,
+  "Guest_961200": {
+    "x": 48800,
+    "y": 85760,
     "hp": 100,
     "maxHp": 100,
     "shield": 0,
@@ -17,21 +17,21 @@
     "armor": 0,
     "magic": 10,
     "mr": 0,
-    "dir": "East",
+    "dir": "South",
     "inGameUni": 0,
     "animFrame": 0,
     "isMoving": false,
     "isWindingUp": false,
     "xp": 1000,
-    "speed": 200,
-    "currentTileID": 0,
-    "wallet": "0x49e5bc9642e507ea3075114492d810bd74ecfb17",
+    "speed": 100,
+    "currentTileID": 45,
+    "wallet": "Guest_961200",
     "charClass": "Paladin",
     "skills": [
       "p1",
-      "p4",
+      "p2",
       "p5",
-      "p6"
+      "p11"
     ],
     "target": null
   }
