@@ -1,34 +1,355 @@
 <!DOCTYPE html>
 <html lang="en">
-	<head>
-		<meta charset="utf-8">
-		<title>Simple Canvas Game</title>
-		<link href="styles.css" type="text/css" rel="stylesheet">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Seeds & Bones</title>
+    <link href="styles.css" type="text/css" rel="stylesheet">
+</head>
+<body>
+    <div id="wrapper">
+        <!-- GAME LAYERS -->
+        <canvas id="myCanvas"></canvas>
+        <canvas id="myCanvas2"></canvas>
+        <canvas id="myCanvas3"></canvas>
 
-	</head>
-	<body>
-		<div id="wrapper">
-			<canvas id="myCanvas" width="320" height="320"></canvas>
-			<canvas id="myCanvas2" width="320" height="320"></canvas>
-			<canvas id="myCanvas3" width="320" height="320"></canvas>
+        <!-- MAIN MENU OVERLAY -->
+        <div id="main-menu" class="menu-overlay">
+            <div class="menu-content pixel-panel" style="width: 500px; text-align: center;">
+                <h1 style="color: var(--banana); font-size: 2.5em; margin-bottom: 10px; text-shadow: 4px 4px 0px var(--bg-dark);">Seeds & Bones</h1>
+                <p style="color: var(--text-dark); margin-bottom: 30px; font-size: 10px;">A RETRO SURVIVAL MOBA</p>
+                
+                <button id="main-connect-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 15px;">CONNECT WALLET TO PLAY</button>
+            </div>
+        </div>
 
-			<button id="connectBtn" style="position: absolute; top: 10px; right: 10px; z-index: 100;">
-    Connect Wallet
-</button>
+        <!-- CHARACTER CREATION MENU -->
+        <div id="character-creation-menu" class="menu-overlay hidden">
+            <div class="pixel-panel chest-modal" style="width: 700px; text-align: center;">
+                <h2 style="color: var(--text-dark); margin-top: 0;">CREATE YOUR HERO</h2>
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 4px solid var(--bg-dark); padding-bottom: 10px;">
+                    <div style="font-size: 12px; text-align: left;">
+                        <strong>CLASS:</strong> <span style="color: var(--highlight);">PALADIN</span><br>
+                        <span style="font-size: 8px; color: #555;">Holy warrior. Righteous defender.</span>
+                    </div>
+                    <div style="font-size: 10px; text-align: right;">
+                        SELECTED SKILLS<br>
+                        <span id="skill-count" style="color: var(--banana-dark); font-size: 14px;">0</span> / 4
+                    </div>
+                </div>
 
-			
-			
-		</div>
-		
-		
-	
-		<!-- Add the Socket.io library here -->
-<script src="/socket.io/socket.io.js"></script>
-		
-		<!-- index.html -->
-<script type = "module" src="js/overworldGame.js"></script>
+                <p style="font-size: 10px; margin-bottom: 15px;">Select your 4 core abilities for this life:</p>
 
-		<script src="js/init.js"></script>
+                <div id="skill-grid" class="inv-grid" style="grid-template-columns: repeat(4, 1fr); max-height: 250px; margin-bottom: 15px;">
+                    <!-- Populated via JS -->
+                </div>
 
-	</body>
+                <div id="selected-skills-slots" style="display: flex; gap: 10px; justify-content: center; margin-bottom: 20px;">
+                    <div class="skill-slot"></div>
+                    <div class="skill-slot"></div>
+                    <div class="skill-slot"></div>
+                    <div class="skill-slot"></div>
+                </div>
+
+                <button id="finish-char-btn" class="pixel-btn safe" style="width: 100%;" disabled>ENTER WORLD</button>
+            </div>
+        </div>
+
+        <!-- HUD (Hidden until Logged In) -->
+        <div id="hud" style="display: none;">
+            <div class="hud-panel" style="position: absolute; left: 20px; top: 20px; display: flex; align-items: center; gap: 15px;">
+                <div style="display: flex; flex-direction: column;">
+                    <span style="font-size: 8px; color: #555; margin-bottom: 4px;">IN-GAME BALANCE</span>
+                    <span id="uni-display" style="color: var(--banana-dark); font-size: 14px;">0.00 UNI</span>
+                </div>
+                <div style="display: flex; flex-direction: column; border-left: 2px solid #555; padding-left: 15px;">
+                    <span style="font-size: 8px; color: #555; margin-bottom: 4px;">NETWORK</span>
+                    <span id="player-count" style="color: var(--highlight); font-size: 14px;">PLAYERS: 1</span>
+                </div>
+                <button id="hud-withdraw-btn" class="pixel-btn" style="padding: 8px 12px; font-size: 8px;">WITHDRAW</button>
+            </div>
+            
+            <div id="debug-log" style="position: absolute; top: 80px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.7); padding: 8px 12px; border: 4px solid var(--bg-dark); color: var(--safe); font-size: 10px; text-align: center; pointer-events: none; text-shadow: 2px 2px 0 var(--bg-dark); max-width: 80%; word-wrap: break-word; z-index: 1000;">
+                SYSTEM BOOTING...
+            </div>
+
+            <div id="boot-results" style="position: absolute; left: 20px; top: 100px; background: rgba(0,0,0,0.8); padding: 10px; font-size: 8px; color: white; line-height: 1.5; border: 4px solid white; display: none; z-index: 1001;">
+                <!-- Timings will be injected here by JavaScript -->
+            </div>
+        </div>
+
+<!-- KEEP THE REST OF YOUR MODALS UNCHANGED BELOW THIS LINE -->
+
+
+        <!-- BANK VAULT (Withdrawal Menu) -->
+        <div id="withdraw-menu" class="hidden menu-modal">
+            <div class="pixel-panel" style="width: 400px; text-align: center;">
+                <h2 style="margin-top: 0; border-bottom: 4px solid var(--outline); padding-bottom: 10px; margin-bottom: 20px;">🏦 BANK VAULT</h2>
+                <p style="font-size: 10px; margin-bottom: 20px;">Convert in-game UNI back to tokens.</p>
+                
+                <div style="background: #fff; border: 4px solid var(--bg-dark); padding: 20px; margin-bottom: 20px; box-shadow: inset 4px 4px 0px rgba(0,0,0,0.1);">
+                    <div style="font-size: 10px; margin-bottom: 15px;">VAULT: <span id="withdraw-balance-max" style="color: var(--highlight);">0.00</span> UNI</div>
+                    <input type="number" id="withdraw-input" class="pixel-input" placeholder="0.00" style="width: 100%; text-align: center; margin-bottom: 10px;">
+                    <div style="font-size: 8px; color: #888;">Enter amount to extract</div>
+                </div>
+
+                <div style="display: flex; gap: 10px;">
+                    <button id="confirm-withdraw-btn" class="pixel-btn safe" style="flex: 1;">WITHDRAW</button>
+                    <button id="close-withdraw-btn" class="pixel-btn cancel" style="flex: 1;">CANCEL</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- SMELTER MENU -->
+        <div id="smelter-menu" class="hidden menu-modal">
+            <div class="pixel-panel" style="text-align: center; width: 350px;">
+                <h2 style="color: var(--text-dark); margin-top:0;">🔥 ROYAL SMELTER</h2>
+                <p style="font-size: 10px; margin-bottom: 20px;">Refine Gold Ore into Coins.</p>
+                <div id="smelter-requirements" style="background: #fff; padding: 15px; border: 4px solid var(--bg-dark); margin-bottom: 20px; font-size: 10px; text-align: left;">
+                    <p style="margin: 5px 0;">REQ: 1x Gold Ore</p>
+                    <p style="margin: 5px 0;">COST: 1.0 POL</p>
+                </div>
+                <button id="mint-coin-btn" class="pixel-btn" style="width: 100%; margin-bottom: 10px;">MINT COIN</button>
+                <button id="close-smelter-btn" class="pixel-btn cancel" style="width: 100%;">CANCEL</button>
+            </div>
+        </div>
+
+        <!-- CHEST STORAGE MENU -->
+        <div id="chest-menu" class="hidden menu-modal">
+            <div class="pixel-panel chest-modal">
+                <h2 style="color: var(--text-dark); margin-top: 0; text-align: center;">📦 STORAGE CHEST</h2>
+                <p style="font-size: 10px; text-align: center; margin-bottom: 15px;">Click or Drag items to transfer.</p>
+                
+                <div class="chest-layout">
+                    <div class="chest-pane">
+                        <h3>BACKPACK</h3>
+                        <div id="chest-hero-inv" class="inv-grid"></div>
+                    </div>
+                    <div class="chest-pane">
+                        <h3>CHEST</h3>
+                        <div id="chest-box-inv" class="inv-grid"></div>
+                    </div>
+                </div>
+
+                <div class="chest-controls">
+                    <button id="unload-all-btn" class="pixel-btn" style="flex: 1;">UNLOAD ALL</button>
+                    <button id="close-chest-btn" class="pixel-btn cancel" style="flex: 1;">CLOSE</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- GENERAL STORE MENU -->
+        <div id="store-menu" class="hidden menu-modal">
+            <div class="pixel-panel chest-modal">
+                <h2 style="color: var(--text-dark); margin-top: 0; text-align: center;">🏪 GENERAL STORE</h2>
+                
+                <nav id="store-tabs" style="display: flex; gap: 10px; margin-bottom: 15px; border-bottom: 4px solid var(--bg-dark); padding-bottom: 10px;">
+                    <button id="tab-market" class="pixel-btn" style="flex: 1; padding: 8px; font-size: 10px;">MARKET</button>
+                    <button id="tab-ledger" class="pixel-btn cancel" style="flex: 1; padding: 8px; font-size: 10px;">LEDGER</button>
+                    <button id="tab-lockbox" class="pixel-btn cancel" style="flex: 1; padding: 8px; font-size: 10px;">LOCKBOX</button>
+                </nav>
+
+                <div id="store-content" style="min-height: 250px; max-height: 400px; overflow-y: auto; padding: 10px; background: rgba(255,255,255,0.5); border: 4px solid var(--bg-dark);">
+                    <!-- Dynamic Store Content -->
+                </div>
+
+                <div style="margin-top: 15px;">
+                    <button id="close-store-btn" class="pixel-btn cancel" style="width: 100%;">LEAVE STORE</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- TEMPLE ALTAR MENU -->
+        <div id="temple-menu" class="hidden menu-modal">
+            <div class="pixel-panel chest-modal">
+                <h2 style="color: var(--text-dark); margin-top: 0; text-align: center;">⛩️ HOLY ALTAR</h2>
+                <p style="font-size: 10px; text-align: center; margin-bottom: 15px;">The Gods demand sustenance.</p>
+                
+                <div class="chest-layout">
+                    <div class="chest-pane">
+                        <h3>BACKPACK</h3>
+                        <div id="temple-hero-inv" class="inv-grid"></div>
+                    </div>
+                    <div class="chest-pane" style="display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                        <h3 style="color: var(--banana-dark);">OFFERING</h3>
+                        <div id="temple-slot" class="altar-slot" style="width: 100px; height: 100px; border: 4px dashed var(--bg-dark); display: flex; justify-content: center; align-items: center; margin-bottom: 20px; background: #fff;">
+                        </div>
+                        <button id="sacrifice-btn" class="pixel-btn safe" style="width: 100%;">SACRIFICE</button>
+                    </div>
+                </div>
+
+                <div class="chest-controls">
+                    <button id="close-temple-btn" class="pixel-btn cancel" style="width: 100%;">STEP AWAY</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- KITCHEN MENU -->
+        <div id="kitchen-menu" class="hidden menu-modal">
+            <div class="pixel-panel" style="text-align: center; width: 350px;">
+                <h2 style="color: var(--text-dark); margin-top: 0;">🍳 KITCHEN</h2>
+                <p style="font-size: 10px; margin-bottom: 20px;">Cook fish to restore energy.</p>
+                
+                <div style="background: rgba(255,255,255,0.5); padding: 15px; border: 4px solid var(--bg-dark); margin-bottom: 20px; text-align: left;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 4px solid var(--bg-dark); padding-bottom: 10px; margin-bottom: 10px;">
+                        <span style="font-size: 12px;">🍱 COOKED FISH</span>
+                        <span style="color: var(--highlight); font-size: 8px;">+60 ENG</span>
+                    </div>
+                    <p style="font-size: 8px; margin: 0;">REQ: 1x River Bass (Raw)</p>
+                </div>
+                
+                <button id="cook-fish-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 10px;">COOK FISH</button>
+                <button id="close-kitchen-btn" class="pixel-btn cancel" style="width: 100%;">LEAVE KITCHEN</button>
+            </div>
+        </div>
+
+        <!-- CARTOGRAPHY (Map Table) -->
+        <div id="maptable-menu" class="hidden menu-modal">
+            <div class="pixel-panel" style="display: flex; flex-direction: column; align-items: center; width: 380px;">
+                <h2 style="color: var(--text-dark); margin-top: 0; text-align: center;">🗺️ CARTOGRAPHY</h2>
+                <p style="font-size: 10px; margin-bottom: 15px; color: #555; text-align: center;">World Navigation Chart</p>
+                
+                <div style="width: 300px; aspect-ratio: 1 / 1; border: 4px solid var(--bg-dark); background: #000; margin-bottom: 15px; position: relative; box-shadow: inset -4px -4px 0px rgba(0,0,0,0.3);">
+                    <canvas id="ui-map-canvas" width="100" height="100" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; image-rendering: pixelated;"></canvas>
+                </div>
+                
+                <div style="display: flex; justify-content: space-between; width: 100%; font-size: 8px; margin-bottom: 20px;">
+                    <div><span style="color: #2ecc71;">■</span> WILD</div>
+                    <div><span style="color: #e74c3c;">■</span> VILL</div>
+                    <div><span style="color: #a32192;">■</span> TOWN</div>
+                    <div><span style="color: #FFD700;">■</span> YOU</div>
+                </div>
+
+                <button id="close-maptable-btn" class="pixel-btn cancel" style="width: 100%;">STEP AWAY</button>
+            </div>
+        </div>
+
+        <!-- ROOT CELLAR MENU -->
+        <div id="cellar-menu" class="hidden menu-modal">
+            <div class="pixel-panel chest-modal">
+                <h2 style="color: var(--text-dark); margin-top: 0; text-align: center;">🧺 ROOT CELLAR</h2>
+                <p style="font-size: 10px; text-align: center; margin-bottom: 15px; color: var(--highlight);">Storage for Organic Foodstuffs only.</p>
+                
+                <div class="chest-layout">
+                    <div class="chest-pane">
+                        <h3>BACKPACK</h3>
+                        <div id="cellar-hero-inv" class="inv-grid"></div>
+                    </div>
+                    <div class="chest-pane">
+                        <h3>CELLAR</h3>
+                        <div id="cellar-box-inv" class="inv-grid"></div>
+                    </div>
+                </div>
+
+                <div class="chest-controls">
+                    <button id="unload-food-btn" class="pixel-btn safe" style="flex: 1;">UNLOAD FOOD</button>
+                    <button id="close-cellar-btn" class="pixel-btn cancel" style="flex: 1;">CLOSE</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- HAY TABLE MENU -->
+        <div id="hay-table-menu" class="hidden menu-modal">
+            <div class="pixel-panel" style="text-align: center; width: 350px;">
+                <h2 style="color: var(--text-dark); margin-top: 0;">🌾 HAY TABLE</h2>
+                <p style="font-size: 10px; margin-bottom: 20px;">Dry grass into animal fodder.</p>
+                
+                <div style="background: rgba(255,255,255,0.5); padding: 15px; border: 4px solid var(--bg-dark); margin-bottom: 20px; text-align: left;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 4px solid var(--bg-dark); padding-bottom: 10px; margin-bottom: 10px;">
+                        <span style="font-size: 12px;">🌾 DRIED HAY</span>
+                    </div>
+                    <p style="font-size: 8px; margin: 0;">REQ: 1x Uprooted Grass</p>
+                </div>
+                
+                <button id="craft-hay-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 10px;">CRAFT HAY</button>
+                <button id="close-hay-table-btn" class="pixel-btn cancel" style="width: 100%;">STEP AWAY</button>
+            </div>
+        </div>
+
+        <!-- HAY STORAGE MENU -->
+        <div id="hay-storage-menu" class="hidden menu-modal">
+            <div class="pixel-panel chest-modal">
+                <h2 style="color: var(--text-dark); margin-top: 0; text-align: center;">🌾 HAY STORAGE</h2>
+                <p style="font-size: 10px; text-align: center; margin-bottom: 15px; color: var(--banana-dark);">Dry Storage for Fodder.</p>
+                
+                <div class="chest-layout">
+                    <div class="chest-pane">
+                        <h3>BACKPACK</h3>
+                        <div id="hay-storage-hero-inv" class="inv-grid"></div>
+                    </div>
+                    <div class="chest-pane">
+                        <h3>STORAGE</h3>
+                        <div id="hay-storage-box-inv" class="inv-grid"></div>
+                    </div>
+                </div>
+
+                <div class="chest-controls">
+                    <button id="unload-hay-btn" class="pixel-btn safe" style="flex: 1;">UNLOAD HAY</button>
+                    <button id="close-hay-storage-btn" class="pixel-btn cancel" style="flex: 1;">CLOSE</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- SPLIT STACK MENU -->
+        <div id="split-stack-menu" class="hidden menu-modal" style="z-index: 3000;">
+            <div class="pixel-panel" style="width: 300px; text-align: center;">
+                <h3 style="margin-top:0;">DROP HOW MANY?</h3>
+                <div style="font-size: 24px; margin: 10px 0;" id="split-item-icon">📦</div>
+                <div style="font-size: 14px; margin-bottom: 15px;" id="split-item-name">Item Name</div>
+                
+                <input type="range" id="split-slider" min="1" max="1" value="1" style="width: 100%; margin-bottom: 10px;">
+                <div style="font-size: 12px; color: var(--banana-dark); margin-bottom: 20px;">
+                    Dropping: <span id="split-amount-label">1</span>
+                </div>
+
+                <div style="display: flex; gap: 10px;">
+                    <button id="confirm-split-btn" class="pixel-btn safe" style="flex: 1;">DROP</button>
+                    <button id="cancel-split-btn" class="pixel-btn cancel" style="flex: 1;">CANCEL</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- TABBED HERO MENU (Inventory/Stats) -->
+        <div id="menu-overlay" class="hidden">
+            <div id="menu-container">
+                <nav id="menu-tabs">
+                    <button data-tab="inventory" class="active">INV</button>
+                    <button data-tab="stats">STATS</button>
+                    <button data-tab="map">MAP</button>
+                    <button data-tab="equipment">GEAR</button>
+                    <button data-tab="skills">SKILLS</button>
+                </nav>
+                <div id="tab-content" class="pixel-panel" style="margin-top: 0; border-top: none; flex: 1; overflow-y: auto;">
+                    <!-- Content via JS -->
+                </div>
+                <button id="close-menu" class="pixel-btn cancel" style="width: 100%; margin-top: 10px;">CLOSE (ESC)</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 🚨 THE TERMINAL 🚨 -->
+    <div id="debug-terminal" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: black; color: lime; font-family: monospace; font-size: 12px; z-index: 999999; overflow-y: scroll; padding: 10px; box-sizing: border-box; text-align: left;">SYSTEM BOOT...</div>
+
+    <script>
+        var term = document.getElementById('debug-terminal');
+        window.logStep = function(msg) {
+            if (term) term.innerText += "\n" + msg;
+        };
+        window.onerror = function(msg, url, line) {
+            if (term) {
+                term.style.backgroundColor = "darkred";
+                term.style.color = "white";
+                window.logStep("CRASH L" + line + ": " + msg);
+            }
+            return false;
+        };
+    </script>
+
+    <!-- Change this line at the bottom of index.html -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script type="module" src="js/game.js"></script>
+</body>
 </html>
+
+    

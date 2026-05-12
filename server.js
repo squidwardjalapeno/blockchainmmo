@@ -1,14 +1,14 @@
 // 1. Modern Imports (ES Modules)
-import { CONFIG } from './public/js/config.js';
-// 4. Import your custom logic (Make sure voucherSystem.js uses 'export')
-import { createVoucher } from './public/js/voucherSystem.js'; 
+import { CONFIG } from './src/config.js'; // Points to src/
+import { createVoucher } from './src/voucherSystem.js'; // Points to src/
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import path from 'path';
 import { fileURLToPath } from 'url';
-
 import fs from 'fs';
+// We are no longer using the cdnjs polyfill, so remove this import:
+// import https from 'https'; 
 
 // 2. Fix for __dirname in ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -19,36 +19,152 @@ const app = express();
 const http = createServer(app);
 const io = new Server(http);
 
+
 const POINT_VALUES = {
     "fish": 500,
-    "grass_item": 50,
-    "chicken_poop": 20,
-    "cooked_fish": 800
+    "cooked_fish": 800,
+    "grass_seed": 10,  // 👈 NEW: Sacrifice value for the seed
+    "rose_seed": 15,
+    "violet_seed": 15,
+    "sunflower_seed": 25,
+    "turnip_seed": 15,
+    "turnip_item": 40,
+    "tomato_seed": 20,   // 👈 NEW
+    "tomato_item": 60,    // 👈 NEW
+    // 👇 NEW VEGGIES
+    "eggplant_seed": 30,
+    "eggplant_item": 85,
+    "strawberry_seed": 25,
+    "strawberry_item": 50,
+    "pumpkin_seed": 15,
+    "pumpkin_item": 45,
+    "watermelon_seed": 20,
+    "watermelon_item": 55,
+
+    // 👇 NEW
+    "corn_seed": 15, "corn_item": 40,
+    "pineapple_seed": 60, "pineapple_item": 150, // Rare and slow!
+    "potato_seed": 20, "potato_item": 45,
+    "wheat_seed": 10, "wheat_item": 25
+
 };
 
-// 5. Serve Static Files
+// 1. Serve static files from the public and src folders
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/src', express.static(path.join(__dirname, 'src'))); // Expose src for ES Modules
+app.use('/js', express.static(path.join(__dirname, 'src')));  // Alias /js to /src for existing HTML imports
+
+// 2. Standard Routing
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 
 // 6. Global Game State
 const players = {};
 const worldSeed = Math.floor(Math.random() * 999999);
 
-let userDb = {};
+// 🌍 9x9 SYSTEM UNLOCKS
+// Starts with only the center system (4, 4) unlocked
+let unlockedSystems = ["4_4"]; 
 
-// --- 🗑️ WIPE ON START: Delete old records every time server boots ---
-if (fs.existsSync('persistence.json')) {
-    try {
-        fs.unlinkSync('persistence.json');
-        console.log("🗑️ Persistence file deleted. Starting with a fresh database.");
-    } catch (err) {
-        console.error("Error deleting persistence file:", err);
-    }
-} else {
-    console.log("🆕 No database found. Starting fresh.");
+// Dynamic Price Calculator
+function getSystemPrice(sysX, sysY) {
+    if (unlockedSystems.includes(`${sysX}_${sysY}`)) return 0;
+    
+    // Calculate layer (distance from center 4,4)
+    const layerX = Math.abs(sysX - 4);
+    const layerY = Math.abs(sysY - 4);
+    const layer = Math.max(layerX, layerY); // 0 (Center) up to 4 (Outer edge)
+    
+    let price = 1.0; // Base Price
+    
+    // +50% per layer from the center
+    price *= Math.pow(1.5, layer); 
+    
+    // +10% globally for every area ALREADY unlocked (minus the starting center)
+    price *= Math.pow(1.1, unlockedSystems.length - 1); 
+    
+    return price;
 }
 
+let userDb = {};
+let chestDb = {}; // 🆕 Database for all chests in the world
+let storeDb = {}; // 🆕 Database for General Stores
+let cellarDb = {}; // ✅ This was the missing line
+let hayDb = {}; // 🆕 Database for Hay Storage
 
+// --- 🗑️ WIPE ON START ---
+if (fs.existsSync('persistence.json')) fs.unlinkSync('persistence.json');
+if (fs.existsSync('chests.json')) fs.unlinkSync('chests.json');
+if (fs.existsSync('stores.json')) {
+    try { fs.unlinkSync('stores.json'); console.log("🗑️ Stores file deleted."); } catch(err){}
+}
+if (fs.existsSync('cellars.json')) { try { fs.unlinkSync('cellars.json'); } catch(err){} }
+if (fs.existsSync('hay.json')) { try { fs.unlinkSync('hay.json'); console.log("🗑️ Hay Storage file deleted."); } catch(err){} }
 
+// Add these near your other global variables (like players = {})
+const projectiles = [];
+
+// ==========================================
+    // SERVER-SIDE MAGIC DAMAGE HELPER
+    // ==========================================
+    function applyMagicSpellDamage(attacker, victim, baseDamage) {
+        if (victim.isInvincible) return;
+        if (victim.hasDivineBubble) {
+            victim.hasDivineBubble = false;
+            io.emit('playerHit', { victimId: victim.id, newHp: victim.hp, bubblePopped: true });
+            return;
+        }
+
+        // 1. Calculate Standard Magic Damage
+        const victimMr = Math.max(1, victim.mr || 1);
+        const mrReduction = Math.pow(0.5, Math.log10(victimMr));
+        let finalDamage = Math.max(1, Math.floor(baseDamage * mrReduction));
+
+        // 2. FEVER (p10) RESONANCE LOGIC
+        if (attacker.passives && attacker.passives.hasFever) {
+            if (victim.resonanceTimer > 0) {
+                // CONSUME RESONANCE!
+                victim.resonanceTimer = 0; 
+
+                const percentMissing = 0.08 + ((attacker.magic || 0) * 0.0001); 
+                const missingHp = (victim.maxHp || 100) - victim.hp;
+                const executeDamage = Math.floor(missingHp * percentMissing);
+                
+                finalDamage += executeDamage;
+                console.log(`🔥 Resonance Consumed! +${executeDamage} Execute Damage`);
+            } else {
+                // APPLY RESONANCE! (Lasts 4 seconds)
+                victim.resonanceTimer = 4.0; 
+                io.emit('playerCC', { victimId: victim.id, ccType: 'resonanceApply' });
+                console.log(`✨ Resonance Applied to ${victim.id}`);
+            }
+        }
+
+        // 3. Shield Absorption
+        if (victim.shield > 0) {
+            const dmgToShield = Math.min(victim.shield, finalDamage);
+            victim.shield -= dmgToShield;
+            finalDamage -= dmgToShield;
+        }
+
+        // 4. Apply HP Damage & Emit
+        victim.hp -= finalDamage;
+        io.emit('playerHit', { 
+            victimId: victim.id, newHp: victim.hp, newShield: victim.shield, attackerId: attacker.id 
+        });
+
+        // 5. Death Logic
+        if (victim.hp <= 0) {
+            const xpGain = (victim.xp || 0) * 0.30;
+            attacker.xp = (attacker.xp || 0) + xpGain;
+            if (victim.wallet) {
+                userDb[victim.wallet].hp = 0; userDb[victim.wallet].xp = victim.xp;
+            }
+            io.emit('playerKilled', { victimId: victim.id, killerId: attacker.id, xpGained: xpGain, newAttackerXp: attacker.xp });
+        }
+    }
 
 io.on('connection', (socket) => {
     console.log(`✨ Player Connected: ${socket.id}`);
@@ -59,17 +175,190 @@ io.on('connection', (socket) => {
         y: 1600,
         hp: CONFIG.HERO_HP,
         maxHp: CONFIG.HERO_HP, // Added maxHp for bars
+        shield: 0,
+
+        hasDivineBubble: false, // 👈 NEW
+
+        isInvincible: false,
+        passives: { hasFever: false }, // 👈 Track attacker passives
+        resonanceTimer: 0,             // 👈 Track victim debuffs
+
+
+
+        energy: 100,      // 🆕 Default Energy
+        maxEnergy: 100,   // 🆕 Default Max Energy
         ad: CONFIG.HERO_ATTACK,
         armor: CONFIG.HERO_ARMOR,
         magic: CONFIG.HERO_MAGIC,
         mr: CONFIG.HERO_MAGIC_RESISTANCE,
-        dir: 'Down',
+        dir: 'South',
+        inGameUni: 0, // 🆕 NEW STAT: Replaces onChainPoints
         animFrame: 0,
         isMoving: false,
         isWindingUp: false // Sync the "Shake" animation
     };
 
     socket.emit('secret', { seed: worldSeed, myId: socket.id });
+
+    // --- REPLACE the requestChest event in server.js ---
+    
+    socket.on('requestChest', (chestId) => {
+        // If chest doesn't exist in DB yet, spawn it with a Dagger!
+        if (!chestDb[chestId]) {
+            chestDb[chestId] = [
+                {
+                    name: "Rusty Dagger",
+                    seedType: "weapon_dagger",
+                    spriteID: 0,
+                    tileset: "weaponTileset",
+                    isWeapon: true,
+                    ad: 5,
+                    health: 100,
+                    virulence: 0,
+                    fertility: 0,
+                    timestamp: Date.now()
+                }
+            ];
+        }
+        // Send the data back ONLY to the player who asked
+        socket.emit('chestData', { chestId, items: chestDb[chestId] });
+    });
+
+    socket.on('updateChest', (data) => {
+        // 1. Update the Server RAM
+        chestDb[data.chestId] = data.items;
+        
+        // 2. Write to disk
+        fs.writeFileSync('chests.json', JSON.stringify(chestDb, null, 2));
+
+        // 3. 📡 Broadcast to everyone ELSE in case they are looking in the same chest!
+        socket.broadcast.emit('chestUpdated', data);
+    });
+
+    // ==========================================
+    // 🆕 GENERAL STORE (TRADE COUNTER) SYSTEM
+    // ==========================================
+    
+    socket.on('requestStore', (storeId) => {
+        if (!storeDb[storeId]) {
+            // listings: active trades. storage: items waiting for pickup by wallet
+            storeDb[storeId] = { listings: [], storage: {} }; 
+        }
+        socket.emit('storeData', { storeId, data: storeDb[storeId] });
+    });
+
+    socket.on('createListing', (data) => {
+        const { storeId, wallet, offeredItem, wantedType } = data;
+        storeDb[storeId].listings.push({
+            id: Date.now().toString(),
+            seller: wallet,
+            offeredItem: offeredItem,
+            wantedType: wantedType,
+            counterOffer: null
+        });
+        saveStores();
+        io.emit('storeUpdated', { storeId, data: storeDb[storeId] }); // Tell everyone looking
+    });
+
+    socket.on('buyListing', (data) => {
+        const { storeId, listingId, buyerWallet, paymentItem } = data;
+        const store = storeDb[storeId];
+        const listIdx = store.listings.findIndex(l => l.id === listingId);
+        
+        if (listIdx !== -1) {
+            const listing = store.listings[listIdx];
+            // 1. Move the listed item to the Buyer's storage
+            if (!store.storage[buyerWallet]) store.storage[buyerWallet] = [];
+            store.storage[buyerWallet].push(listing.offeredItem);
+            
+            // 2. Move the payment to the Seller's storage
+            if (!store.storage[listing.seller]) store.storage[listing.seller] = [];
+            store.storage[listing.seller].push(paymentItem);
+
+            // 3. Remove listing
+            store.listings.splice(listIdx, 1);
+            saveStores();
+            io.emit('storeUpdated', { storeId, data: store });
+        }
+    });
+
+    socket.on('makeCounterOffer', (data) => {
+        const { storeId, listingId, buyerWallet, counterItem } = data;
+        const store = storeDb[storeId];
+        const listing = store.listings.find(l => l.id === listingId);
+        
+        if (listing) {
+            listing.counterOffer = { buyer: buyerWallet, item: counterItem };
+            saveStores();
+            io.emit('storeUpdated', { storeId, data: store });
+        }
+    });
+
+    socket.on('resolveCounterOffer', (data) => {
+        const { storeId, listingId, accept } = data;
+        const store = storeDb[storeId];
+        const listIdx = store.listings.findIndex(l => l.id === listingId);
+        
+        if (listIdx !== -1) {
+            const listing = store.listings[listIdx];
+            if (accept) {
+                // Swap items into respective storages
+                if (!store.storage[listing.counterOffer.buyer]) store.storage[listing.counterOffer.buyer] = [];
+                store.storage[listing.counterOffer.buyer].push(listing.offeredItem);
+
+                if (!store.storage[listing.seller]) store.storage[listing.seller] = [];
+                store.storage[listing.seller].push(listing.counterOffer.item);
+
+                store.listings.splice(listIdx, 1);
+            } else {
+                // Reject: Return counter-item to buyer's storage, keep listing active
+                if (!store.storage[listing.counterOffer.buyer]) store.storage[listing.counterOffer.buyer] = [];
+                store.storage[listing.counterOffer.buyer].push(listing.counterOffer.item);
+                listing.counterOffer = null;
+            }
+            saveStores();
+            io.emit('storeUpdated', { storeId, data: store });
+        }
+    });
+
+    socket.on('cancelListing', (data) => {
+        const { storeId, listingId, wallet } = data;
+        const store = storeDb[storeId];
+        const listIdx = store.listings.findIndex(l => l.id === listingId);
+        
+        if (listIdx !== -1) {
+            const listing = store.listings[listIdx];
+            // Return item to seller storage
+            if (!store.storage[wallet]) store.storage[wallet] = [];
+            store.storage[wallet].push(listing.offeredItem);
+            
+            // If there was a pending counter-offer, return that to the buyer
+            if (listing.counterOffer) {
+                if (!store.storage[listing.counterOffer.buyer]) store.storage[listing.counterOffer.buyer] = [];
+                store.storage[listing.counterOffer.buyer].push(listing.counterOffer.item);
+            }
+
+            store.listings.splice(listIdx, 1);
+            saveStores();
+            io.emit('storeUpdated', { storeId, data: store });
+        }
+    });
+
+    socket.on('claimStorage', (data) => {
+        const { storeId, wallet } = data;
+        const store = storeDb[storeId];
+        
+        if (store.storage[wallet]) {
+            // Send items back to client (they will be added to inventory locally)
+            socket.emit('storageClaimed', { items: store.storage[wallet] });
+            store.storage[wallet] = []; // Clear storage
+            saveStores();
+            io.emit('storeUpdated', { storeId, data: store });
+        }
+    });
+
+
+
 
     // A. Handle Movement & Animation States
     socket.on('movement', (data) => {
@@ -81,7 +370,12 @@ io.on('connection', (socket) => {
             players[socket.id].isMoving = data.isMoving;
             players[socket.id].isWindingUp = data.isWindingUp; // New: Sync the punch wind-up
             players[socket.id].currentTileID = data.currentTileID;
+
+            // 👈 NEW: Sync Pet
+            players[socket.id].pet = data.pet; 
         }
+
+        
     });
 
 
@@ -110,6 +404,50 @@ socket.on('updateStats', (data) => {
     }
 });
 
+// 🆕 UPDATED SACRIFICE LOGIC (Web2.5 style)
+    socket.on('sacrificeItem', (data) => {
+        const points = POINT_VALUES[data.itemType];
+        if (!points) return;
+
+        // Just add it to their local RAM profile
+        players[socket.id].inGameUni += points;
+        
+        // Tell the client their new balance so the UI updates
+        socket.emit('balanceUpdated', { inGameUni: players[socket.id].inGameUni });
+        
+        console.log(`💎 ${socket.wallet || socket.id} sacrificed ${data.itemType} for ${points} UNI.`);
+    });
+
+    // 🆕 NEW: THE WITHDRAWAL REQUEST
+    socket.on('requestWithdrawal', async (amount) => {
+        const player = players[socket.id];
+        
+        // 1. Check if they actually have the money
+        if (!player || player.inGameUni < amount || !socket.wallet) {
+            console.error("Invalid withdrawal request.");
+            return;
+        }
+
+        // 2. Subtract it from their in-game account IMMEDIATELY
+        player.inGameUni -= amount;
+        socket.emit('balanceUpdated', { inGameUni: player.inGameUni });
+
+        // 3. Create the cryptographic voucher
+        const nonce = Math.floor(Math.random() * 1000000000);
+        try {
+            const voucher = await createVoucher(socket.wallet, amount, nonce);
+            
+            // 4. Send the voucher to the client so MetaMask can pop up!
+            socket.emit('receiveWithdrawalVoucher', voucher);
+            console.log(`📜 Withdrawal Voucher generated for ${socket.wallet}`);
+        } catch (err) {
+            console.error("Voucher failed!", err);
+            // Refund them if the crypto math fails
+            player.inGameUni += amount;
+            socket.emit('balanceUpdated', { inGameUni: player.inGameUni });
+        }
+    });
+
 
 // --- ⚔️ UPDATED: LOGARITHMIC ARMOR SCALING ---
 socket.on('pvpAttack', (data) => {
@@ -128,14 +466,50 @@ socket.on('pvpAttack', (data) => {
         
         const finalDamage = Math.max(1, Math.floor(attacker.ad * armorReduction));
 
-        // 2. APPLY DAMAGE
-        victim.hp -= finalDamage;
-        console.log(`⚔️ ${attacker.id} hit ${victim.id} for ${finalDamage} (Blocked: ${Math.round((1 - armorReduction) * 100)}%)`);
+        // ... inside server.js -> socket.on('pvpAttack' ...
+        
+        // 👇 1. HEAVEN'S HALO CHECK (Absolute Immunity)
+        if (victim.isInvincible) {
+            console.log(`👼 ${victim.id} is Invincible! Damage ignored.`);
+            // Optionally, tell the attacker "IMMUNE!" (Requires a new emit/UI text)
+            return; // 🛑 EXIT EARLY: No damage applied!
+        }
 
-        // 3. BROADCAST THE HIT
+        // 👇 1. DIVINE BUBBLE CHECK (Blocks 1 instance of damage completely)
+        if (victim.hasDivineBubble) {
+            console.log(`✨ DIVINE BUBBLE POPPED on ${victim.id}! Blocked ${finalDamage} damage.`);
+            victim.hasDivineBubble = false;
+            
+            // Tell clients the bubble popped (so they can update visuals/UI)
+            io.emit('playerHit', {
+                victimId: victim.id,
+                newHp: victim.hp,
+                newShield: victim.shield,
+                bubblePopped: true, // 👈 New flag
+                attackerId: attacker.id
+            });
+            return; // 🛑 EXIT EARLY: No damage applied!
+        }
+
+        
+// 👇 🆕 NEW SHIELD LOGIC
+        if (victim.shield > 0) {
+            // How much of the damage hits the shield?
+            const damageToShield = Math.min(victim.shield, finalDamage);
+            victim.shield -= damageToShield;
+            finalDamage -= damageToShield; // Subtract absorbed damage
+            
+            console.log(`🛡️ Shield absorbed ${damageToShield} damage! Remaining Shield: ${victim.shield}`);
+        }
+
+        // Apply remaining damage to HP
+        victim.hp -= finalDamage;
+        
+        // 3. BROADCAST THE HIT (Now includes shield data!)
         io.emit('playerHit', {
             victimId: victim.id,
             newHp: victim.hp,
+            newShield: victim.shield, // 👈 Send shield updates to everyone
             attackerId: attacker.id
         });
 
@@ -172,6 +546,145 @@ socket.on('pvpAttack', (data) => {
     }
 });
 
+// ==========================================
+    // AREA OF EFFECT (AoE) ABILITY LISTENER
+    // ==========================================
+    socket.on('abilityAoE', (data) => {
+        const attacker = players[socket.id];
+        if (!attacker) return;
+
+        for (let vid in players) {
+            if (vid === socket.id) continue; // Don't hit yourself
+            
+            const victim = players[vid];
+            const dx = victim.x - data.x;
+            const dy = victim.y - data.y;
+            const distSq = (dx * dx) + (dy * dy);
+            const radiusSq = data.radius * data.radius;
+
+            if (distSq <= radiusSq && victim.hp > 0) {
+                
+                // --- p3: DIVINE BUBBLE EXPLOSION ---
+                if (data.type === 'divineBubbleExplosion') {
+                    // 1. Knockback Math
+                    const dist = Math.sqrt(distSq) || 1; 
+                    const pushPower = 32; 
+                    victim.x += (dx / dist) * pushPower;
+                    victim.y += (dy / dist) * pushPower;
+                    
+                    // Tell all clients to update this player's position
+                    io.emit('forcedMovement', { id: victim.id, x: victim.x, y: victim.y });
+
+                    // 2. Apply Unified Magic Damage (Triggers Fever/Resonance)
+                    applyMagicSpellDamage(attacker, victim, data.damage);
+                }
+
+                // --- p5: RADIANT NOVA EXPLOSION ---
+                if (data.type === 'radiantNovaExplosion') {
+                    // 1. Apply Slow CC (Lasts 2.0 seconds)
+                    io.emit('playerCC', { victimId: victim.id, ccType: 'slow', duration: 2.0 });
+
+                    // 2. Apply Unified Magic Damage (Triggers Fever/Resonance)
+                    applyMagicSpellDamage(attacker, victim, data.damage);
+                }
+
+                // --- p11: RING OF PENANCE ---
+                if (data.type === 'ringOfPenance') {
+                    // 1. Apply IMPRISON CC (Mask: 13, Duration: 1.5s)
+                    // Note: You can hardcode 13 here, or copy the CC object into server.js
+                    const IMPRISON_MASK = 1 | 4 | 8; // MOVE + CAST_MOVE + CAST_NON_MOVE
+                    
+                    io.emit('playerCC', { 
+                        victimId: victim.id, 
+                        ccMask: IMPRISON_MASK, 
+                        duration: 1.5 
+                    });
+
+                    // 2. Apply Unified Magic Damage (Triggers Fever/Resonance)
+                    applyMagicSpellDamage(attacker, victim, data.damage);
+                }
+
+                // --- p14: CONSECRATION TICK ---
+                if (data.type === 'consecrationTick') {
+                    // No CC, just raw Magic Damage! 
+                    // This will naturally apply and consume Resonance!
+                    applyMagicSpellDamage(attacker, victim, data.damage);
+                }
+
+                // --- p16: ZENITH GUARDIAN SPAWN ---
+                if (data.type === 'zenithGuardianSpawn') {
+                    // BIND CC: Cannot Move or Attack (1 | 2 = 3)
+                    const BIND_MASK = 1 | 2; 
+                    
+                    io.emit('playerCC', { 
+                        victimId: victim.id, 
+                        ccMask: BIND_MASK, 
+                        duration: 1.5 
+                    });
+
+                    // Apply Magic Damage (Triggers Resonance!)
+                    applyMagicSpellDamage(attacker, victim, data.damage);
+                }
+            }
+        }
+    });
+
+    // Allow players to heal each other
+    socket.on('healPlayer', (data) => {
+        const target = players[data.targetId];
+        if (target && target.hp > 0) {
+            target.hp = Math.min(target.maxHp || 100, target.hp + data.amount);
+            io.emit('playerHealed', { targetId: target.id, newHp: target.hp, amount: data.amount });
+        }
+    });
+
+    // --- ADD THIS inside io.on('connection') in server.js ---
+
+    // Route targeted buffs to allies
+    socket.on('castBuffOnAlly', (data) => {
+        // Send a private message ONLY to the targeted ally
+        io.to(data.targetId).emit('receiveAllyBuff', data);
+    });
+
+    // --- Add inside io.on('connection') ---
+    socket.on('fireProjectile', (data) => {
+        // We add the socket.id so the projectile knows who fired it (no friendly fire)
+        projectiles.push({
+            id: Math.random().toString(36).substr(2, 9),
+            ownerId: socket.id,
+            type: data.type,
+            x: data.x,
+            y: data.y,
+            dx: data.dx,
+            dy: data.dy,
+            speed: data.speed,
+            life: data.life,
+            radius: data.radius,
+            damage: data.damage
+        });
+    });
+
+    // --- Inside io.on('connection') ---
+    socket.on('fireHomingProjectile', (data) => {
+        const attacker = players[socket.id];
+        const target = players[data.targetId];
+        if (!attacker || !target) return;
+
+        projectiles.push({
+            id: Math.random().toString(36).substr(2, 9),
+            ownerId: socket.id,
+            type: data.type,
+            targetId: data.targetId, // Homing flag
+            x: attacker.x + 8,
+            y: attacker.y + 8,
+            speed: 350, // Fast!
+            life: 2.0,  // Fizzles after 2s if it can't catch them
+            damage: data.damage,
+            skillIndex: data.skillIndex
+        });
+    });
+
+
     // server.js
 socket.on('syncTile', (data) => {
     // Keep the name consistent: syncTile -> syncTile
@@ -185,27 +698,88 @@ socket.on('syncTile', (data) => {
     });
 
     // --- 🆕 STEP 2: THE SACRIFICE LISTENER ---
-    // Place this right before your 'disconnect' handler
-    socket.on('sacrificeToWell', async (data) => {
-        // data should include { itemType, playerWalletAddress }
-        const points = POINT_VALUES[data.itemType] || 10;
+    // 🆕 UPDATED SACRIFICE LISTENER
+    socket.on('sacrificeItem', async (data) => {
+        const points = POINT_VALUES[data.itemType];
         
-        // Nonce should ideally be tracked in a database, 
-        // but a random large number works for your first test!
+        // Safety check to ensure they didn't hack the client to send bad items
+        if (!points) {
+            console.error(`Invalid sacrifice attempt: ${data.itemType}`);
+            return;
+        }
+        
+        // Random nonce for the smart contract
         const nonce = Math.floor(Math.random() * 1000000000);
 
         try {
-            // Generate the mathematically signed "Permission Slip"
             const voucher = await createVoucher(data.playerWalletAddress, points, nonce);
 
             // Send the signed voucher ONLY to the player who sacrificed
             socket.emit('receiveVoucher', voucher);
             
-            console.log(`📜 Voucher issued: ${points} pts to ${data.playerWalletAddress}`);
+            console.log(`📜 Temple Voucher issued: ${points} pts to ${data.playerWalletAddress}`);
         } catch (err) {
             console.error("Voucher generation failed:", err);
         }
     });
+
+    // Send the map state immediately when they connect
+    socket.emit('mapState', { unlockedSystems });
+
+    // Handle a player buying a new System
+    socket.on('unlockSystem', (data) => {
+        const { sysX, sysY } = data;
+        const sysKey = `${sysX}_${sysY}`;
+        const p = players[socket.id];
+
+        if (!p) return;
+        if (unlockedSystems.includes(sysKey)) return; // Already unlocked
+
+        const price = getSystemPrice(sysX, sysY);
+
+        if (p.inGameUni >= price) {
+            p.inGameUni -= price;
+            unlockedSystems.push(sysKey);
+            
+            console.log(`🌍 System [${sysX}, ${sysY}] Unlocked by ${p.wallet || p.id} for ${price.toFixed(2)} UNI!`);
+            
+            // Tell EVERYONE on the server that a new area is open!
+            io.emit('systemUnlocked', { sysKey, unlockedSystems, heroId: p.id, newBalance: p.inGameUni });
+            
+            // (Optional) Here is where you would trigger logic to send the UNI to the bankUNI contract!
+        }
+    });
+
+    socket.on('requestCellar', (cellarId) => {
+        if (!cellarDb[cellarId]) {
+            cellarDb[cellarId] = [];
+        }
+        socket.emit('cellarData', { cellarId, items: cellarDb[cellarId] });
+    });
+
+    socket.on('updateCellar', (data) => {
+        cellarDb[data.cellarId] = data.items;
+        fs.writeFileSync('cellars.json', JSON.stringify(cellarDb, null, 2));
+        socket.broadcast.emit('cellarUpdated', data);
+    });
+
+    // ==========================================
+    // 🆕 HAY STORAGE SYSTEM
+    // ==========================================
+    socket.on('requestHayStorage', (hayStorageId) => {
+        if (!hayDb[hayStorageId]) {
+            hayDb[hayStorageId] = [];
+        }
+        socket.emit('hayStorageData', { hayStorageId, items: hayDb[hayStorageId] });
+    });
+
+    socket.on('updateHayStorage', (data) => {
+        hayDb[data.hayStorageId] = data.items;
+        fs.writeFileSync('hay.json', JSON.stringify(hayDb, null, 2));
+        socket.broadcast.emit('hayStorageUpdated', data);
+    });
+
+// ... inside io.on('connection', (socket) => { ...
 
    socket.on('identifyWallet', (data) => {
     const address = (typeof data === 'object') ? data.address : data;
@@ -218,24 +792,18 @@ socket.on('syncTile', (data) => {
 
     if (existingSocketId) {
         console.log(`🔗 ${address} is re-possessing their stationary body (${existingSocketId}).`);
-        
-        // --- 👻 THE GHOST FIX ---
-        // Tell all clients to remove the old stationary sprite immediately
         io.emit('playerLeft', existingSocketId);
 
-        // Transfer the data from the sleeper body to the NEW active socket
         players[socket.id] = {
             ...players[existingSocketId],
-            id: socket.id,       // Assign new socket ID
-            isOffline: false     // Mark as active
+            id: socket.id,
+            isOffline: false
         };
 
-        // Remove the old "Ghost" reference from the server memory
         if (existingSocketId !== socket.id) {
             delete players[existingSocketId];
         }
 
-        // Tell the player's client to snap to this position and restore stats
         socket.emit('restoreHero', players[socket.id]);
     } 
     // 2. If no body in world, check the database (Safe Logout recovery)
@@ -246,15 +814,31 @@ socket.on('syncTile', (data) => {
     } 
     // 3. Brand new player (First time ever)
     else {
-        console.log(`🆕 New player: ${address}`);
-        players[socket.id].wallet = address;
-        players[socket.id].xp = 1000;
-        
-        // Create initial save record
-        userDb[address] = { ...players[socket.id], id: undefined, target: null };
-        fs.writeFileSync('persistence.json', JSON.stringify(userDb, null, 2));
+        console.log(`🆕 New player detected: ${address}. Awaiting Character Creation.`);
+        // 🛑 DO NOT drop them into the world yet. Trigger the UI menu.
+        socket.emit('needsCharacterCreation');
     }
 });
+
+// 🆕 ADD THIS NEW LISTENER:
+socket.on('createCharacter', (data) => {
+    const { wallet, charClass, skills } = data;
+    console.log(`✨ Creating character for ${wallet}: ${charClass}`);
+    
+    players[socket.id].wallet = wallet;
+    players[socket.id].charClass = charClass;
+    players[socket.id].skills = skills;
+    players[socket.id].xp = 1000;
+    
+    // Create initial save record
+    userDb[wallet] = { ...players[socket.id], id: undefined, target: null };
+    fs.writeFileSync('persistence.json', JSON.stringify(userDb, null, 2));
+
+    // Now they are ready to enter the world!
+    socket.emit('restoreHero', players[socket.id]);
+});
+
+// ... keep the rest unchanged
 
 socket.on('disconnect', () => {
     const p = players[socket.id];
@@ -284,11 +868,124 @@ socket.on('disconnect', () => {
 
 });
 
-// 4. THE HEARTBEAT (60fps Sync)
-// We broadcast the positions of all players to every client
+function saveStores() {
+    fs.writeFileSync('stores.json', JSON.stringify(storeDb, null, 2));
+}
+
+// --- Replace your setInterval at the bottom of server.js ---
+
+// ==========================================
+// THE HEARTBEAT (50ms Physics Loop)
+// ==========================================
 setInterval(() => {
-    io.emit('position', { playerbase: players });
-}, 1000 / 60);
+    const delta = 0.05; // 50ms in seconds
+
+    // 1. UPDATE DEBUFF TIMERS (Resonance)
+    for (let vid in players) {
+        const p = players[vid];
+        if (p.resonanceTimer > 0) {
+            p.resonanceTimer -= delta;
+            if (p.resonanceTimer <= 0) {
+                io.emit('playerCC', { victimId: vid, ccType: 'resonanceFade' });
+            }
+        }
+    }
+
+    // 2. UPDATE FLYING PROJECTILES
+    for (let i = projectiles.length - 1; i >= 0; i--) {
+        let p = projectiles[i];
+
+        // 🎯 HOMING LOGIC
+        if (p.targetId) {
+            const target = players[p.targetId];
+            if (target && target.hp > 0) {
+                // Adjust dx/dy every frame to perfectly track the target
+                const tx = (target.x + 8) - p.x;
+                const ty = (target.y + 8) - p.y;
+                const dist = Math.sqrt(tx*tx + ty*ty);
+                if (dist > 0) { p.dx = tx/dist; p.dy = ty/dist; }
+            } else {
+                p.life = 0; // Target died/logged off, fizzle the spell
+            }
+        }
+
+        p.x += p.dx * p.speed * delta;
+        p.y += p.dy * p.speed * delta;
+        p.life -= delta;
+
+        let hit = false;
+
+        // Check collision (If Homing, ONLY collide with the target!)
+        for (let vid in players) {
+            if (vid === p.ownerId) continue; 
+            if (p.targetId && vid !== p.targetId) continue; // 👈 Bypass other players if homing
+            
+            const victim = players[vid];
+            if (victim.hp <= 0) continue; 
+
+            const dx = (victim.x + 8) - p.x;
+            const dy = (victim.y + 8) - p.y;
+            const distSq = (dx * dx) + (dy * dy);
+            const hitRadius = p.radius || 8 + 8;
+
+            if (distSq <= hitRadius * hitRadius) {
+                hit = true;
+                const attacker = players[p.ownerId];
+                if (attacker) {
+                    
+                    // --- p12: ZEPHYR IMPACT ---
+                    if (p.type === 'zephyr') {
+                        // 🌟 THE SYNERGY CHECK!
+                        if (victim.resonanceTimer > 0) {
+                            console.log(`💨 Zephyr consumed Resonance on ${vid}! Refunding Cooldown.`);
+                            // Send a private message back to the caster to refund 80% of the 12s cooldown (9.6s)
+                            io.to(p.ownerId).emit('refundCooldown', { index: p.skillIndex, amount: 9.6 });
+                            
+                            // If they DON'T have fever, we must manually clear the resonance
+                            // (If they DO have fever, applyMagicSpellDamage will handle consuming it and adding the execute damage!)
+                            if (!attacker.passives || !attacker.passives.hasFever) {
+                                victim.resonanceTimer = 0;
+                                io.emit('playerCC', { victimId: vid, ccType: 'resonanceFade' });
+                            }
+                        }
+                        
+                        applyMagicSpellDamage(attacker, victim, p.damage);
+                    }
+
+                    // --- p13: VANGUARD IMPACT ---
+                    if (p.type === 'vanguard') {
+                        
+                        // 1. Apply RAPTURE CC (Mask: 1 + 2 + 8 + 16 = 27)
+                        // MOVE(1) | ATTACK(2) | NON_MOVE(8) | CLEANSE(16)
+                        const RAPTURE_MASK = 1 | 2 | 8 | 16; 
+                        
+                        io.emit('playerCC', { 
+                            victimId: vid, 
+                            ccMask: RAPTURE_MASK, 
+                            duration: 2.0 
+                        });
+
+                        // 2. Apply Unified Magic Damage
+                        applyMagicSpellDamage(attacker, victim, p.damage);
+                    }
+                    // --- p9: FLARE IMPACT ---
+                    else if (p.type === 'flare') {
+                        applyMagicSpellDamage(attacker, victim, p.damage);
+                    }
+                }
+                break; 
+            }
+        }
+
+        if (hit || p.life <= 0) projectiles.splice(i, 1); 
+    }
+
+    // 3. BROADCAST POSITIONS
+    io.emit('position', { 
+        playerbase: players,
+        projectiles: projectiles
+    });
+}, 50);
 
 // 5. START SERVER
 const PORT = process.env.PORT || 10000;

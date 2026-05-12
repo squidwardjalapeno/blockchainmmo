@@ -1,0 +1,38 @@
+{
+  "0x49e5bc9642e507ea3075114492d810bd74ecfb17": {
+    "x": 40175.30076000015,
+    "y": 89900.73336000154,
+    "hp": 100,
+    "maxHp": 100,
+    "shield": 0,
+    "hasDivineBubble": false,
+    "isInvincible": false,
+    "passives": {
+      "hasFever": false
+    },
+    "resonanceTimer": 0,
+    "energy": 100,
+    "maxEnergy": 100,
+    "ad": 10,
+    "armor": 0,
+    "magic": 10,
+    "mr": 0,
+    "dir": "East",
+    "inGameUni": 0,
+    "animFrame": 0,
+    "isMoving": false,
+    "isWindingUp": false,
+    "xp": 1000,
+    "speed": 200,
+    "currentTileID": 0,
+    "wallet": "0x49e5bc9642e507ea3075114492d810bd74ecfb17",
+    "charClass": "Paladin",
+    "skills": [
+      "p1",
+      "p4",
+      "p5",
+      "p6"
+    ],
+    "target": null
+  }
+}

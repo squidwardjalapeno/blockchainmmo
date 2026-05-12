@@ -1,56 +1,301 @@
+/* =========================================
+   1. FONTS & COLOR PALETTE
+   ========================================= */
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+:root {
+    --bg-dark: #2d232e;      /* Deep Plum / Dark Brown */
+    --bg-panel: #eaddcf;     /* Warm Cream */
+    --banana: #f4b41b;       /* Vibrant Banana */
+    --banana-dark: #c48c10;  
+    --text-dark: #2d232e;    
+    --text-light: #f4f4f4;   
+    --highlight: #8a9a5b;    /* Retro green */
+
+    /* UI Mapping Variables */
+    --panel: var(--bg-panel);
+    --outline: var(--bg-dark);
+    --text: var(--text-dark);
+    --white: #ffffff;
+    --accent: var(--banana);
+    --safe: var(--highlight);
+}
+
+/* =========================================
+   2. GLOBAL RESETS
+   ========================================= */
+* {
+    border-radius: 0 !important; /* The "Nuclear" Retro Reset */
+    box-sizing: border-box;
+}
+
+body, button, input, select {
+    font-family: 'Press Start 2P', cursive;
+    font-size: 14px; 
+    image-rendering: pixelated; 
+    margin: 0; 
+    padding: 0;
+}
+
+body { 
+    overflow: hidden; 
+    touch-action: none; 
+    background: #000; 
+}
+
+.hidden { 
+    display: none !important; 
+}
+
+/* =========================================
+   3. GAME CANVASES & WRAPPER
+   ========================================= */
 #wrapper {
     position: relative;
-    /* Use 100vw/vh for a true mobile full-screen feel */
     width: 100vw; 
     height: 100vh;
-    background-color: #000; /* Black background for any gaps */
+    background-color: #000;
     overflow: hidden;
 }
 
 canvas {
     position: absolute;
+    top: 0; left: 0;
+    width: 100vw;
+    height: 100vh;
+    image-rendering: pixelated;
+}
+
+#myCanvas { z-index: 1; }
+#myCanvas2 { z-index: 2; pointer-events: none; } /* Hero layer needs no pointer events */
+#myCanvas3 { z-index: 3; pointer-events: auto; } /* UI canvas needs pointer events */
+
+
+/* =========================================
+   4. HEADS UP DISPLAY (HUD)
+   ========================================= */
+#hud {
+    position: fixed;
     top: 0;
     left: 0;
-    /* CRITICAL: Keep pixels sharp (The "Lo-Fi" look) */
-    image-rendering: -moz-pixelated;
-    image-rendering: pixelated;
-    image-rendering: crisp-edges;
+    width: 100%;
+    z-index: 100;
+    pointer-events: none; /* Let clicks pass through to the game canvas */
+    padding: 15px;
 }
 
-/* LAYER 1: The Ground (Bottom) */
-#myCanvas {
-    z-index: 1;
+
+/* =========================================
+   5. RETRO UI COMPONENTS
+   ========================================= */
+.pixel-panel, .pixel-box {
+    background-color: var(--bg-panel);
+    color: var(--text-dark);
+    border: 4px solid var(--bg-dark);
+    box-shadow: inset 4px 4px 0px #ffffff, inset -4px -4px 0px #c2b4a3;
+    padding: 24px;
+    line-height: 1.5;
+    opacity: 1 !important;
 }
 
-/* LAYER 2: Entities (Hero, Animals, Projectiles) */
-#myCanvas2 {
-    z-index: 2;
-    /* Allow touches to pass through to the UI layer if needed */
-    pointer-events: none; 
+.pixel-btn {
+    pointer-events: auto; /* Required so buttons inside #hud can be clicked */
+    background-color: var(--banana);
+    color: var(--bg-dark);
+    border: 4px solid var(--bg-dark);
+    box-shadow: inset -4px -4px 0px rgba(0,0,0,0.2);
+    padding: 12px 20px;
+    cursor: pointer;
+    text-transform: uppercase;
 }
 
-/* LAYER 3: UI & INPUT (Top) */
-#myCanvas3 {
-    z-index: 3;
-    /* This layer MUST be the one your initInput(canvas3) listens to! */
-    pointer-events: auto; 
+.pixel-btn:hover:not(:disabled) { background-color: #ffcc4d; }
+.pixel-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: none; }
+
+.pixel-btn.safe { background: var(--highlight); color: white; }
+.pixel-btn.cancel, .pixel-btn-cancel { background: #d95757; color: white; }
+
+.pixel-input {
+    background: white;
+    border: 4px solid var(--bg-dark);
+    padding: 10px;
+    font-family: inherit;
 }
 
-/* BUTTONS (Overlaying everything) */
-.connect-btn {
+
+/* =========================================
+   6. MODALS & POPUP OVERLAYS
+   ========================================= */
+.menu-overlay, .menu-modal, #menu-overlay {
     position: fixed;
-    z-index: 10; 
-    padding: 10px 20px;
-    background: rgba(255, 255, 255, 0.2);
-    color: white;
-    border: 1px solid white;
-    border-radius: 5px;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+    pointer-events: auto; /* Catch clicks so they don't hit the game */
 }
 
-body {
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    /* Prevent accidental "Pull-to-Refresh" on mobile */
-    touch-action: none; 
+/* Base modal widths */
+#menu-container {
+    display: flex;
+    flex-direction: column;
+    width: 600px;
+    max-width: 95vw;
+    max-height: 90vh;
+}
+
+/* Tabs */
+#menu-tabs {
+    display: flex;
+    gap: 4px;
+}
+
+#menu-tabs button {
+    flex: 1;
+    padding: 12px;
+    background: var(--bg-dark);
+    color: var(--text-light);
+    border: 4px solid var(--bg-dark);
+    border-bottom: none;
+    cursor: pointer;
+    font-size: 10px;
+}
+
+#menu-tabs button.active {
+    background: var(--bg-panel);
+    color: var(--text-dark);
+}
+
+
+/* =========================================
+   7. INVENTORY GRIDS & DRAG/DROP
+   ========================================= */
+.inv-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(75px, 1fr));
+    gap: 10px;
+    background: rgba(255, 255, 255, 0.4);
+    border: 4px solid var(--bg-dark);
+    padding: 10px;
+    min-height: 140px; 
+    align-content: start;
+    overflow-y: auto;
+    max-height: 300px;
+}
+
+.inv-item {
+    background: #ffffff;
+    border: 4px solid var(--bg-dark);
+    box-shadow: 2px 2px 0px rgba(0,0,0,0.2);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 5px;
+    height: 75px;
+    cursor: grab;
+    text-align: center;
+    user-select: none;
+}
+
+.inv-item:active {
+    cursor: grabbing;
+}
+
+.inv-item strong, .inv-item span {
+    font-size: 8px;
+    line-height: 1.2;
+    margin-top: 4px;
+    word-wrap: break-word;
+    max-width: 100%;
+}
+
+.drag-over {
+    background: rgba(138, 154, 91, 0.5) !important;
+    border: 4px dashed var(--highlight) !important;
+}
+
+
+/* =========================================
+   8. DUAL-PANE MENUS (Chests, Cellars)
+   ========================================= */
+.chest-modal {
+    width: 600px;
+    max-width: 90vw;
+}
+
+.chest-layout {
+    display: flex;
+    flex-direction: row;
+    gap: 20px;
+    width: 100%;
+}
+
+.chest-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.chest-pane h3 {
+    text-align: center;
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 12px;
+    color: var(--text-dark);
+}
+
+.chest-controls {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+    width: 100%;
+}
+
+/* ... keep your existing css ... */
+
+/* =========================================
+   9. CHARACTER CREATION UI
+   ========================================= */
+.skill-item {
+    background: #ffffff;
+    border: 4px solid var(--bg-dark);
+    box-shadow: 2px 2px 0px rgba(0,0,0,0.2);
+    padding: 10px;
+    text-align: center;
+    cursor: pointer;
+    user-select: none;
+    transition: transform 0.1s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 80px;
+}
+.skill-item:active {
+    transform: scale(0.95);
+}
+.skill-item:hover {
+    background: #f0f0f0;
+}
+.skill-item.selected {
+    background: rgba(138, 154, 91, 0.5); /* Highlight tint */
+    border: 4px dashed var(--highlight);
+}
+.skill-slot {
+    width: 60px;
+    height: 60px;
+    border: 4px solid var(--bg-dark);
+    background: rgba(255, 255, 255, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 24px;
+    box-shadow: inset 4px 4px 0px rgba(0,0,0,0.1);
 }
