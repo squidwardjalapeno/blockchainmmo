@@ -27,7 +27,7 @@ export const CONFIG = {
     HERO_MAGIC: 10,
     HERO_ARMOR: 0,
     HERO_MAGIC_RESISTANCE: 0,
-    HERO_SPEED: 100,  
+    HERO_SPEED: 300,  
     
     
     // --- Visuals ---

@@ -81,6 +81,18 @@ export function initUI() {
 
     document.getElementById('close-menu').addEventListener('click', toggleMenu);
 
+    // In src/uiManager.js -> inside initUI()
+    
+    // --- HELP MENU ---
+    const helpBtn = document.getElementById('hud-help-btn');
+    if (helpBtn) {
+        helpBtn.onclick = () => document.getElementById('help-menu').classList.remove('hidden');
+    }
+    const closeHelpBtn = document.getElementById('close-help-btn');
+    if (closeHelpBtn) {
+        closeHelpBtn.onclick = () => document.getElementById('help-menu').classList.add('hidden');
+    }
+
     // --- CHEST LISTENERS ---
     document.getElementById('close-chest-btn').addEventListener('click', () => {
         document.getElementById('chest-menu').classList.add('hidden');
@@ -291,36 +303,55 @@ export function initUI() {
         document.getElementById('withdraw-menu').classList.add('hidden');
     };
 
-    // --- 🦊 MAIN MENU METAMASK CONNECTION ---
+    // --- 🦊 MAIN MENU LOGIN SYSTEMS ---
     const mainConnectBtn = document.getElementById('main-connect-btn');
+    const loginBtn = document.getElementById('login-btn');
+    const registerBtn = document.getElementById('register-btn');
+    const guestBtn = document.getElementById('guest-btn');
+
+    // 1. Web3 Wallet Login
     if (mainConnectBtn) {
         mainConnectBtn.onclick = async () => {
             mainConnectBtn.innerText = "CONNECTING...";
             let address = await connectWallet();
-            
-            // 👇 GUEST MODE FALLBACK
-            if (!address) {
-                const playAsGuest = confirm("MetaMask not detected (or connection rejected).\n\nWould you like to play offline/as a Guest?");
-                if (playAsGuest) {
-                    // Generate a random ID for this session
-                    address = "Guest_" + Math.floor(Math.random() * 999999);
-                } else {
-                    mainConnectBtn.innerText = "CONNECT WALLET TO PLAY";
-                    return; // Stop here if they cancel
-                }
-            }
-            
-            if (address) {
+            if (address && socket) {
                 setPlayerWallet(address);
-                mainConnectBtn.innerText = "AUTHENTICATING...";
-                if (socket) {
-                    socket.emit('identifyWallet', address);
-                } else {
-                    // Fallback if server is completely offline (Dev Mode)
-                    document.getElementById('main-menu').classList.add('hidden');
-                    document.getElementById('hud').style.display = 'block';
-                }
+                socket.emit('identifyWallet', address);
+            } else {
+                mainConnectBtn.innerText = "CONNECT WALLET";
             }
+        };
+    }
+
+    // 2. Web2 Register/Login
+    const handleAuth = (type) => {
+        const user = document.getElementById('login-username').value;
+        const pass = document.getElementById('login-password').value;
+        if (!user || !pass) { alert("Please enter a username and password."); return; }
+        
+        if (socket) socket.emit(type, { username: user, password: pass });
+    };
+
+    if (loginBtn) loginBtn.onclick = () => handleAuth('loginUser');
+    if (registerBtn) registerBtn.onclick = () => handleAuth('registerUser');
+
+    if (socket) {
+        socket.on('authResponse', (res) => {
+            if (res.success) {
+                setPlayerWallet(res.wallet);
+                socket.emit('identifyWallet', res.wallet);
+            } else {
+                alert(res.message);
+            }
+        });
+    }
+
+    // 3. Online Guest Mode (Just generates a random ID and connects!)
+    if (guestBtn) {
+        guestBtn.onclick = () => {
+            const guestID = "Guest_" + Math.floor(Math.random() * 999999);
+            setPlayerWallet(guestID);
+            if (socket) socket.emit('identifyWallet', guestID);
         };
     }
 }
@@ -411,7 +442,7 @@ export function toggleMenu() {
 function getItemIcon(item) {
     if (item.seedType === "fish") return "🐟";
     if (item.seedType === "cooked_fish") return "🍱";
-    if (item.seedType === "grass_item") return "🌿";
+    if (item.seedType === "plant_matter") return "🌿"; // 👈 Changed from grass_item
     if (item.seedType === "grass_seed") return "🌱"; // 👈 NEW
     if (item.seedType === "rose_seed") return "🌹";       // 👈 NEW
     if (item.seedType === "violet_seed") return "🪻";     // 👈 NEW
@@ -445,26 +476,27 @@ function getItemIcon(item) {
 
 // --- Replace renderTabContent in src/uiManager.js ---
 
-function renderTabContent() {
+export function renderTabContent() {
     const container = document.getElementById('tab-content');
     container.innerHTML = ""; 
 
     switch (uiState.currentTab) {
         case 'inventory':
+            const heldItem = hero.equipment?.mainHand;
             container.innerHTML = `<h3 style="margin-top:0;">Backpack</h3><div class="inv-grid">` + 
                 hero.inventory.map((item, index) => {
-                    // 👇 Highlight the active slot!
-                    const isActive = hero.activeSlot === index;
+                    // Check if this item matches the one in our hand (by instance)
+                    const isActive = (heldItem === item);
                     const borderStyle = isActive ? 'border: 4px dashed var(--highlight); background: rgba(138, 154, 91, 0.2);' : '';
                     
                     return `
                     <div class="inv-item draggable-item" draggable="true" data-index="${index}" data-source="hero" 
-                         onclick="window.setActiveItem(${index})" style="${borderStyle}">
+                         onclick="window.equipItem(${index})" style="${borderStyle}">
                         <div class="item-icon" style="font-size: 20px; margin-bottom:5px;">${getItemIcon(item)}</div>
                         <span>${item.name} ${item.count > 1 ? `<br><span style="color:var(--banana-dark);">(x${item.count})</span>` : ''}</span>
                     </div>
                 `}).join('') + `</div>
-                <p style="font-size: 8px; text-align: center; margin-top: 10px; color: #555;">Click to hold. Drag outside menu to drop.</p>`;
+                <p style="font-size: 8px; text-align: center; margin-top: 10px; color: #555;">Click to hold in Main Hand.</p>`;
             
             // 👇 Add Drag listeners to the new items
             setTimeout(() => {
@@ -523,21 +555,20 @@ function renderTabContent() {
             container.innerHTML = mapHTML;
             break;
 
+        // Update the 'equipment' tab case in renderTabContent() to show the mainHand
         case 'equipment':
-            // 🆕 NEW GEAR TAB RENDERER
-            const wpn = hero.equipment.weapon;
+            const held = hero.equipment.mainHand;
             container.innerHTML = `
                 <h3 style="margin-top:0; text-align: center;">GEAR</h3>
                 <div style="display: flex; flex-direction: column; gap: 15px; align-items: center; margin-top: 20px;">
-                    
                     <div style="text-align: center;">
-                        <span style="font-size: 10px; color: #555;">WEAPON</span>
-                        <div class="inv-item" style="width: 80px; height: 80px; margin-top: 5px;" ${wpn ? `onclick="window.unequipWeapon()"` : ''}>
-                            <div style="font-size: 32px;">${wpn ? getItemIcon(wpn) : '🤚'}</div>
-                            <span style="font-size: 8px;">${wpn ? wpn.name : 'Empty (Fists)'}</span>
+                        <span style="font-size: 10px; color: #555;">MAIN HAND</span>
+                        <div class="inv-item" style="width: 80px; height: 80px; margin-top: 5px;" ${held ? `onclick="window.unequipMainHand()"` : ''}>
+                            <div style="font-size: 32px;">${held ? getItemIcon(held) : '🤚'}</div>
+                            <span style="font-size: 8px;">${held ? held.name : 'Empty (Fists)'}</span>
+                            ${held && held.count > 1 ? `<br><span style="color:var(--banana-dark); font-size:8px;">(x${held.count})</span>` : ''}
                         </div>
                     </div>
-                    
                 </div>
                 <p style="font-size: 8px; text-align: center; margin-top: 15px; color: #555;">Click an equipped item to unequip.</p>
             `;
@@ -1201,49 +1232,50 @@ export function updateHUD() {
     }
 }
 
-// --- Add to the very bottom of src/uiManager.js ---
-window.equipItem = (index) => {
-    const item = hero.inventory[index];
+
+// At the bottom of src/uiManager.js
+
+// src/uiManager.js
+
+window.equipItem = (invIndex) => {
+    // 🛠️ CRITICAL FIX: Explicitly ensure the equipment object exists on the hero
+    if (!hero.equipment) hero.equipment = { mainHand: null };
     
-    if (item.isWeapon) {
-        // If we already have a weapon, put it back in the inventory first
-        if (hero.equipment.weapon) {
-            hero.inventory.push(hero.equipment.weapon);
-        }
-        
-        // Remove clicked item from inventory and put in equip slot
-        hero.equipment.weapon = hero.inventory.splice(index, 1)[0];
-        
-        recalculateStats();
-        renderTabContent(); // Refresh UI
+    // Safety check: is there actually an item in this backpack slot?
+    const itemToEquip = hero.inventory[invIndex];
+    if (!itemToEquip) return;
+
+    console.log(`Holding: ${itemToEquip.name}`);
+
+    if (hero.equipment.mainHand) {
+        // 🔄 SWAP: Hand -> Backpack, Backpack -> Hand
+        const currentInHand = hero.equipment.mainHand;
+        hero.equipment.mainHand = itemToEquip;
+        hero.inventory[invIndex] = currentInHand;
     } else {
-        // In the future, we can add logic here for consuming potions or equipping armor!
-        console.log("This item cannot be equipped.");
+        // ✋ EQUIP: Move from Backpack to empty Hand
+        hero.equipment.mainHand = itemToEquip;
+        hero.inventory.splice(invIndex, 1);
     }
+    
+    // Immediately update stats and refresh the UI
+    import('./interactionManager.js').then(m => {
+        m.recalculateStats();
+        renderTabContent(); // Refresh to show the border/new counts
+    });
 };
 
-window.unequipWeapon = () => {
-    if (hero.equipment.weapon) {
+window.unequipMainHand = () => {
+    if (hero.equipment.mainHand) {
         if (hero.inventory.length >= hero.maxSlots) {
-            alert("Inventory is full!");
+            alert("Backpack is full!");
             return;
         }
-        hero.inventory.push(hero.equipment.weapon);
-        hero.equipment.weapon = null;
+        hero.inventory.push(hero.equipment.mainHand);
+        hero.equipment.mainHand = null;
         
-        recalculateStats();
-        renderTabContent(); // Refresh UI
-    }
-};
-
-// 1. Set Active Item
-window.setActiveItem = (index) => {
-    const item = hero.inventory[index];
-    if (item.isWeapon) {
-        window.equipItem(index); // Weapons still go to gear slot
-    } else {
-        hero.activeSlot = index; // Seeds/Food become the "held" item
-        renderTabContent();
+        import('./interactionManager.js').then(m => m.recalculateStats());
+        renderTabContent(); 
     }
 };
 
@@ -1295,36 +1327,43 @@ document.getElementById('cancel-split-btn').onclick = () => {
     document.getElementById('split-stack-menu').classList.add('hidden');
 };
 
+// In src/uiManager.js
+
 function dropItemToWorld(index, amount) {
     const item = hero.inventory[index];
-    
-    // We drop them 1 tile in front of the hero
-    let dx = 0, dy = 0;
-    if (hero.dir.includes('North')) dy = -1;
-    if (hero.dir.includes('South')) dy = 1;
-    if (hero.dir.includes('West')) dx = -1;
-    if (hero.dir.includes('East')) dx = 1;
-    
-    const tx = Math.floor((hero.x + 8) / 16) + dx;
-    const ty = Math.floor((hero.y + 15) / 16) + dy;
+    const originTX = Math.floor((hero.x + 8) / 16);
+    const originTY = Math.floor((hero.y + 15) / 16);
 
-    // Send to bacteria system (we'll spread them slightly if dropping a lot)
+    let droppedCount = 0;
+
     import('./bacteria.js').then(m => {
-        for(let i = 0; i < amount; i++) {
-            // Slight random scatter so they don't perfectly stack visually
-            const scatterX = tx + (Math.random() * 0.5 - 0.25);
-            const scatterY = ty + (Math.random() * 0.5 - 0.25);
-            m.seedBacteria(scatterX, scatterY, item.seedType, item.health, item.virulence);
+        // Scatter around the player in a 3x3 grid
+        for (let dx = -1; dx <= 1 && droppedCount < amount; dx++) {
+            for (let dy = -1; dy <= 1 && droppedCount < amount; dy++) {
+                const targetTX = originTX + dx;
+                const targetTY = originTY + dy;
+                
+                // Only drop if there is no bacteria already here!
+                const bac = m.getBacteriaData(targetTX, targetTY);
+                if (bac && bac.data[bac.idx] === 0) {
+                    m.seedBacteria(targetTX, targetTY, item.seedType, item.health, item.virulence);
+                    droppedCount++;
+                }
+            }
         }
-    });
 
-    item.count -= amount;
-    if (item.count <= 0) {
-        hero.inventory.splice(index, 1);
-        if (hero.activeSlot === index) hero.activeSlot = null;
-    }
-    
-    renderTabContent();
+        if (droppedCount < amount) {
+            console.log(`⚠️ Not enough empty space to drop the full stack! Dropped ${droppedCount}.`);
+        }
+
+        item.count -= droppedCount;
+        if (item.count <= 0) {
+            hero.inventory.splice(index, 1);
+            if (hero.activeSlot === index) hero.activeSlot = null;
+        }
+        
+        renderTabContent();
+    });
 }
 
 window.checkSystemUnlock = (sysX, sysY) => {

@@ -97,10 +97,12 @@ function isAreaClear(gx, gy, w, h, worldMatrix, roomMatrix) {
             if (getRoomID(tx, ty, roomMatrix) !== 0) return false;
             
             const tid = getTileID(tx, ty, worldMatrix);
-            if (tid === 17) return false;
+            if (tid === 17) return false; // Block Water
             
-            // 👇 Prevent buildings from overwriting Tile 45 (Roads)
-            if (isInsideFootprint && tid === 45) return false; 
+            // 👇 THE FIX: Recognize all new road tiles (200-208), plus the old defaults
+            const isRoad = (tid >= 200 && tid <= 208) || tid === 45 || tid === 7 || tid === 6 || tid === 8;
+            
+            if (isInsideFootprint && isRoad) return false; 
         }
     }
     return true;
@@ -566,7 +568,11 @@ export function drawVillage(gvx, gvy, worldMatrix, roomMatrix, fertilityMatrix, 
     let roadTiles = [];
     for (let x = gvx - 50; x < gvx + 50; x++) {
         for (let y = gvy - 50; y < gvy + 50; y++) {
-            if (getTileID(x, y, worldMatrix) === 45) roadTiles.push({x, y});
+            const tid = getTileID(x, y, worldMatrix);
+            // 👇 THE FIX: Look for our new road tiles so houses snap nicely!
+            if ((tid >= 200 && tid <= 208) || tid === 45) {
+                roadTiles.push({x, y});
+            }
         }
     }
     const hasRoad = roadTiles.length > 0;
@@ -1346,43 +1352,34 @@ function drawSimpleRoad(gx, gy, dx, dy, length, worldMatrix, roomMatrix, fertili
     }
 }
 
-function drawInterCellRoad(startX, startY, endX, endY, worldMatrix, roomMatrix, fertilityMatrix, worldMap, tileID = 6, thickness = 2) {
+export function drawInterCellRoad(startX, startY, endX, endY, worldMatrix, roomMatrix, fertilityMatrix, worldMap, tileID = 6, thickness = 2) {
     let curX = startX;
     let curY = startY;
     let steps = 0;
-    const maxSteps = 20000; // Increased for single-pixel stepping
+    const maxSteps = 20000;
 
     const isCastleRoad = (tileID === 8 || thickness >= 6);
 
-    // 🛡️ THE FIX: Exact target matching
     while ((curX !== endX || curY !== endY) && steps < maxSteps) {
         steps++;
 
-        // 1. MANHATTAN STEPPING (The "Diagonal Fix")
-        // We only move ONE axis at a time. This ensures the brush 
-        // footprint is always exactly 'thickness' wide.
-        if (Math.abs(curX - endX) > Math.abs(curY - endY)) {
-            if (curX < endX) curX++;
-            else curX--;
+        // 1. MANHATTAN STEPPING (Determine which axis we are moving on this step)
+        const isHorizontalStep = Math.abs(curX - endX) > Math.abs(curY - endY);
+        
+        if (isHorizontalStep) {
+            if (curX < endX) curX++; else curX--;
         } else {
-            if (curY < endY) curY++;
-            else curY--;
+            if (curY < endY) curY++; else curY--;
         }
 
-        // 2. 🛑 REMOVED Math.random() WOBBLE
-        // For the 2-tile, 4-tile, and 6-tile roads to overlap perfectly,
-        // they MUST follow the exact same deterministic path.
-        // (Wobble can be re-added later using seededRandom(curX + curY))
-
-        // 3. DYNAMIC THICKNESS & BRIDGE LOGIC
         const offset = Math.floor(thickness / 2);
 
+        // 2. THE SIMPLE BRUSH
         for (let ox = -offset; ox < (thickness - offset); ox++) {
             for (let oy = -offset; oy < (thickness - offset); oy++) {
                 const targetX = curX + ox;
                 const targetY = curY + oy;
 
-                // --- 🌉 THE BRIDGE CHECK ---
                 const cx = Math.floor(targetX / 100);
                 const cy = Math.floor(targetY / 100);
                 const lx = ((targetX % 100) + 100) % 100;
@@ -1392,10 +1389,17 @@ function drawInterCellRoad(startX, startY, endX, endY, worldMatrix, roomMatrix, 
                 const terrainHeight = worldMap[globalIdx];
 
                 let finalTile = tileID;
+
+                // --- 🌉 BRIDGE CHECK ---
                 if (terrainHeight < CONFIG.LAND_THRESHOLD) {
                     finalTile = isCastleRoad ? 13 : 12; 
+                } 
+                // --- 🛣️ SIMPLIFIED ROAD LOGIC ---
+                else if (tileID === 45 || tileID === 7) {
+                    finalTile = 208; // Only use roadCenter for now
                 }
 
+                // Actually place the tile
                 setGlobalTile(
                     targetX, targetY, finalTile, 0, 
                     worldMatrix, roomMatrix, fertilityMatrix, worldMap
@@ -1404,7 +1408,6 @@ function drawInterCellRoad(startX, startY, endX, endY, worldMatrix, roomMatrix, 
         }
     }
 }
-
 
 
 

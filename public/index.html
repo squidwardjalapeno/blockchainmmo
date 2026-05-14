@@ -19,7 +19,22 @@
                 <h1 style="color: var(--banana); font-size: 2.5em; margin-bottom: 10px; text-shadow: 4px 4px 0px var(--bg-dark);">Seeds & Bones</h1>
                 <p style="color: var(--text-dark); margin-bottom: 30px; font-size: 10px;">A RETRO SURVIVAL MOBA</p>
                 
-                <button id="main-connect-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 15px;">CONNECT WALLET TO PLAY</button>
+                <!-- Web3 Login -->
+                <button id="main-connect-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 15px;">CONNECT WALLET</button>
+                
+                <div style="font-size: 8px; color: #555; margin-bottom: 15px;">--- OR ---</div>
+
+                <!-- Web2 Login / Register -->
+                <input type="text" id="login-username" class="pixel-input" placeholder="Username" style="width: 100%; margin-bottom: 10px; text-align: center;">
+                <input type="password" id="login-password" class="pixel-input" placeholder="Password" style="width: 100%; margin-bottom: 15px; text-align: center;">
+                
+                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                    <button id="login-btn" class="pixel-btn" style="flex: 1;">LOGIN</button>
+                    <button id="register-btn" class="pixel-btn" style="flex: 1;">REGISTER</button>
+                </div>
+
+                <!-- Online Guest Fallback -->
+                <button id="guest-btn" class="pixel-btn cancel" style="width: 100%; font-size: 8px;">PLAY AS GUEST (ONLINE)</button>
             </div>
         </div>
 
@@ -68,6 +83,7 @@
                     <span id="player-count" style="color: var(--highlight); font-size: 14px;">PLAYERS: 1</span>
                 </div>
                 <button id="hud-withdraw-btn" class="pixel-btn" style="padding: 8px 12px; font-size: 8px;">WITHDRAW</button>
+                <button id="hud-help-btn" class="pixel-btn safe" style="padding: 8px 12px; font-size: 8px;">?</button>
             </div>
             
             <div id="debug-log" style="position: absolute; top: 80px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.7); padding: 8px 12px; border: 4px solid var(--bg-dark); color: var(--safe); font-size: 10px; text-align: center; pointer-events: none; text-shadow: 2px 2px 0 var(--bg-dark); max-width: 80%; word-wrap: break-word; z-index: 1000;">
@@ -307,6 +323,27 @@
                     <button id="confirm-split-btn" class="pixel-btn safe" style="flex: 1;">DROP</button>
                     <button id="cancel-split-btn" class="pixel-btn cancel" style="flex: 1;">CANCEL</button>
                 </div>
+            </div>
+        </div>
+
+        <!-- HELP MENU -->
+        <div id="help-menu" class="hidden menu-modal" style="z-index: 4000;">
+            <div class="pixel-panel" style="width: 350px; text-align: center;">
+                <h2 style="margin-top:0; color: var(--banana-dark);">HOW TO PLAY</h2>
+                <div style="font-size: 10px; text-align: left; line-height: 1.8; margin-bottom: 20px;">
+                    <strong>PC CONTROLS:</strong><br>
+                    <span style="color:#555;">WASD / Arrows</span> - Move<br>
+                    <span style="color:#555;">E / Space</span> - Pick up / Interact<br>
+                    <span style="color:#555;">G</span> - Drop Item<br>
+                    <span style="color:#555;">V</span> - Plant Seed<br>
+                    <span style="color:#555;">I / Tab</span> - Open Inventory<br>
+                    <span style="color:#555;">Click</span> - Use Main Hand / Attack<br>
+                    <span style="color:#555;">1,2,3,4</span> - Use Core Skills<br>
+                    <br>
+                    <strong>OBJECTIVE:</strong><br>
+                    Farm crops, raise chickens, and fish to survive. Sacrifice your items at Temple Altars to earn UNI. Beware of other players!
+                </div>
+                <button id="close-help-btn" class="pixel-btn safe" style="width: 100%;">GOT IT!</button>
             </div>
         </div>
 

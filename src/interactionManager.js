@@ -3,8 +3,8 @@ import { hero, getLevelInfo } from './entities.js';
 import { getTileData, checkCollision } from './physics.js';
 import { ITEM_TYPES, createItem } from './items.js';
 // Near the top of src/interactionManager.js
-import { updatePlants, createPlant, plants } from './plants.js';
-import { getBacteriaData, seedBacteria } from './bacteria.js';
+import { updatePlants, createPlant, plants, PLANT_DEFS } from './plants.js';
+import { getBacteriaData, seedBacteria, BACTERIA_TYPES } from './bacteria.js';
 import { inputState } from './input.js';
 import { socket, playerWallet, remotePlayers } from './multiplayer.js';
 
@@ -284,27 +284,45 @@ if (target && (target.tileID === 49 || target.tileID === 12) && target.roomID !=
         if (picked) inputState.interact = false;
     }
 
-    // --- 6. DROP ITEM / PLANT (G key) ---
+    // In src/interactionManager.js -> handleInteractions()
+
+    // Inside handleInteractions:
+    // --- 6. DROP ITEM (G Key) ---
     if (inputState.drop) {
         inputState.drop = false;
-        if (hero.activeSlot === undefined || hero.activeSlot === null || !hero.inventory[hero.activeSlot]) return;
+        if (hero.equipment.mainHand) {
+            const item = hero.equipment.mainHand;
+            
+            // Drop exactly 1 tile in front of us
+            seedBacteria(tx, ty, item.seedType, item.health, item.virulence);
 
-        const item = hero.inventory[hero.activeSlot];
+            item.count--;
+            if (item.count <= 0) hero.equipment.mainHand = null;
+        }
+    }
 
-        if (item.seedType && (item.seedType.includes("_seed") || item.seedType === "potato_item")) {
-            const cx = Math.floor(tx / 100); const cy = Math.floor(ty / 100);
-            const lx = ((tx % 100) + 100) % 100; const ly = ((ty % 100) + 100) % 100;
-            const tileID = worldMatrix[cx]?.[cy]?.[(ly * 100) + lx];
-            const roomID = roomMatrix[cx]?.[cy]?.[(ly * 100) + lx] || 0;
+    // --- 7. PLANT SEED (V Key) ---
+    if (inputState.keyV) {
+        inputState.keyV = false;
+        if (hero.equipment.mainHand) {
+            const item = hero.equipment.mainHand;
 
-            if (tileID === 63 && (roomID === 0 || roomID === 9999) && !plants.has(`${tx}_${ty}`)) {
-                item.count--;
-                if (item.count <= 0) {
-                    hero.inventory.splice(hero.activeSlot, 1);
-                    hero.activeSlot = null;
+            if (item.seedType && (item.seedType.includes("_seed") || item.seedType === "potato_item")) {
+                const cx = Math.floor(tx / 100); const cy = Math.floor(ty / 100);
+                const lx = ((tx % 100) + 100) % 100; const ly = ((ty % 100) + 100) % 100;
+                const tileID = worldMatrix[cx]?.[cy]?.[(ly * 100) + lx];
+                const roomID = roomMatrix[cx]?.[cy]?.[(ly * 100) + lx] || 0;
+
+                if (tileID === 63 && (roomID === 0 || roomID === 9999) && !plants.has(`${tx}_${ty}`)) {
+                    const plantType = item.seedType.replace("_seed", "").replace("_item", "");
+                    createPlant(tx, ty, fertilityMatrix, 0, plantType);
+
+                    item.count--;
+                    if (item.count <= 0) hero.equipment.mainHand = null;
+                    console.log(`🌱 Planted ${plantType}!`);
                 }
-                const plantType = item.seedType.replace("_seed", "").replace("_item", "");
-                createPlant(tx, ty, fertilityMatrix, 0, plantType);
+            } else {
+                console.log("❌ You are not holding a seed!");
             }
         }
     }
@@ -321,9 +339,9 @@ export function recalculateStats() {
     // Start with base stats
     hero.ad = hero.baseAd;
     
-    // Add Weapon stats
-    if (hero.equipment.weapon) {
-        hero.ad += (hero.equipment.weapon.ad || 0);
+    // 👇 If holding a weapon, add its damage!
+    if (hero.equipment.mainHand && hero.equipment.mainHand.isWeapon) {
+        hero.ad += (hero.equipment.mainHand.ad || 0);
     }
     
     // Add Armor stats (for the future!)
@@ -357,31 +375,62 @@ export function recalculateStats() {
     console.log(`⚔️ Stats Recalculated! AD: ${hero.ad}, SPEED: ${hero.speed}`);
 }
 
-// In src/interactionManager.js
+// In src/interactionManager.js -> consumeFood()
+
 function consumeFood() {
     if (hero.hp <= 0) return;
 
-    // Check if we are actually holding food in our active slot
-    if (hero.activeSlot === undefined || hero.activeSlot === null || !hero.inventory[hero.activeSlot]) {
-        console.log("❌ Select a food item in your inventory first!");
+    // 🤚 Check the Main Hand
+    if (!hero.equipment || !hero.equipment.mainHand) {
+        console.log("❌ Equip a food item in your hand first!");
         return;
     }
 
-    const item = hero.inventory[hero.activeSlot];
-    const foodValues = { "cooked_fish": 60, "fish": 20, "turnip_item": 25, "egg": 20 /* etc */ };
+    const item = hero.equipment.mainHand;
+
+    // 🍱 THE FOOD REGISTRY (Energy restored per item)
+    const foodValues = { 
+        "cooked_fish": 60,
+        "fish_muskellunge": 100, // Legendary food!
+        "fish_trevally": 80, "fish_angler": 80, "fish_octopus": 60,
+        "fish_squid": 50, "fish_eel": 45, "fish_mackerel": 35,
+        "fish_trout": 25, "fish": 20, "fish_panfish": 15,
+        "pineapple_item": 50,    // Rare, slow growth
+        "eggplant_item": 40,
+        "tomato_item": 35,
+        "pumpkin_item": 30,
+        "watermelon_item": 30,
+        "potato_item": 25,
+        "corn_item": 25,
+        "turnip_item": 20,
+        "egg": 20,              // Consistent ranching yield
+        "fish": 15,             // Raw fish penalty
+        "strawberry_item": 15,   // Small snack
+        "wheat_item": 10        // Lowest tier
+    };
 
     if (foodValues[item.seedType] !== undefined) {
         const restoreAmount = foodValues[item.seedType];
-        hero.energy = Math.min(hero.maxEnergy, hero.energy + restoreAmount);
         
+        // Apply restoration
+        hero.energy = Math.min(hero.maxEnergy, hero.energy + restoreAmount);
+        console.log(`🍗 Consumed ${item.name}! +${restoreAmount} Energy.`);
+
+        // 🎒 Subtract from stack
         item.count--;
         if (item.count <= 0) {
-            hero.inventory.splice(hero.activeSlot, 1);
-            hero.activeSlot = null; // Cleared!
+            hero.equipment.mainHand = null; 
         }
-        if (socket) socket.emit('updateStats', { energy: hero.energy });
+
+        // Sync stamina to the server
+        import('./multiplayer.js').then(m => {
+            if (m.socket) m.socket.emit('updateStats', { energy: hero.energy });
+        });
+        
+        // Refresh UI to update the hand slot / inventory count
+        import('./uiManager.js').then(m => m.renderTabContent());
     } else {
-        console.log("❌ You can't eat that!");
+        console.log(`❌ ${item.name} is not edible!`);
     }
 }
 
@@ -465,36 +514,46 @@ function processPickup(tx, ty) {
         }
     }
 
+    // In src/interactionManager.js -> processPickup()
+
     // 3. IF WE FOUND A PLANT TO PICK UP
     if (closestPlantKey && hero.inventory.length < hero.maxSlots) {
         const plant = plants.get(closestPlantKey);
         
-        // 👇 DYNAMIC YIELD
-        if (plant.type === 'turnip') { giveItemToHero(createItem(ITEM_TYPES.TURNIP_ITEM)); } 
-        else if (plant.type === 'tomato') { giveItemToHero(createItem(ITEM_TYPES.TOMATO_ITEM)); }
-        else if (plant.type === 'eggplant') { giveItemToHero(createItem(ITEM_TYPES.EGGPLANT_ITEM)); }
-        else if (plant.type === 'strawberry') { giveItemToHero(createItem(ITEM_TYPES.STRAWBERRY_ITEM)); }
-        else if (plant.type === 'pumpkin') { giveItemToHero(createItem(ITEM_TYPES.PUMPKIN_ITEM)); }
-        else if (plant.type === 'watermelon') { giveItemToHero(createItem(ITEM_TYPES.WATERMELON_ITEM)); }
-        // 👇 NEW
-        else if (plant.type === 'corn') { giveItemToHero(createItem(ITEM_TYPES.CORN_ITEM)); }
-        else if (plant.type === 'pineapple') { giveItemToHero(createItem(ITEM_TYPES.PINEAPPLE_ITEM)); }
-        else if (plant.type === 'potato') { giveItemToHero(createItem(ITEM_TYPES.POTATO_ITEM)); }
-        else if (plant.type === 'wheat') { giveItemToHero(createItem(ITEM_TYPES.WHEAT_ITEM)); }
-        else { giveItemToHero(createItem(ITEM_TYPES.UPROOTED_GRASS)); }    
+        // 👇 THE FIX: Use the exact same dynamic math as the renderer!
+        const stagesArray = PLANT_DEFS[plant.type].stages;
+        const maxStageIndex = stagesArray.length - 1;
         
-        // If mature, yield ITS SPECIFIC SEED!
-        if (plant.growth >= 100) {
+        // E.g. For 4 stages: 100 / 4 = 25. Growth of 75 / 25 = Stage 3 (Mature!)
+        const currentVisualStage = Math.floor(plant.growth / (100 / stagesArray.length));
+        
+        const isMature = currentVisualStage >= maxStageIndex;
+        
+        if (isMature) {
+            if (plant.type === 'turnip') { giveItemToHero(createItem(ITEM_TYPES.TURNIP_ITEM)); } 
+            else if (plant.type === 'tomato') { giveItemToHero(createItem(ITEM_TYPES.TOMATO_ITEM)); }
+            else if (plant.type === 'eggplant') { giveItemToHero(createItem(ITEM_TYPES.EGGPLANT_ITEM)); }
+            else if (plant.type === 'strawberry') { giveItemToHero(createItem(ITEM_TYPES.STRAWBERRY_ITEM)); }
+            else if (plant.type === 'pumpkin') { giveItemToHero(createItem(ITEM_TYPES.PUMPKIN_ITEM)); }
+            else if (plant.type === 'watermelon') { giveItemToHero(createItem(ITEM_TYPES.WATERMELON_ITEM)); }
+            else if (plant.type === 'corn') { giveItemToHero(createItem(ITEM_TYPES.CORN_ITEM)); }
+            else if (plant.type === 'pineapple') { giveItemToHero(createItem(ITEM_TYPES.PINEAPPLE_ITEM)); }
+            else if (plant.type === 'potato') { giveItemToHero(createItem(ITEM_TYPES.POTATO_ITEM)); }
+            else if (plant.type === 'wheat') { giveItemToHero(createItem(ITEM_TYPES.WHEAT_ITEM)); }
+            else { giveItemToHero(createItem(ITEM_TYPES.PLANT_MATTER)); }    
+            
+            // Yield Seeds
             const seedConstName = `${plant.type.toUpperCase()}_SEED`;
             const seedCount = Math.floor(Math.random() * 2) + 1; 
-// ... (rest is the same)
-
             for (let i = 0; i < seedCount; i++) {
-                if (hero.inventory.length < hero.maxSlots && ITEM_TYPES[seedConstName]) {
-                    giveItemToHero(createItem(ITEM_TYPES[seedConstName]));
-                }
+                if (ITEM_TYPES[seedConstName]) giveItemToHero(createItem(ITEM_TYPES[seedConstName]));
             }
-            console.log(`🌱 Harvested ${seedCount} ${plant.type} seed(s)!`);
+            console.log(`🌱 Harvested mature ${plant.type}!`);
+        } 
+        else {
+            // 👇 If picked too early, it's just ruined Plant Matter
+            giveItemToHero(createItem(ITEM_TYPES.PLANT_MATTER));
+            console.log(`🍂 Harvested immature plant. You got Plant Matter.`);
         }
 
         // Wipe it from memory and clear the bacteria anchor
@@ -502,46 +561,35 @@ function processPickup(tx, ty) {
         const bac = getBacteriaData(plant.gx, plant.gy);
         if (bac && bac.data) bac.data[bac.idx] = 0;
         
-        return true; // Successfully picked something up!
-    } 
+        return true; 
+    }
+
+    // In src/interactionManager.js -> processPickup()
 
     // 4. IF NO PLANT WAS FOUND, CHECK FOR DROPPED ITEMS (BACTERIA)
     const bac = getBacteriaData(tx, ty);
     const traits = bac ? bac.data[bac.idx] : 0;
 
     if (traits > 0 && hero.inventory.length < hero.maxSlots) {
-        const typeID = (traits >> 20) & 0x0F;
+        const typeID = (traits >> 20) & 0xFF; 
         
-        // Find the template by looking up the seedType that matches this typeID
-        let matchedSeedType = null;
-        if (typeID === 1) matchedSeedType = "fish"; // Fish
-        if (typeID === 3) matchedSeedType = "grass_item"; // Compost
-        if (typeID === 4) matchedSeedType = "chicken_poop"; // Poop
-        if (typeID === 5) matchedSeedType = "cooked_fish"; // Cooked Fish
-        if (typeID === 6) matchedSeedType = "turnip_item"; // 👈 NEW
-        if (typeID === 7) matchedSeedType = "tomato_item"; // 👈 NEW
-        // 👇 NEW IDs
-        if (typeID === 8) matchedSeedType = "eggplant_item"; 
-        if (typeID === 9) matchedSeedType = "strawberry_item"; 
-        if (typeID === 10) matchedSeedType = "pumpkin_item"; 
-        if (typeID === 11) matchedSeedType = "watermelon_item";
+        // 👇 Dynamic Reverse Lookup! Maps ID 25 directly back to "pumpkin_seed"
+        const matchedSeedType = Object.keys(BACTERIA_TYPES).find(key => 
+            BACTERIA_TYPES[key] === typeID && !['organic_drop', 'organic_plant', 'grass'].includes(key)
+        );
 
-        // 👇 NEW IDs
-        if (typeID === 12) matchedSeedType = "corn_item"; 
-        if (typeID === 13) matchedSeedType = "pineapple_item"; 
-        if (typeID === 14) matchedSeedType = "potato_item"; 
-        if (typeID === 15) matchedSeedType = "wheat_item";
-
-        
         if (matchedSeedType) {
             const template = Object.values(ITEM_TYPES).find(t => t.seedType === matchedSeedType);
             if (template) {
                 const item = createItem(template);
                 item.health = traits & 0xFF;
                 item.virulence = (traits >> 8) & 0xFF;
-                giveItemToHero(item);
-                bac.data[bac.idx] = 0;
-                return true;
+                
+                // If it successfully stacks or finds a slot
+                if (giveItemToHero(item)) {
+                    bac.data[bac.idx] = 0;
+                    return true;
+                }
             }
         }
     }

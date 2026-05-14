@@ -11,8 +11,11 @@ import { CONFIG } from './config.js'; // 👈 Import config
 if (typeof window !== 'undefined') logStep("input.js loaded");
 
 export const inputState = {
+        
+    inputType: 'keyboard', // 👈 'keyboard' or 'touch'
+
     moveX: 0, moveY: 0,
-    action: false, interact: false, drop: false, keyB: false, keyP: false, keyC: false,
+    action: false, interact: false, drop: false, keyB: false, keyP: false, keyC: false, keyV: false,
     mainBtn: false, skill1: false, skill2: false, skill3: false, skill4: false,
     leftJoystick: { active: false, startX: 0, startY: 0, currX: 0, currY: 0 },
     aim: { active: false, index: -1, dx: 0, dy: 0, cancel: false, startX: 0, startY: 0 },
@@ -27,22 +30,28 @@ export function getUIButtons() {
     const W = Math.floor(window.innerWidth / CONFIG.ZOOM);
     const H = Math.floor(window.innerHeight / CONFIG.ZOOM);
     
-    // Spread into a classic MOBA "Thumb Arc"
     return {
         MAIN:   { x: W - 28,  y: H - 28,  r: 20 },
-        
-        // The Arc (from left to top)
         SKILL1: { x: W - 75,  y: H - 22,  r: 14, index: 0 },
         SKILL2: { x: W - 68,  y: H - 55,  r: 14, index: 1 },
         SKILL3: { x: W - 45,  y: H - 75,  r: 14, index: 2 },
-        SKILL4: { x: W - 18,  y: H - 85,  r: 16, index: 3 }, // Ultimate slightly larger
+        SKILL4: { x: W - 18,  y: H - 85,  r: 16, index: 3 },
+        CANCEL: { x: W - 28,  y: H - 120, r: 16 },
         
-        CANCEL: { x: W - 28,  y: H - 120, r: 16 } // Pushed safely out of the way
+        // 👇 NEW: Left-side Touch Buttons
+        INTERACT: { x: 25, y: H - 75, r: 14 },
+        DROP:     { x: 25, y: H - 110, r: 14 },
+        PLANT:    { x: 25, y: H - 145, r: 14 },
+
+        // 👇 NEW: Inventory Button (Top-Left, below the XP bar)
+        INV:      { x: 25, y: 50, r: 16 }
     };
 }
 
 export function initInput(canvas) {
     window.addEventListener("keydown", (e) => {
+                
+        inputState.inputType = 'keyboard'; // 👈 Switch to PC Mode
         keysDown[e.code] = true;
         updateKeyboardVectors();
 
@@ -59,6 +68,10 @@ export function initInput(canvas) {
         if (e.code === 'Space') inputState.action = true;
         if (e.code === 'KeyE')  inputState.interact = true;
         if (e.code === 'KeyC')  inputState.keyC = true; 
+        // Inside keydown:
+        if (e.code === 'KeyG') inputState.drop = true;
+        if (e.code === 'KeyV') inputState.keyV = true;
+
 
         // PC QUICK-CAST (Flag for the physics loop)
         if (e.code === 'KeyQ') inputState.skill1 = true;
@@ -77,6 +90,9 @@ export function initInput(canvas) {
         if (e.code === 'Space') inputState.action = false;
         if (e.code === 'KeyE')  inputState.interact = false;
         if (e.code === 'KeyC')  inputState.keyC = false; 
+        // Inside keyup:
+        if (e.code === 'KeyG') inputState.drop = false;
+        if (e.code === 'KeyV') inputState.keyV = false;
 
         if (e.code === 'KeyQ') inputState.skill1 = false;
         if (e.code === 'KeyW') inputState.skill2 = false;
@@ -98,6 +114,8 @@ export function initInput(canvas) {
 
     const handleTouch = (e) => {
         e.preventDefault();
+        inputState.inputType = 'touch'; // 👈 Switch to Touch Mode
+
         let leftSideActive = false;
         const btns = getUIButtons();
 
@@ -109,7 +127,23 @@ export function initInput(canvas) {
             const tx = e.touches[i].clientX / CONFIG.ZOOM;
             const ty = e.touches[i].clientY / CONFIG.ZOOM;
 
-            if (tx < middleScreenX) {
+            // Touch Button Hit-Tester Helper
+            const hit = (btn) => Math.hypot(tx - btn.x, ty - btn.y) < btn.r + 5;
+
+            // 👈 Check New Left-Side Buttons FIRST
+            if (e.type === 'touchstart') {
+                if (hit(btns.INTERACT)) { inputState.interact = true; inputState.action = true; }
+                if (hit(btns.DROP)) inputState.drop = true;
+                if (hit(btns.PLANT)) inputState.keyV = true;
+                
+                // 👇 NEW: Toggle the menu if they tap the backpack!
+                if (hit(btns.INV)) {
+                    import('./uiManager.js').then(m => m.toggleMenu());
+                }
+            }
+
+// 👇 Make sure the joystick ignores the INV button too
+            if (tx < middleScreenX && !hit(btns.INTERACT) && !hit(btns.DROP) && !hit(btns.PLANT) && !hit(btns.INV)) {
                 leftSideActive = true;
                 if (!inputState.leftJoystick.active) {
                     inputState.leftJoystick.active = true;

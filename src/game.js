@@ -9,7 +9,7 @@ import { drawHouse, drawTemple, drawGeneralStore, drawVillageHall, drawRootCella
 import { applyShorelineRules } from './terrainRules.js';
 import { inputState, initInput, handleHeroUpdate } from './input.js';
 import { viewport } from './viewport.js';
-import { ctx, ctx2, ctx3, canvas, canvas2, canvas3, drawMap, drawJoystick, drawProjectiles, drawTargetCircle, drawHeroRange, drawHealthBar, drawEnergyBar, drawAbilityButtons, drawXPStatus, drawAimIndicator, initRenderer, clearAll, drawAnimals, drawPlants, drawHero, drawBobber, preRenderMinimap, drawDroppedItems } from './renderer.js';
+import { ctx, ctx2, ctx3, canvas, canvas2, canvas3, drawMap, drawJoystick, drawProjectiles, drawTargetCircle, drawHeroRange, drawHealthBar, drawEnergyBar, drawAbilityButtons, drawXPStatus, drawAimIndicator, initRenderer, clearAll, drawAnimals, drawPlants, drawHero, drawRemotePlayers, drawBobber, preRenderMinimap, drawDroppedItems } from './renderer.js';
 import { hero, resetEntities, gameState } from './entities.js';
 import { CONFIG } from './config.js'
 import { checkCollision, getTileData } from './physics.js'; 
@@ -18,7 +18,7 @@ import { ITEM_TYPES, createItem } from './items.js';
 import { updatePlants, plants } from './plants.js'; 
 import { updateAnimals, animals, spawnChicken } from './animals.js';
 import { findPriorityTarget, currentTarget, validateTarget } from './combat.js';
-import { socket, initMultiplayer, drawRemotePlayers, playerWallet, remotePlayers } from './multiplayer.js';
+import { socket, initMultiplayer, playerWallet, remotePlayers, serverProjectiles, updateRemotePlayers } from './multiplayer.js';
 import { handleInteractions, updateHeroStats, handlePvPCombat, handleFinancialActions } from './interactionManager.js';
 import { initUI, updateHUD } from './uiManager.js';
 import { getMasterBalance } from './blockchainManager.js';
@@ -117,6 +117,9 @@ var update = function (modifier) {
         ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
         handleHeroUpdate(modifier, worldMatrix, roomMatrix);
     }
+
+    // 👇 NEW: Smoothly interpolate remote players!
+    updateRemotePlayers(modifier);
     
     if (logicTick % 3 === 0) {
         // Fast Combat & Interactions
@@ -212,10 +215,10 @@ var render = function () {
     drawHeroRange(ctx2, hero);
 
     // 👇 ADD THIS TO DRAW YOUR FLYING SKILLSHOTS!
-    drawProjectiles(ctx2);
+    drawProjectiles(ctx2, serverProjectiles);
 
 
-    drawRemotePlayers(ctx2);
+    drawRemotePlayers(ctx2, remotePlayers);
     drawHero(); 
     drawBobber();
 

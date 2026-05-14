@@ -64,7 +64,11 @@ const imageSources = {
     keyTileset:      "images/keyTileset.png",       // Keys
     cropTileset:     "images/cropTileset.png",      // Crops
     weaponTileset:   "images/weaponTileset.png", // 👈 Ensure this is here!
-    gardenTileset:   "images/gardenTileset.png"  // 👈 ADD THIS LINE
+    gardenTileset:   "images/gardenTileset.png",  // 👈 ADD THIS LINE
+    fishTileset:     "images/fishTileset.png", // 👈 ADD THIS LINE
+    mainTileset2:    "images/mainTileset2.png" // 👈 ADD THIS LINE
+
+
 
 
     

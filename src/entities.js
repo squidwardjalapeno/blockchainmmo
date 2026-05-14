@@ -91,15 +91,15 @@ export const hero = {
     speed: CONFIG.HERO_SPEED,
 
 
-    xp: 1000,
-    level: 1,
+    xp: 0,
+    level: 0,
     spentPoints: 0,
 
-    // 👈 NEW: Equipment Slots
+    // In src/entities.js
     equipment: {
-        weapon: null,
-        armor: null
+        mainHand: null // 👈 Unified slot!
     },
+    // (Remove hero.activeSlot if you have it)
 
     charClass: null,  // 🆕 ADD THIS
     skills: [],       // 🆕 ADD THIS

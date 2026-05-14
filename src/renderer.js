@@ -4,10 +4,13 @@ import { images } from './assetLoader.js';
 import { CONFIG } from './config.js';
 import { hero, getLevelInfo, gameState } from './entities.js';
 import { plants, PLANT_DEFS } from './plants.js';
-import { getBacteriaData, bacteriaCells } from './bacteria.js';
+import { getBacteriaData, bacteriaCells, BACTERIA_TYPES } from './bacteria.js';
 // js/renderer.js
 import { animals } from './animals.js';
 import { inputState, getUIButtons } from './input.js';
+// Add this line near the top of src/renderer.js:
+import { ITEM_TYPES } from './items.js';
+
 
 // js/renderer.js
 import { globalFishCount } from './fish.js'; // Ensure this is imported
@@ -16,7 +19,6 @@ import { getObjectAt } from './staticObjects.js';
 import { roomMetadata } from './cellDecorator.js';
 import { PALADIN_SKILLS } from './uiManager.js';
 
-import { serverProjectiles } from './multiplayer.js'; // 👈 Import at top
 import { getHeroAnimationData, getPetAnimationData, getAnimalAnimationData } from './animations.js'; // 👈 Added getAnimalAnimationData
 
 
@@ -107,48 +109,61 @@ export function initRenderer() {
 // js/renderer.js
 // js/renderer.js
 
+// In src/renderer.js -> drawMap()
 export function drawMap(worldMatrix, roomMatrix) {
     ctx2.clearRect(0, 0, canvas2.width, canvas2.height);
 
-    const w = canvas.width | 0, h = canvas.height | 0;
-    const centerX = (w >> 1) | 0, centerY = (h >> 1) | 0;
-    const hX = (hero.x + 8) | 0, hY = (hero.y + 8) | 0;
-    const hTX = (hX >> 4) | 0, hTY = (hY >> 4) | 0;
-    const halfX = ((w >> 4) >> 1) + 1, halfY = ((h >> 4) >> 1) + 1;
+    const w = canvas.width, h = canvas.height;
+    
+    // The exact tile the camera is looking at
+    const hTX = Math.floor((hero.x + 8) / 16);
+    const hTY = Math.floor((hero.y + 8) / 16);
+    const halfX = Math.ceil((w / 16) / 2) + 1;
+    const halfY = Math.ceil((h / 16) / 2) + 1;
 
-    // 1. Identify if we are in a house once
     let hHouseId = 0;
-    const hChunkR = roomMatrix[(hTX / 100) | 0]?.[(hTY / 100) | 0];
+    const hChunkR = roomMatrix[Math.floor(hTX / 100)]?.[Math.floor(hTY / 100)];
     if (hChunkR) hHouseId = hChunkR[((hTY % 100 + 100) % 100 * 100) + ((hTX % 100 + 100) % 100)];
 
     const tileImg = images.worldTilesColor;
 
-    // 👇 THE FIX: Treat 9999 as 0 (Outdoors)
     if (hHouseId === 0 || hHouseId === 9999) {
-        // ==========================================
-        // 🌍 OUTSIDE MODE (High Performance)
-        // ==========================================
         ctx2.fillStyle = "rgb(0, 255, 0)";
-        // ==========================================
-        // 🌍 OUTSIDE MODE (High Performance)
-        // ==========================================
-        ctx2.fillStyle = "rgb(0, 255, 0)"; // Exact tile green matching
         ctx2.fillRect(0, 0, w, h);
 
         for (let k = hTX - halfX; k <= hTX + halfX; k++) {
-            const wCol = worldMatrix[(k / 100) | 0];
-            const sX = (centerX + (k * 16 - hX)) | 0;
+            const wCol = worldMatrix[Math.floor(k / 100)];
+            // 👇 Unified Master Offset calculation
+            const sX = Math.round(k * 16 + viewport.offset[0]);
             const lx = ((k % 100) + 100) % 100;
 
             for (let l = hTY - halfY; l <= hTY + halfY; l++) {
-                const wChunk = wCol?.[(l / 100) | 0];
+                const wChunk = wCol?.[Math.floor(l / 100)];
                 if (!wChunk) continue;
                 const tID = wChunk[(((l % 100) + 100) % 100 * 100) + lx];
 
-                if (tID === 63) continue; // ONLY skip Grass, allow Water (17) to draw!
+                if (tID === 63) continue; 
 
-                const sY = (centerY + (l * 16 - hY)) | 0;
-                ctx2.drawImage(tileImg, (tID % 8) << 4, (tID >> 3) << 4, 16, 16, sX, sY, 16, 16);
+                // 👇 THE FIX: Strict use of viewport variables
+                const sX = (k * 16) + viewport.offset[0];
+                const sY = (l * 16) + viewport.offset[1];
+
+                // Check if this tile belongs to our new directional road sheet
+if (tID >= 200 && tID <= 208) {
+    const roadImg = images.mainTileset2;
+    if (roadImg && roadImg.complete) {
+        const localIdx = tID - 200; // 0 to 8
+        
+        // 👇 UPDATED MATH: Correctly wraps to the next row for Tile 8!
+        const srcX = (localIdx % 8) * 16;
+        const srcY = Math.floor(localIdx / 8) * 16;
+        
+        ctx2.drawImage(roadImg, srcX, srcY, 16, 16, sX, sY, 16, 16);
+    }
+} else {
+    // STANDARD TILES (worldTilesColor - 8 tiles wide)
+    ctx2.drawImage(tileImg, (tID % 8) * 16, Math.floor(tID / 8) * 16, 16, 16, sX, sY, 16, 16);
+}
             }
         }
     } else {
@@ -258,6 +273,35 @@ export function drawPlants(roomMatrix) {
     });
 }
 
+// Add this smart cache helper right above drawDroppedItems:
+const renderCache = {};
+
+function getRenderData(typeID) {
+    if (renderCache[typeID]) return renderCache[typeID];
+
+    // 1. Find the seedType string associated with this ID
+    const seedTypeStr = Object.keys(BACTERIA_TYPES).find(key => 
+        BACTERIA_TYPES[key] === typeID && !['organic_drop', 'organic_plant', 'grass'].includes(key)
+    );
+
+    if (seedTypeStr) {
+        // 2. Find the matching template in items.js
+        const template = Object.values(ITEM_TYPES).find(t => t.seedType === seedTypeStr);
+        if (template) {
+            const tilesetStr = template.tileset || "cropTileset";
+            const img = images[tilesetStr];
+            
+            let w = CONFIG.CROP_SHEET_WIDTH_TILES;
+            if (tilesetStr === "gardenTileset") w = CONFIG.GARDEN_SHEET_WIDTH_TILES;
+            else if (tilesetStr === "worldTilesColor") w = 8;
+            
+            renderCache[typeID] = { spriteID: template.spriteID, img, sheetWidth: w };
+            return renderCache[typeID];
+        }
+    }
+    return null;
+}
+
 export function drawDroppedItems() {
     const cropImg = images.cropTileset;
     const worldImg = images.worldTilesColor;
@@ -304,50 +348,40 @@ export function drawDroppedItems() {
 
             const h = traits & 0xFF;
             const v = (traits >> 8) & 0xFF;
-            const typeID = (traits >> 20) & 0x0F;
+            const typeID = (traits >> 20) & 0xFF;
 
-            // Skip living anchors (2), dead bodies (3), and water (0)
-            if (typeID === 2 || typeID === 3 || typeID === 0) continue;
+            if (typeID === 2 || typeID === 0) continue;
 
-            // Calculate exact screen position
             const screenX = Math.floor(viewport.offset[0] + (tx * 16));
             const screenY = Math.floor(viewport.offset[1] + (ty * 16));
 
             let spriteID = 0;
-            let imgToUse = cropImg;
-            let sheetWidth = CONFIG.CROP_SHEET_WIDTH_TILES;
+            let imgToUse = null;
+            let sheetWidth = 8;
 
-            // 🐟 FISH
-            if (typeID === 1) {
-                if (h > 0) spriteID = 57;         
-                else if (v > 10) spriteID = 58;   
-                else spriteID = 59;               
+            // In src/renderer.js -> drawDroppedItems()
+
+            // Is this ANY type of fish?
+            const isFish = typeID === 1 || (typeID >= 40 && typeID <= 48);
+
+            // If the fish is dead (h=0), draw the rotting/bones sprite from cropTileset
+            if (isFish && h <= 0) {
+                imgToUse = images.cropTileset;
+                sheetWidth = CONFIG.CROP_SHEET_WIDTH_TILES;
+                spriteID = (v > 10) ? 58 : 59; 
             } 
-            // 💩 CHICKEN POOP
-            else if (typeID === 4) {
-                imgToUse = worldImg; sheetWidth = 8; spriteID = 8; 
+            else {
+                // Otherwise (if it's a seed, fresh fish, or poop), use the smart lookup!
+                const rData = getRenderData(typeID);
+                if (!rData || !rData.img) continue; 
+                
+                imgToUse = rData.img;
+                spriteID = rData.spriteID;
+                sheetWidth = rData.sheetWidth;
             }
-            else if (typeID === 5) { spriteID = 44; } // Cooked Fish
-            else if (typeID === 6) { spriteID = 0; }  // Turnip
-            else if (typeID === 7) { spriteID = 24; } // Tomato
-            else if (typeID === 8) { spriteID = 36; } // Eggplant
-            else if (typeID === 9) { spriteID = 72; } // Strawberry
-            else if (typeID === 10) { spriteID = 96; } // Pumpkin
-            else if (typeID === 11) { spriteID = 30; } // Watermelon
-            else if (typeID === 12) { spriteID = 108; } // Corn
-            else if (typeID === 13) { spriteID = 48; } // Pineapple
-            else if (typeID === 14) { spriteID = 84; } // Potato
-            else if (typeID === 15) { 
-                imgToUse = images.gardenTileset; 
-                sheetWidth = CONFIG.GARDEN_SHEET_WIDTH_TILES;
-                spriteID = 168; 
-            }
-            else if (typeID === 16) { spriteID = 60; } // 🥚 Egg
-
 
             ctx2.drawImage(
-                imgToUse,
-                (spriteID % sheetWidth) * 16, Math.floor(spriteID / sheetWidth) * 16, 
+                imgToUse, (spriteID % sheetWidth) * 16, Math.floor(spriteID / sheetWidth) * 16, 
                 16, 16, screenX, screenY, 16, 16
             );
         }
@@ -396,24 +430,27 @@ function getHouseBottom(gx, gy, houseId, roomMatrix) {
 
 // --- Replace drawHero() in src/renderer.js ---
 
+// In src/renderer.js -> drawHero()
 export function drawHero() {
     const animData = getHeroAnimationData(hero, images);
 
     if (animData.img && animData.img.complete) {
-        const centerX = (canvas.width / 2) | 0;
-        const centerY = (canvas.height / 2) | 0;
+
+        // 👇 THE FIX: Add these two lines back so the bobber and weapon know where the center of the screen is!
+        const centerX = Math.floor(canvas.width / 2);
+        const centerY = Math.floor(canvas.height / 2);
+
+        // 👇 THE FIX: Add these two lines back!
+        const hX = Math.floor(hero.x + 8);
+        const hY = Math.floor(hero.y + 8);
         
-        // 👇 1. ASCENSION SCALING
         const scale = (hero.buffs && hero.buffs.isAscended) ? 1.12 : 1.0;
         const destW = 16 * scale; 
         const destH = 16 * scale; 
 
-        const hX = (hero.x + 8) | 0;
-        const hY = (hero.y + 8) | 0;
-
-        // 👇 2. Keep the scaled hero perfectly centered
-        let drawX = (centerX + (hero.x - hX) - ((destW - 16) / 2)) | 0;
-        let drawY = (centerY + (hero.y - hY) - ((destH - 16) / 2)) | 0;
+        // 👇 THE UNIFIED MATH: (Pos + Offset) floored together
+        let drawX = Math.floor(hero.x + viewport.offset[0]) - Math.floor((destW - 16) / 2);
+        let drawY = Math.floor(hero.y + viewport.offset[1]) - Math.floor((destH - 16) / 2);
 
         // 1. STATE CHECKS
         const isImpact = (hero.attackTimer < 0 && hero.attackTimer > -0.2);
@@ -657,6 +694,131 @@ export function drawHero() {
     }
 }
 
+// Paste at the bottom of src/renderer.js
+
+// In src/renderer.js -> drawRemotePlayers()
+export function drawRemotePlayers(ctx2, remotePlayersData) {
+    remotePlayersData.forEach(p => {
+        // 👇 THE UNIFIED MATH
+        let sx = Math.floor(p.x + viewport.offset[0]);
+        let sy = Math.floor(p.y + viewport.offset[1]);
+
+        if (sx < -32 || sx > canvas2.width + 32 || sy < -32 || sy > canvas2.height + 32) return;
+        
+        // ... (Keep the rest the same)
+        
+        if (p.isOffline) ctx2.globalAlpha = 0.5; 
+        
+        const imgKey = `heroWalk${p.dir || 'South'}`;
+        const img = images[imgKey] || images.heroWalkSouth;
+        
+        if (!img || !img.complete) return;
+
+        // ==========================================
+        // 1. VISUAL EFFECTS (Behind Hero)
+        // ==========================================
+        if (p.bulwarkTimer && p.bulwarkTimer > 0) {
+            ctx2.strokeStyle = "rgba(100, 200, 255, 0.8)"; 
+            ctx2.lineWidth = 2;
+            const angleOffset = Date.now() / 200; 
+            for (let i = 0; i < 3; i++) {
+                ctx2.beginPath();
+                ctx2.arc(sx + 8, sy + 12, 14, angleOffset + (i * 2.09), angleOffset + (i * 2.09) + 1.0);
+                ctx2.stroke();
+            }
+        }
+
+        if (p.ccFlags && !p.ccFlags.canMove && !p.ccFlags.canCastNonMovement) {
+            ctx2.strokeStyle = "rgba(0, 255, 255, 0.8)"; 
+            ctx2.lineWidth = 2;
+            ctx2.beginPath();
+            ctx2.ellipse(sx + 8, sy + 14, 8, 4, 0, 0, Math.PI * 2);
+            ctx2.stroke();
+        }
+
+        if (p.isInvincible) {
+            ctx2.shadowColor = "rgba(255, 255, 255, 0.9)";
+            ctx2.shadowBlur = 15;
+            const haloY = sy - 6 + (Math.sin(Date.now() / 150) * 2); 
+            
+            ctx2.strokeStyle = "rgba(255, 215, 0, 1.0)"; 
+            ctx2.lineWidth = 2;
+            ctx2.beginPath();
+            ctx2.ellipse(sx + 8, haloY, 6, 2, 0, 0, Math.PI * 2);
+            ctx2.stroke();
+            
+            ctx2.strokeStyle = "rgba(255, 255, 255, 0.8)";
+            ctx2.lineWidth = 1;
+            ctx2.beginPath();
+            ctx2.ellipse(sx + 8, haloY, 5, 1, 0, 0, Math.PI * 2);
+            ctx2.stroke();
+        }
+
+        // ==========================================
+        // 2. DRAW HERO SPRITE
+        // ==========================================
+        ctx2.drawImage(img, (p.animFrame || 0) * 16, 0, 16, 16, sx, sy, 16, 16);
+        ctx2.shadowBlur = 0;
+        ctx2.globalAlpha = 1.0; 
+
+        // ==========================================
+        // 3. VISUAL EFFECTS (In Front of Hero)
+        // ==========================================
+        if (p.cc && p.cc.hasResonance) {
+            ctx2.fillStyle = "#FF1493"; 
+            ctx2.beginPath();
+            ctx2.moveTo(sx + 8, sy - 14);
+            ctx2.lineTo(sx + 10, sy - 12);
+            ctx2.lineTo(sx + 8, sy - 10);
+            ctx2.lineTo(sx + 6, sy - 12);
+            ctx2.fill();
+        }
+
+        // ==========================================
+        // 4. UI: NAMEPLATE & HEALTH BARS
+        // ==========================================
+        ctx2.fillStyle = p.isOffline ? "#888888" : "white"; 
+        ctx2.font = "8px Arial";
+        ctx2.textAlign = "center";
+        const displayName = p.isOffline ? "SLEEPING" : p.id.substring(0, 4);
+        ctx2.fillText(displayName, sx + 8, sy - 8); 
+        
+        const barW = 16, barH = 2;
+        ctx2.fillStyle = "black";
+        ctx2.fillRect(sx, sy - 4, barW, barH);
+        
+        if (p.shield && p.shield > 0) {
+            ctx2.fillStyle = "rgba(100, 150, 255, 0.8)"; 
+            const shieldRatio = Math.min(1.0, p.shield / (p.maxHp || 100)); 
+            ctx2.fillRect(sx, sy - 2, barW * shieldRatio, barH);
+        }
+
+        ctx2.fillStyle = "#FF0000"; 
+        ctx2.fillRect(sx, sy - 4, barW * (p.hp / (p.maxHp || 100)), barH);
+
+        // ==========================================
+        // 5. 🤖 DRAW REMOTE ZENITH GUARDIANS
+        // ==========================================
+        if (p.pet && p.pet.active) {
+            const petSx = Math.floor(centerX + (p.pet.x - camX));
+            const petSy = Math.floor(centerY + (p.pet.y - camY));
+            const petAnim = getPetAnimationData(p.pet, images);
+
+            if (petAnim.img && petAnim.img.complete) {
+                ctx2.drawImage(
+                    petAnim.img, petAnim.srcX, petAnim.srcY, petAnim.srcW, petAnim.srcH,
+                    petSx - 12, petSy - 12, 24, 24
+                );
+            }
+
+            const petHpPct = p.pet.hp / (p.maxHp * 1.8);
+            ctx2.fillStyle = "black";
+            ctx2.fillRect(petSx - 12, petSy - 16, 24, 2);
+            ctx2.fillStyle = "lime";
+            ctx2.fillRect(petSx - 12, petSy - 16, 24 * Math.max(0, petHpPct), 2);
+        }
+    });
+}
 
 
 
@@ -669,8 +831,9 @@ export function drawAnimals() {
     const hY = (hero.y + 8) | 0;
 
     animals.forEach(chicken => {
-        const screenX = (centerX + (chicken.x - hX)) | 0;
-        const screenY = (centerY + (chicken.y - hY)) | 0;
+        // 👇 THE UNIFIED MATH
+        const screenX = Math.floor(chicken.x + viewport.offset[0]);
+        const screenY = Math.floor(chicken.y + viewport.offset[1]);
         
         // Cull if way off screen
         if (screenX < -32 || screenX > w + 32 || screenY < -32 || screenY > h + 32) return;
@@ -860,7 +1023,7 @@ export function drawHeroRange(ctx, hero) {
 
 
 export function drawJoystick(ctxUI) {
-    if (!inputState.leftJoystick.active) return;
+    if (inputState.inputType === 'keyboard' || !inputState.leftJoystick.active) return;
 
     const { startX, startY, currX, currY } = inputState.leftJoystick;
 
@@ -889,10 +1052,10 @@ export function drawJoystick(ctxUI) {
 }
 
 // --- Add/Replace these functions in src/renderer.js ---
-export function drawProjectiles(ctx) {
+export function drawProjectiles(ctx, serverProjectilesData) {
 
     // 1. Draw Server-Controlled Projectiles (Flare)
-    serverProjectiles.forEach(p => {
+    serverProjectilesData.forEach(p => {
         const screenX = viewport.offset[0] + p.x; 
         const screenY = viewport.offset[1] + p.y;
         
@@ -1068,40 +1231,13 @@ export function drawHUDButton(ctx, x, y, radius, label, icon, isPressed, cooldow
     }
 }
 
-// --- Update drawAbilityButtons in src/renderer.js ---
+// In src/renderer.js
+
 export function drawAbilityButtons(ctxUI) {
-    const btns = getUIButtons();
-    
-    // 🌟 Get current level
-    const currentLevel = getLevelInfo(hero.xp).level;
-    const reqLevels = [1, 25, 50, 75]; // The milestone levels!
-
-    const getSkillIcon = (index) => {
-        if (!hero.skills || !hero.skills[index]) return null;
-        const skillId = hero.skills[index];
-        if (skillId === 'p2') return hero.p2_stance === 'blast' ? '💥' : '🛡️';
-        if (skillId === 'p4') return (hero.buffs && hero.buffs.isAscended) ? '🔥' : '🌟';
-        if (skillId === 'p16' && hero.pet && hero.pet.active) return '🤖';
-        const skillData = PALADIN_SKILLS.find(s => s.id === skillId);
-        return skillData ? skillData.icon : null;
-    };
-
-    const cd = hero.cooldowns || [0, 0, 0, 0];
-
-    // Pass the required level and current level as the last 2 arguments!
-    drawHUDButton(ctxUI, btns.SKILL1.x, btns.SKILL1.y, btns.SKILL1.r, "S1", getSkillIcon(0), inputState.skill1, cd[0], reqLevels[0], currentLevel);
-    drawHUDButton(ctxUI, btns.SKILL2.x, btns.SKILL2.y, btns.SKILL2.r, "S2", getSkillIcon(1), inputState.skill2, cd[1], reqLevels[1], currentLevel);
-    drawHUDButton(ctxUI, btns.SKILL3.x, btns.SKILL3.y, btns.SKILL3.r, "S3", getSkillIcon(2), inputState.skill3, cd[2], reqLevels[2], currentLevel);
-    drawHUDButton(ctxUI, btns.SKILL4.x, btns.SKILL4.y, btns.SKILL4.r, "ULT", getSkillIcon(3), inputState.skill4, cd[3], reqLevels[3], currentLevel);
-    
-    // Basic attack is always unlocked (reqLevel = 0)
-    drawHUDButton(ctxUI, btns.MAIN.x, btns.MAIN.y, btns.MAIN.r, "ATK", "🗡️", inputState.mainBtn, 0, 0, currentLevel);
-
-    
-
-     // --- 🌍 WORLD INDICATORS (Bottom Left) ---
+    // --- 🌍 WORLD INDICATORS (Bottom Left) ---
+    // Drawn for EVERYONE (PC and Mobile)
     const uiX = 5;
-    const uiY = canvas3.height - 15; // 👈 Anchor to bottom of the canvas
+    const uiY = canvas3.height - 15;
 
     ctxUI.save();
     ctxUI.font = '6px "Press Start 2P"';
@@ -1130,6 +1266,42 @@ export function drawAbilityButtons(ctxUI) {
     ctxUI.fillText(tvlText, tvlX + 2, uiY);
     
     ctxUI.restore();
+
+    // 🛑 KEYBOARD CHECK: Stop drawing here if on PC to keep screen clean!
+    if (inputState.inputType === 'keyboard') return;
+
+    // --- 📱 TOUCH ONLY UI BELOW ---
+    const btns = getUIButtons();
+    const currentLevel = getLevelInfo(hero.xp).level;
+    const reqLevels = [1, 25, 50, 75]; 
+
+    const getSkillIcon = (index) => {
+        if (!hero.skills || !hero.skills[index]) return null;
+        const skillId = hero.skills[index];
+        if (skillId === 'p2') return hero.p2_stance === 'blast' ? '💥' : '🛡️';
+        if (skillId === 'p4') return (hero.buffs && hero.buffs.isAscended) ? '🔥' : '🌟';
+        if (skillId === 'p16' && hero.pet && hero.pet.active) return '🤖';
+        const skillData = PALADIN_SKILLS.find(s => s.id === skillId);
+        return skillData ? skillData.icon : null;
+    };
+
+    const cd = hero.cooldowns || [0, 0, 0, 0];
+
+    // Right Side: Combat & Skills
+    drawHUDButton(ctxUI, btns.SKILL1.x, btns.SKILL1.y, btns.SKILL1.r, "S1", getSkillIcon(0), inputState.skill1, cd[0], reqLevels[0], currentLevel);
+    drawHUDButton(ctxUI, btns.SKILL2.x, btns.SKILL2.y, btns.SKILL2.r, "S2", getSkillIcon(1), inputState.skill2, cd[1], reqLevels[1], currentLevel);
+    drawHUDButton(ctxUI, btns.SKILL3.x, btns.SKILL3.y, btns.SKILL3.r, "S3", getSkillIcon(2), inputState.skill3, cd[2], reqLevels[2], currentLevel);
+    drawHUDButton(ctxUI, btns.SKILL4.x, btns.SKILL4.y, btns.SKILL4.r, "ULT", getSkillIcon(3), inputState.skill4, cd[3], reqLevels[3], currentLevel);
+    
+    // Main Attack
+    drawHUDButton(ctxUI, btns.MAIN.x, btns.MAIN.y, btns.MAIN.r, "ATK", "🗡️", inputState.mainBtn, 0, 0, currentLevel);
+
+    // Left Side: Interactions / Farming
+    drawHUDButton(ctxUI, btns.INTERACT.x, btns.INTERACT.y, btns.INTERACT.r, "USE", "🖐️", inputState.interact, 0, 0, 0);
+    drawHUDButton(ctxUI, btns.DROP.x, btns.DROP.y, btns.DROP.r, "DROP", "⏬", inputState.drop, 0, 0, 0);
+    drawHUDButton(ctxUI, btns.PLANT.x, btns.PLANT.y, btns.PLANT.r, "PLANT", "🌱", inputState.keyV, 0, 0, 0);
+    // 👇 NEW: Draw the Backpack Button
+    drawHUDButton(ctxUI, btns.INV.x, btns.INV.y, btns.INV.r, "INV", "🎒", false, 0, 0, 0);
 }
 
 // Replace drawXPStatus to scale it down and reposition it:

@@ -94,6 +94,17 @@ let storeDb = {}; // 🆕 Database for General Stores
 let cellarDb = {}; // ✅ This was the missing line
 let hayDb = {}; // 🆕 Database for Hay Storage
 
+// In server.js
+let authDb = {}; 
+if (fs.existsSync('auth.json')) {
+    try { authDb = JSON.parse(fs.readFileSync('auth.json', 'utf8')); } catch(err){}
+}
+function saveAuth() {
+    fs.writeFileSync('auth.json', JSON.stringify(authDb, null, 2));
+}
+
+// ... scroll down to io.on('connection', (socket) => { ...
+
 // --- 🗑️ WIPE ON START ---
 if (fs.existsSync('persistence.json')) fs.unlinkSync('persistence.json');
 if (fs.existsSync('chests.json')) fs.unlinkSync('chests.json');
@@ -199,6 +210,33 @@ io.on('connection', (socket) => {
     };
 
     socket.emit('secret', { seed: worldSeed, myId: socket.id });
+
+
+    // 🆕 USERNAME/PASSWORD SYSTEM
+    socket.on('registerUser', (data) => {
+        const { username, password } = data;
+        const safeUser = username.trim().toLowerCase();
+        
+        if (authDb[safeUser]) {
+            socket.emit('authResponse', { success: false, message: "Username already taken." });
+            return;
+        }
+        
+        authDb[safeUser] = password; // In a production game, we would hash this!
+        saveAuth();
+        socket.emit('authResponse', { success: true, wallet: `User_${safeUser}` });
+    });
+
+    socket.on('loginUser', (data) => {
+        const { username, password } = data;
+        const safeUser = username.trim().toLowerCase();
+
+        if (authDb[safeUser] && authDb[safeUser] === password) {
+            socket.emit('authResponse', { success: true, wallet: `User_${safeUser}` });
+        } else {
+            socket.emit('authResponse', { success: false, message: "Invalid username or password." });
+        }
+    });
 
     // --- REPLACE the requestChest event in server.js ---
     
@@ -828,7 +866,7 @@ socket.on('createCharacter', (data) => {
     players[socket.id].wallet = wallet;
     players[socket.id].charClass = charClass;
     players[socket.id].skills = skills;
-    players[socket.id].xp = 1000;
+    players[socket.id].xp = 0;
     
     // Create initial save record
     userDb[wallet] = { ...players[socket.id], id: undefined, target: null };

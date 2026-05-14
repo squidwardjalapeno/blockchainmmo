@@ -13,28 +13,27 @@ if (typeof window !== 'undefined') {
     logStep("bacteria.js");
 }
 
-const BACTERIA_TYPES = {
-    "organic_drop": 1, // Fish / Meat
-    "fish":         1,
-    "organic_plant": 2, // Living Grass (The Anchor)
-    "grass":        2,
-    "grass_item":   3, // 🆕 Uprooted Grass (The Slow Burn)
-    "chicken_poop": 4,
-    "cooked_fish": 5,
-    "turnip_item": 6,  // 👈 NEW
-    "tomato_item": 7,   // 👈 NEW
-    "eggplant_item": 8,
-    "strawberry_item": 9,
-    "pumpkin_item": 10,
-    "watermelon_item": 11,
-    "corn_item": 12,
-    "pineapple_item": 13,
-    "potato_item": 14,
-    "wheat_item": 15,
-    "egg": 16 // 👈 Task 3
+// In src/bacteria.js
+export const BACTERIA_TYPES = {
+    "organic_drop": 1, "fish": 1, "organic_plant": 2, "grass": 2,
+    "plant_matter": 3, "chicken_poop": 4, "cooked_fish": 5,
+    "turnip_item": 6, "tomato_item": 7, "eggplant_item": 8,
+    "strawberry_item": 9, "pumpkin_item": 10, "watermelon_item": 11,
+    "corn_item": 12, "pineapple_item": 13, "potato_item": 14,
+    "wheat_item": 15, "egg": 16,
+    
+    // 👇 NEW: Added Seeds!
+    "grass_seed": 20, "turnip_seed": 21, "tomato_seed": 22, "eggplant_seed": 23,
+    "strawberry_seed": 24, "pumpkin_seed": 25, "watermelon_seed": 26, "corn_seed": 27,
+    "pineapple_seed": 28, "potato_seed": 29, "wheat_seed": 30,
+    "rose_seed": 31, "violet_seed": 32, "sunflower_seed": 33,
 
-
+    // 👇 NEW FISH IDs
+    "fish_trout": 40, "fish_panfish": 41, "fish_mackerel": 42, 
+    "fish_muskellunge": 43, "fish_trevally": 44, "fish_squid": 45, 
+    "fish_octopus": 46, "fish_eel": 47, "fish_angler": 48,
 };
+
 
 
 
@@ -159,7 +158,7 @@ function processCellSpread(cx, cy, worldMatrix, fertilityMatrix) {
         let h = traits & 0xFF;
         let v = (traits >> 8) & 0xFF;
         let r = (traits >> 16) & 0x0F;
-        let typeID = (traits >> 20) & 0x0F;
+        let typeID = (traits >> 20) & 0xFF; // 👈 CHANGED from 0x0F to 0xFF!
         let hasPeaked = (traits >>> 31);
 
         if (h > 0 || v > 0) {
@@ -238,35 +237,23 @@ if (typeID === 5) {
         //h = 12; 
         if (v > 0 && v < 50 && Math.random() < 0.1) v += 1; 
     } 
-    else if (typeID === 1) { 
+    else // Change `if (typeID === 1)` to this:
+    if (typeID === 1 || (typeID >= 40 && typeID <= 48)) { 
         // FISH: 3-Stage Lifecycle (Fresh -> Rotting -> Bones)
-
         if (h > 0) {
-            // STAGE 1: FRESH (Losing Health)
-            // Renderer: If h > 0, draw Tile 57
             h = Math.max(0, h - 1); 
         } 
         else if (!hasPeaked) {
-            // STAGE 2A: ROTTING (Ramping Up Virulence)
-            // Renderer: If h <= 0 and v < 50, draw Tile 58
             v += 2;
-            if (v >= 50) {
-                v = 50;
-                hasPeaked = 1; // Set bit 31 so we know to start the taper
-            }
+            if (v >= 50) { v = 50; hasPeaked = 1; }
         } 
         else if (v > 10) {
-            // STAGE 2B: ROTTING (Tapering Off Virulence)
-            // Renderer: If h <= 0 and v > 10, draw Tile 58
             v = Math.max(10, v - 2); 
         } 
         else {
-            // STAGE 3: BONES (Desiccated)
-            // Renderer: If h <= 0 and v <= 10, draw Tile 59
-            // Slowly bleed off the last of the virulence until the tile disappears
             v = Math.max(0, v - 1); 
         }
-    } 
+    }
     else {
         // SURFACE (Type 0): Instant Wipe
         // Triggers your "Final Breath" cascade logic
@@ -290,11 +277,12 @@ if (typeID === 5) {
         }
     }
 } else {
+    
     // 2. PACK the new traits
     const newTraits = ((Math.floor(h) & 0xFF) | 
                       ((Math.floor(v) & 0xFF) << 8) | 
                       ((r & 0x0F) << 16) | 
-                      ((typeID & 0x0F) << 20) | 
+                      ((typeID & 0xFF) << 20) | // 👈 CHANGED from 0x0F to 0xFF!
                       (hasPeaked ? 0x80000000 : 0)) >>> 0;
 
     // 3. TRANSFORM CHECK (Major State Change)
@@ -332,7 +320,7 @@ if (typeID === 5) {
         } 
         else if (typeID === 3) { 
             // UPROOTED GRASS / COMPOST
-            bFert = ITEM_TYPES.UPROOTED_GRASS.baseFertility; // 150
+            bFert = ITEM_TYPES.PLANT_MATTER.baseFertility; // 👈 THE FIX: Was UPROOTED_GRASS
         }
         else if (typeID === 4) { 
             // CHICKEN POOP
@@ -353,6 +341,8 @@ if (typeID === 5) {
         else if (typeID === 13) bFert = ITEM_TYPES.PINEAPPLE_ITEM.baseFertility;
         else if (typeID === 14) bFert = ITEM_TYPES.POTATO_ITEM.baseFertility;
         else if (typeID === 15) bFert = ITEM_TYPES.WHEAT_ITEM.baseFertility;
+        else if (typeID === 16) bFert = ITEM_TYPES.EGG.baseFertility; // 👈 Add the Egg!
+
 
 
         // 2. CALCULATE LEAK
@@ -462,8 +452,7 @@ export function attemptInfection(gx, gy, attackerTraits, worldMatrix) {
     const aRange = (attackerTraits >> 16) & 0x0F;
     const aHealth = attackerTraits & 0xFF;
 
-    let dTypeID = (defenderTraits >> 20) & 0x0F;
-    let dHealth = defenderTraits & 0xFF;
+    let dTypeID = (defenderTraits >> 20) & 0xFF; // 👈 CHANGED from 0x0F to 0xFF!    let dHealth = defenderTraits & 0xFF;
     let dVir    = (defenderTraits >> 8) & 0xFF;
     let dPeak   = (defenderTraits >>> 31);
 
@@ -533,7 +522,7 @@ export function seedBacteria(gx, gy, typeName, health, virulence, isRemote = fal
         (Math.floor(health) & 0xFF) | 
         ((Math.floor(virulence) & 0xFF) << 8) | 
         ((range & 0x0F) << 16) | 
-        ((typeId & 0x0F) << 20)
+        ((typeId & 0xFF) << 20) // 👈 THE FIX: Changed from 0x0F to 0xFF!
     ) >>> 0;
 
     data[idx] = packed;

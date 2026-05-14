@@ -10,17 +10,6 @@ if (typeof window !== 'undefined') {
  * Use this to set the "starting" values for things.
  */
 export const ITEM_TYPES = {
-    BASS: {
-        name: "River Bass",
-        decayRate: 2.0,       // Fast decay
-        seedType: "fish",     // Maps to TypeID 1
-        baseHealth: 40,
-        baseVirulence: 10,
-        baseFertility: 100,
-        spriteID: 0,
-        maxStack: 8 // 👈 Stacks to 8
-
-    },
     // ... your existing items ...
     COOKED_BASS: {
         name: "Cooked River Bass",
@@ -33,16 +22,28 @@ export const ITEM_TYPES = {
         maxStack: 8 // 👈 Stacks to 8
 
     },
-    UPROOTED_GRASS: {
-        name: "Uprooted Grass",
-        decayRate: 0.5,       // Very slow decay
-        seedType: "grass_item", // Maps to TypeID 3
-        baseHealth: 12,
-        baseVirulence: 2,
-        baseFertility: 20,
-        spriteID: 36,
-        maxStack: 8 // 👈 Stacks to 8
 
+    // In src/items.js -> update BASS and add the new fish!
+    BASS: { name: "River Bass", decayRate: 2.0, seedType: "fish", baseHealth: 40, baseVirulence: 10, baseFertility: 100, spriteID: 43, tileset: "fishTileset", maxStack: 8 },
+    TROUT: { name: "Trout", decayRate: 2.0, seedType: "fish_trout", baseHealth: 40, baseVirulence: 10, baseFertility: 120, spriteID: 16, tileset: "fishTileset", maxStack: 8 },
+    PANFISH: { name: "Panfish", decayRate: 2.0, seedType: "fish_panfish", baseHealth: 30, baseVirulence: 10, baseFertility: 80, spriteID: 2, tileset: "fishTileset", maxStack: 8 },
+    MACKEREL: { name: "Mackerel", decayRate: 1.5, seedType: "fish_mackerel", baseHealth: 50, baseVirulence: 10, baseFertility: 150, spriteID: 70, tileset: "fishTileset", maxStack: 8 },
+    MUSKELLUNGE: { name: "Muskellunge", decayRate: 1.0, seedType: "fish_muskellunge", baseHealth: 100, baseVirulence: 10, baseFertility: 300, spriteID: 91, tileset: "fishTileset", maxStack: 8 },
+    GIANT_TREVALLY: { name: "Giant Trevally", decayRate: 1.0, seedType: "fish_trevally", baseHealth: 80, baseVirulence: 10, baseFertility: 250, spriteID: 35, tileset: "fishTileset", maxStack: 8 },
+    SQUID: { name: "Squid", decayRate: 1.5, seedType: "fish_squid", baseHealth: 50, baseVirulence: 10, baseFertility: 180, spriteID: 84, tileset: "fishTileset", maxStack: 8 },
+    OCTOPUS: { name: "Octopus", decayRate: 1.5, seedType: "fish_octopus", baseHealth: 60, baseVirulence: 10, baseFertility: 200, spriteID: 107, tileset: "fishTileset", maxStack: 8 },
+    EEL: { name: "Eel", decayRate: 1.5, seedType: "fish_eel", baseHealth: 50, baseVirulence: 10, baseFertility: 150, spriteID: 59, tileset: "fishTileset", maxStack: 8 },
+    ANGLERFISH: { name: "Anglerfish", decayRate: 1.0, seedType: "fish_angler", baseHealth: 80, baseVirulence: 10, baseFertility: 250, spriteID: 29, tileset: "fishTileset", maxStack: 8 },
+
+
+    // In src/items.js
+    PLANT_MATTER: { // 👈 Changed key
+        name: "Plant Matter", // 👈 Changed name
+        decayRate: 0.5, 
+        seedType: "plant_matter", // 👈 Changed seed type
+        baseHealth: 12, baseVirulence: 2, baseFertility: 20, spriteID: 36,
+        tileset: "worldTilesColor", // 👈 ADD THIS LINE
+        maxStack: 8 
     },
 
     // ... inside ITEM_TYPES ...
@@ -220,6 +221,7 @@ export const ITEM_TYPES = {
         baseVirulence: 12,
         baseFertility: 14,
         spriteID: 8,
+        tileset: "worldTilesColor", // 👈 ADD THIS LINE
         maxStack: 8 // 👈 Stacks to 8
     },
 
