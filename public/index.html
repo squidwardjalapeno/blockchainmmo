@@ -73,6 +73,8 @@
 
         <!-- HUD (Hidden until Logged In) -->
         <div id="hud" style="display: none;">
+
+
             <div class="hud-panel" style="position: absolute; left: 20px; top: 20px; display: flex; align-items: center; gap: 15px;">
                 <div style="display: flex; flex-direction: column;">
                     <span style="font-size: 8px; color: #555; margin-bottom: 4px;">IN-GAME BALANCE</span>
@@ -92,6 +94,23 @@
 
             <div id="boot-results" style="position: absolute; left: 20px; top: 100px; background: rgba(0,0,0,0.8); padding: 10px; font-size: 8px; color: white; line-height: 1.5; border: 4px solid white; display: none; z-index: 1001;">
                 <!-- Timings will be injected here by JavaScript -->
+            </div>
+
+            <!-- 💬 CHAT BOX -->
+            <!-- 1. Container ignores all touches -->
+            <div id="chat-container" style="position: fixed; left: 20px; bottom: 20px; width: 300px; display: flex; flex-direction: column; pointer-events: none; z-index: 1000;">
+                
+                <!-- Message History (Also ignores touches) -->
+                <div id="chat-messages" style="height: 120px; overflow-y: hidden; display: flex; flex-direction: column; justify-content: flex-end; margin-bottom: 5px; font-size: 10px; color: white; text-shadow: 2px 2px 0 #000; word-wrap: break-word; line-height: 1.5; padding: 5px;">
+                    <!-- Chat messages will pop up here -->
+                </div>
+                
+                <!-- Input Field & Send Button -->
+                <div style="display: flex; gap: 5px;">
+                    <!-- 2. Re-enable touches ONLY for the input and button -->
+                    <input type="text" id="chat-input" class="pixel-input" placeholder="Chat..." style="pointer-events: auto; flex: 1; font-size: 8px; padding: 8px; background: rgba(45, 35, 46, 0.8); color: white; border: 4px solid var(--bg-dark); outline: none; box-shadow: inset -2px -2px 0px rgba(0,0,0,0.5);">
+                    <button id="chat-send-btn" class="pixel-btn" style="pointer-events: auto; padding: 8px 12px; font-size: 8px;">SEND</button>
+                </div>
             </div>
         </div>
 
@@ -363,6 +382,16 @@
                 <button id="close-menu" class="pixel-btn cancel" style="width: 100%; margin-top: 10px;">CLOSE (ESC)</button>
             </div>
         </div>
+
+    
+    </div>
+
+        <!-- 🪧 ITEM TOOLTIP -->
+    <div id="item-tooltip" style="position: fixed; display: none; background: rgba(0, 0, 0, 0.85); color: white; border: 4px solid var(--bg-dark); padding: 10px; z-index: 10000; width: 160px; pointer-events: none; font-size: 8px; line-height: 1.4; box-shadow: 4px 4px 0px rgba(0,0,0,0.5);">
+        <div id="tt-name" style="color: var(--banana); font-size: 10px; margin-bottom: 4px; text-transform: uppercase;">Item Name</div>
+        <div id="tt-type" style="color: #aaa; margin-bottom: 4px;">Type</div>
+        <div id="tt-stats" style="color: var(--safe); margin-bottom: 4px;"></div>
+        <div id="tt-desc" style="color: #ddd;">Description goes here...</div>
     </div>
 
     <!-- 🚨 THE TERMINAL 🚨 -->

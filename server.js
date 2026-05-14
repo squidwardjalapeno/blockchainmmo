@@ -238,6 +238,13 @@ io.on('connection', (socket) => {
         }
     });
 
+    // 💬 CHAT SYSTEM
+    socket.on('chatMessage', (data) => {
+        // Broadcast the message to everyone connected
+        const senderName = socket.wallet || `Guest_${socket.id.substring(0, 4)}`;
+        io.emit('chatMessage', { sender: senderName, message: data.message });
+    });
+
     // --- REPLACE the requestChest event in server.js ---
     
     socket.on('requestChest', (chestId) => {

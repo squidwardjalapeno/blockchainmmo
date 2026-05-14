@@ -19,7 +19,7 @@ export const ITEM_TYPES = {
         baseVirulence: 0,      // Purified by fire
         baseFertility: 80,
         spriteID: 44,          // Your new Tile ID
-        maxStack: 8 // 👈 Stacks to 8
+        maxStack: 8, // 👈 Stacks to 8
 
     },
 
@@ -65,7 +65,9 @@ export const ITEM_TYPES = {
         seedType: "turnip_item", 
         baseHealth: 30, baseVirulence: 0, baseFertility: 15,
         spriteID: 0, tileset: "cropTileset", // 👈 Tile 0 on crops
-        maxStack: 8 // 👈 Stacks to 8
+        maxStack: 8, // 👈 Stacks to 8
+        drawSize: 8 // 👈 ADD THIS
+
     },
     TURNIP_SEED: {
         name: "Turnip Seed",
@@ -83,7 +85,13 @@ export const ITEM_TYPES = {
         seedType: "tomato_item", 
         baseHealth: 30, baseVirulence: 0, baseFertility: 25, // Tomatoes are rich compost!
         spriteID: 24, tileset: "cropTileset", // 👈 Tile 24
-        maxStack: 8 // 👈 Stacks to 8
+        maxStack: 8, // 👈 Stacks to 8
+
+        // 👇 NEW TOOLTIP METADATA
+        typeLabel: "Food", energy: 35, description: "A hearty fruit with seeds inside.",
+
+        drawSize: 4 // 👈 ADD THIS
+
     },
     TOMATO_SEED: {
         name: "Tomato Seed",
@@ -98,7 +106,9 @@ export const ITEM_TYPES = {
     EGGPLANT_ITEM: {
         name: "Eggplant", decayRate: 0.8, seedType: "eggplant_item", 
         baseHealth: 30, baseVirulence: 0, baseFertility: 40, spriteID: 36, tileset: "cropTileset",
-        maxStack: 8 // 👈 Stacks to 8
+        maxStack: 8, // 👈 Stacks to 8
+        drawSize: 8 // 👈 ADD THIS
+
     },
     EGGPLANT_SEED: {
         name: "Eggplant Seed", decayRate: 0.1, seedType: "eggplant_seed", 
@@ -108,7 +118,9 @@ export const ITEM_TYPES = {
     STRAWBERRY_ITEM: {
         name: "Strawberry", decayRate: 0.8, seedType: "strawberry_item", 
         baseHealth: 20, baseVirulence: 0, baseFertility: 20, spriteID: 72, tileset: "cropTileset",
-        maxStack: 8 // 👈 Stacks to 8
+        maxStack: 8, // 👈 Stacks to 8
+        drawSize: 4 // 👈 ADD THIS
+
     },
     STRAWBERRY_SEED: {
         name: "Strawberry Seed", decayRate: 0.1, seedType: "strawberry_seed", 
@@ -118,7 +130,9 @@ export const ITEM_TYPES = {
     PUMPKIN_ITEM: {
         name: "Pumpkin", decayRate: 0.8, seedType: "pumpkin_item", 
         baseHealth: 40, baseVirulence: 0, baseFertility: 20, spriteID: 96, tileset: "cropTileset",
-        maxStack: 8 // 👈 Stacks to 8
+        maxStack: 8, // 👈 Stacks to 8
+        drawSize: 8 // 👈 ADD THIS
+
     },
     PUMPKIN_SEED: {
         name: "Pumpkin Seed", decayRate: 0.1, seedType: "pumpkin_seed", 
@@ -128,7 +142,9 @@ export const ITEM_TYPES = {
     WATERMELON_ITEM: {
         name: "Watermelon", decayRate: 0.8, seedType: "watermelon_item", 
         baseHealth: 40, baseVirulence: 0, baseFertility: 20, spriteID: 30, tileset: "cropTileset",
-        maxStack: 8 // 👈 Stacks to 8
+        maxStack: 8, // 👈 Stacks to 8
+        drawSize: 8 // 👈 ADD THIS
+
     },
     WATERMELON_SEED: {
         name: "Watermelon Seed", decayRate: 0.1, seedType: "watermelon_seed", 
@@ -140,7 +156,9 @@ export const ITEM_TYPES = {
     CORN_ITEM: {
         name: "Corn", decayRate: 0.8, seedType: "corn_item", 
         baseHealth: 30, baseVirulence: 0, baseFertility: 15, spriteID: 108, tileset: "cropTileset",
-        maxStack: 8 // 👈 Stacks to 8
+        maxStack: 8, // 👈 Stacks to 8
+        drawSize: 8 // 👈 ADD THIS
+
     },
     CORN_SEED: {
         name: "Corn Seed", decayRate: 0.1, seedType: "corn_seed", 
@@ -150,7 +168,9 @@ export const ITEM_TYPES = {
     PINEAPPLE_ITEM: {
         name: "Pineapple", decayRate: 0.8, seedType: "pineapple_item", 
         baseHealth: 40, baseVirulence: 0, baseFertility: 30, spriteID: 48, tileset: "cropTileset",
-        maxStack: 8 // 👈 Stacks to 8
+        maxStack: 8, // 👈 Stacks to 8
+        drawSize: 8 // 👈 ADD THIS
+
     },
     PINEAPPLE_SEED: {
         name: "Pineapple Crown", decayRate: 0.1, seedType: "pineapple_seed", 
@@ -160,7 +180,9 @@ export const ITEM_TYPES = {
     POTATO_ITEM: {
         name: "Potato", decayRate: 0.8, seedType: "potato_item", 
         baseHealth: 30, baseVirulence: 0, baseFertility: 25, spriteID: 84, tileset: "cropTileset",
-        maxStack: 8 // 👈 Stacks to 8
+        maxStack: 8, // 👈 Stacks to 8
+        drawSize: 4 // 👈 ADD THIS
+
     },
     POTATO_SEED: {
         name: "Potato Eye", decayRate: 0.1, seedType: "potato_seed", 
@@ -220,9 +242,11 @@ export const ITEM_TYPES = {
         baseHealth: 3,
         baseVirulence: 12,
         baseFertility: 14,
-        spriteID: 8,
-        tileset: "worldTilesColor", // 👈 ADD THIS LINE
-        maxStack: 8 // 👈 Stacks to 8
+        spriteID: 0,
+        tileset: "transparentTileset", // 👈 ADD THIS LINE
+        maxStack: 8, // 👈 Stacks to 8
+        drawSize: 4 // 👈 ADD THIS
+
     },
 
     // 🥚 Task 3: The New Egg Item!
@@ -235,7 +259,9 @@ export const ITEM_TYPES = {
         baseFertility: 15,
         spriteID: 60,
         tileset: "foodTileset",
-        maxStack: 8 // 👈 Task 3
+        maxStack: 8, // 👈 Task 3
+        drawSize: 4 // 👈 ADD THIS
+
     },
 
     KEY: {
@@ -246,7 +272,9 @@ export const ITEM_TYPES = {
         isKey: true,
         baseHealth: 100,
         baseVirulence: 0,
-        baseFertility: 0
+        baseFertility: 0,
+        drawSize: 4 // 👈 ADD THIS
+
     },
     GOLD_ORE: {
         name: "Gold Ore",

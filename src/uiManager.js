@@ -23,15 +23,15 @@ export const uiState = {
 // CHEST, TEMPLE, & STORAGE STATES
 // ==========================================
 export let activeChestId = null;
-let activeChestItems = [];
+export let activeChestItems = [];
 
-let altarItem = null;
+export let altarItem = null;
 
 export let activeCellarId = null;
-let activeCellarItems = [];
+export let activeCellarItems = [];
 
 export let activeHayStorageId = null;
-let activeHayStorageItems = [];
+export let activeHayStorageItems = [];
 
 const VALID_FOOD_TYPES = ["fish", "cooked_fish", "grass_item"];
 const VALID_HAY_TYPES = ["hay"]; 
@@ -1228,7 +1228,14 @@ export function updateHUD() {
     }
 
     if (playerCount) {
-        playerCount.innerText = `PLAYERS: ${remotePlayers.size + 1}`;
+        // 👇 THE FIX: Count ourselves (1) + any remote player who is NOT offline
+        let onlineCount = 1;
+        import('./multiplayer.js').then(m => {
+            m.remotePlayers.forEach(p => {
+                if (!p.isOffline) onlineCount++;
+            });
+            playerCount.innerText = `PLAYERS: ${onlineCount}`;
+        });
     }
 }
 
@@ -1400,3 +1407,57 @@ window.checkSystemUnlock = (sysX, sysY) => {
         }
     }
 };
+
+// ==========================================
+// 🪧 TOOLTIP ENGINE
+// ==========================================
+const tooltip = document.getElementById('item-tooltip');
+
+function getItemFromDOM(source, index) {
+    if (source === 'hero' || source.startsWith('hero-')) return hero.inventory[index];
+    if (source === 'chest') return activeChestItems[index];
+    if (source === 'cellar') return activeCellarItems[index];
+    if (source === 'hay-storage') return activeHayStorageItems[index];
+    if (source === 'altar') return altarItem;
+    return null;
+}
+
+document.body.addEventListener('mouseover', (e) => {
+    const itemEl = e.target.closest('.inv-item');
+    if (itemEl && itemEl.dataset.index && itemEl.dataset.source) {
+        const item = getItemFromDOM(itemEl.dataset.source, parseInt(itemEl.dataset.index));
+        if (item) {
+            document.getElementById('tt-name').innerText = item.name;
+            document.getElementById('tt-type').innerText = item.typeLabel || "Item";
+            
+            const statsEl = document.getElementById('tt-stats');
+            if (item.energy) statsEl.innerText = `Nutrition: +${item.energy} Energy`;
+            else if (item.ad) statsEl.innerText = `Damage: +${item.ad} ATK`;
+            else statsEl.innerText = "";
+            
+            document.getElementById('tt-desc').innerText = item.description || "No description available.";
+            
+            tooltip.style.display = 'block';
+        }
+    }
+});
+
+document.body.addEventListener('mousemove', (e) => {
+    if (tooltip.style.display === 'block') {
+        // Offset by 15px so it doesn't sit directly under the cursor
+        let x = e.clientX + 15;
+        let y = e.clientY + 15;
+        
+        // Keep it on screen
+        if (x + 160 > window.innerWidth) x = e.clientX - 175;
+        if (y + 100 > window.innerHeight) y = e.clientY - 115;
+        
+        tooltip.style.left = x + 'px';
+        tooltip.style.top = y + 'px';
+    }
+});
+
+document.body.addEventListener('mouseout', (e) => {
+    const itemEl = e.target.closest('.inv-item');
+    if (itemEl) tooltip.style.display = 'none';
+});

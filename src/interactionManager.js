@@ -74,6 +74,10 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
     // We don't need fx/fy anymore, just use tx/ty
     let fx = tx, fy = ty;
 
+    // 👇 NEW: Feet target (Used ONLY for picking items up off the floor)
+    const feetTX = Math.floor((hero.x + 8) / 16);
+    const feetTY = Math.floor((hero.y + 15) / 16);
+
     // 🆕 THE SURVIVAL MEAL: Consume food on 'C'
     if (inputState.keyC) {
         inputState.keyC = false;
@@ -280,7 +284,8 @@ if (target && (target.tileID === 49 || target.tileID === 12) && target.roomID !=
 
     // --- 5. PICKUP LOGIC (E key only) ---
     if (inputState.interact) {
-        const picked = processPickup(tx, ty) || processPickup(fx, fy);
+        // 👇 THE FIX: Only check the tile directly under the hero!
+        const picked = processPickup(feetTX, feetTY);
         if (picked) inputState.interact = false;
     }
 
@@ -584,6 +589,12 @@ function processPickup(tx, ty) {
                 const item = createItem(template);
                 item.health = traits & 0xFF;
                 item.virulence = (traits >> 8) & 0xFF;
+
+                // 👇 EGG STACKING FIX: Retrieve the count, and restore default health
+                if (matchedSeedType === "egg") {
+                    item.count = traits & 0xFF;
+                    item.health = template.baseHealth; 
+                }
                 
                 // If it successfully stacks or finds a slot
                 if (giveItemToHero(item)) {

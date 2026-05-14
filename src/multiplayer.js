@@ -4,6 +4,7 @@ import { images } from './assetLoader.js';
 import { hero } from './entities.js'; 
 import { openChestMenu, handleRemoteChestUpdate, openStoreMenu, handleRemoteStoreUpdate, processClaimedStorage, openCellarMenu, handleRemoteCellarUpdate, openHayStorageMenu, handleRemoteHayStorageUpdate, openWithdrawMenu, executeWithdrawal } from './uiManager.js';
 import { setContractAddress } from './blockchainManager.js';
+import { handleRemoteTileUpdate } from './bacteria.js';
 
 // To this:
 if (typeof window !== 'undefined') {
@@ -134,6 +135,26 @@ export function initMultiplayer() {
         socket.on('hayStorageUpdated', (data) => { handleRemoteHayStorageUpdate(data.hayStorageId, data.items); });
 
         // --- Inside initMultiplayer() in src/multiplayer.js ---
+
+        // 💬 RECEIVE CHAT MESSAGES
+        socket.on('chatMessage', (data) => {
+            const chatBox = document.getElementById('chat-messages');
+            if (!chatBox) return;
+
+            const msgDiv = document.createElement('div');
+            // Format: [Name]: Message
+            msgDiv.innerHTML = `<span style="color: var(--banana);">${data.sender}:</span> <span style="color: white;">${data.message}</span>`;
+            
+            chatBox.appendChild(msgDiv);
+
+            // Auto-scroll to the bottom so the newest message is always visible
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            // Keep only the last 15 messages so it doesn't lag the game
+            if (chatBox.children.length > 15) {
+                chatBox.removeChild(chatBox.firstChild);
+            }
+        });
         
         // 1. Handle Knockbacks
         socket.on('forcedMovement', (data) => {
@@ -174,6 +195,11 @@ export function initMultiplayer() {
                     hero.isAttacking = false; hero.target = null; hero.isWindingUp = false; hero.attackTimer = 0;
                 }
             }
+        });
+
+        // 🍅 RECEIVE DROPPED ITEMS / BACTERIA UPDATES FROM OTHERS
+        socket.on('syncTile', (data) => {
+            handleRemoteTileUpdate(data);
         });
 
         // Listen for incoming heals
@@ -248,6 +274,13 @@ export function initMultiplayer() {
 
         socket.on('position', (data) => {
             const { playerbase, projectiles } = data; 
+
+            // 👇 THE FIX: Purge ghosts from our local map!
+            for (const localId of remotePlayers.keys()) {
+                if (!playerbase[localId]) {
+                    remotePlayers.delete(localId); // Player disconnected, delete them
+                }
+            }
             
             for (let id in playerbase) {
                 if (id !== myID) {
@@ -305,6 +338,32 @@ export function initMultiplayer() {
     });
 }
 
+// 💬 CHAT FUNCTIONS
+export function sendChatMessage(msg) {
+    if (socket) socket.emit('chatMessage', { message: msg });
+}
+
+export function initChatListener() {
+    if (socket) {
+        socket.on('chatMessage', (data) => {
+            const chatBox = document.getElementById('chat-messages');
+            if (!chatBox) return;
+
+            const msgDiv = document.createElement('div');
+            // Format: [Name]: Message
+            msgDiv.innerHTML = `<span style="color: var(--banana);">${data.sender}:</span> ${data.message}`;
+            chatBox.appendChild(msgDiv);
+
+            // Auto-scroll to bottom
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            // Only keep the last 10 messages so the DOM doesn't get bloated
+            if (chatBox.children.length > 10) {
+                chatBox.removeChild(chatBox.firstChild);
+            }
+        });
+    }
+}
 // Paste this at the bottom of src/multiplayer.js
 
 // Add this at the bottom of src/multiplayer.js

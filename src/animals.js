@@ -41,7 +41,7 @@ function isWalkable(tx, ty, worldMatrix, roomMatrix) {
 function findPathToTarget(startTX, startTY, worldMatrix, roomMatrix, targetTileID = null) {
     const queue = [{ x: startTX, y: startTY, path: [] }];
     const visited = new Set([`${startTX}_${startTY}`]);
-    const maxDepth = 15; // Search radius
+    const maxDepth = 20; // Search radius
 
     while (queue.length > 0) {
         const curr = queue.shift();
@@ -186,6 +186,8 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                         m.seedBacteria(simX, simY, "egg", 30, 0);
                     });
                     chicken.eggTimer = 180.0;
+                    chicken.hunger = Math.min(100, chicken.hunger + 30); // 👈 ADD THIS
+
                 }
                 // 3. WANDER
                 else {
@@ -258,6 +260,8 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                     // No box found? Lay it right here!
                     import('./bacteria.js').then(m => m.seedBacteria(currTX, currTY, "egg", 30, 0));
                     chicken.eggTimer = 180.0;
+                    chicken.hunger = Math.min(100, chicken.hunger + 30); // 👈 ADD THIS
+
                     
                     assignRandomWalk(chicken, currTX, currTY, worldMatrix, roomMatrix);
                     chicken.goal = 'wander';
@@ -323,6 +327,8 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                         // Lay the egg!
                         import('./bacteria.js').then(m => m.seedBacteria(currTX, currTY, "egg", 30, 0));
                         chicken.eggTimer = 180.0;
+                        chicken.hunger = Math.min(100, chicken.hunger + 30); // 👈 ADD THIS
+
                     }
                 }
             }

@@ -514,6 +514,23 @@ export function attemptInfection(gx, gy, attackerTraits, worldMatrix) {
 export function seedBacteria(gx, gy, typeName, health, virulence, isRemote = false) {
     const { data, idx } = getBacteriaData(gx, gy);
     const typeId = BACTERIA_TYPES[typeName] || 0;
+
+    // 🥚 EGG STACKING LOGIC
+    if (typeId === 16) {
+        const existingTraits = data[idx];
+        const existingTypeID = (existingTraits >> 20) & 0xFF;
+        if (existingTypeID === 16) {
+            const currentCount = existingTraits & 0xFF; // Read the current stack count
+            if (currentCount < 8) {
+                health = currentCount + 1; // Add 1 to the clutch
+            } else {
+                return; // Clutch is full (8 max). Skip laying!
+            }
+        } else {
+            health = 1; // First egg in the clutch
+        }
+    }
+
     
     // Default range (you can make this dynamic later)
     let range = 2;

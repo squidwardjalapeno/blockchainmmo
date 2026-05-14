@@ -148,6 +148,19 @@ export function drawMap(worldMatrix, roomMatrix) {
                 const sX = (k * 16) + viewport.offset[0];
                 const sY = (l * 16) + viewport.offset[1];
 
+                // 🆕 NESTING BOX LOGIC
+                if (tID === 44) {
+                    // 1. Draw Grass underneath
+                    ctx2.drawImage(tileImg, (63 % 8) * 16, Math.floor(63 / 8) * 16, 16, 16, sX, sY, 16, 16);
+                    
+                    // 2. Draw the transparent Nesting Box (Tile 1 on a width-10 sheet)
+                    const tImg = images.transparentTileset;
+                    if (tImg && tImg.complete) {
+                        ctx2.drawImage(tImg, (1 % 10) * 16, Math.floor(1 / 10) * 16, 16, 16, sX, sY, 16, 16);
+                    }
+                    
+                    continue; // 👈 This completely bypasses the old drawing logic!
+                }
                 // Check if this tile belongs to our new directional road sheet
 if (tID >= 200 && tID <= 208) {
     const roadImg = images.mainTileset2;
@@ -176,7 +189,10 @@ if (tID >= 200 && tID <= 208) {
         for (let k = hTX - halfX; k <= hTX + halfX; k++) {
             const cx = (k / 100) | 0;
             const lx = ((k % 100) + 100) % 100;
-            const sX = (centerX + (k * 16 - hX)) | 0;
+            
+            // 👇 THE FIX: Use viewport.offset instead of centerX/hX
+            const sX = Math.floor((k * 16) + viewport.offset[0]); 
+            
             const wCol = worldMatrix[cx];
             const rCol = roomMatrix[cx];
 
@@ -191,7 +207,10 @@ if (tID >= 200 && tID <= 208) {
 
                 // Only draw tiles that are part of the current house
                 if (rID === hHouseId) {
-                    const sY = (centerY + (l * 16 - hY)) | 0;
+                    
+                    // 👇 THE FIX: Use viewport.offset instead of centerY/hY
+                    const sY = Math.floor((l * 16) + viewport.offset[1]); 
+                    
                     const meta = roomMetadata[rID];
                     let drawID = wChunk[idx];
                     let base = 42; // Interior Floor
@@ -219,16 +238,32 @@ if (tID >= 200 && tID <= 208) {
                         if (ly > 0 && rCol[cy][idx - 100] !== rID) base = 41; 
                     }
                     
-                    drawID = base;
+                    // 1. ALWAYS draw the floor/wall first so it acts as a background
+                    ctx2.drawImage(tileImg, (base % 8) * 16, Math.floor(base / 8) * 16, 16, 16, sX, sY, 16, 16);
 
-                    // --- 🪑 OBJECT LOOKUP (Only inside) ---
+                    // 2. OVERLAY the object on top
                     const obj = getObjectAt(k, l);
                     if (obj) {
-                        const m = { 'SMELTER': 53, 'BEDROLL': 61, 'TEMPLE_ALTAR': 30, 'STORE_COUNTER': 34, 'CHEST_STORAGE': 36, 'STAIRS_TOGGLE': 8, 'KITCHEN': 4, 'MAP_TABLE': 10, 'ARMORY': 11, 'FOOD_STORAGE': 9, 'HAY_STORAGE': 28, 'HAY_TABLE': 24 };
-                        if (m[obj.type]) drawID = m[obj.type];
-                    }
+                        const transMap = {
+                            'CHEST_STORAGE': 2, 'HAY_TABLE': 3, 'HAY_STORAGE': 4,
+                            'STORE_COUNTER': 5, 'TEMPLE_ALTAR': 6, 'STAIRS_TOGGLE': 7,
+                            'KITCHEN': 8, 'MAP_TABLE': 9, 'ARMORY': 10,
+                            'MILITARY_STORAGE': 10, 'FOOD_STORAGE': 11
+                        };
+                        const oldMap = { 'SMELTER': 53, 'BEDROLL': 61, 'INT_WALL': 41 };
 
-                    ctx2.drawImage(tileImg, (drawID % 8) << 4, (drawID >> 3) << 4, 16, 16, sX, sY, 16, 16);
+                        if (transMap[obj.type] !== undefined) {
+                            const tImg = images.transparentTileset;
+                            const tid = transMap[obj.type];
+                            if (tImg && tImg.complete) {
+                                // 👈 STRICTLY uses 10 for the width math
+                                ctx2.drawImage(tImg, (tid % 10) * 16, Math.floor(tid / 10) * 16, 16, 16, sX, sY, 16, 16);
+                            }
+                        } else if (oldMap[obj.type] !== undefined) {
+                            const oid = oldMap[obj.type];
+                            ctx2.drawImage(tileImg, (oid % 8) * 16, Math.floor(oid / 8) * 16, 16, 16, sX, sY, 16, 16);
+                        }
+                    }
                 }
             }
         }
@@ -294,8 +329,17 @@ function getRenderData(typeID) {
             let w = CONFIG.CROP_SHEET_WIDTH_TILES;
             if (tilesetStr === "gardenTileset") w = CONFIG.GARDEN_SHEET_WIDTH_TILES;
             else if (tilesetStr === "worldTilesColor") w = 8;
+            else if (tilesetStr === "transparentTileset") w = 10; // 👈 ADD THIS LINE
+            else if (tilesetStr === "foodTileset") w = 10; // 👈 ADD THIS LINE
+
+
             
-            renderCache[typeID] = { spriteID: template.spriteID, img, sheetWidth: w };
+            renderCache[typeID] = { 
+                spriteID: template.spriteID, 
+                img, 
+                sheetWidth: w, 
+                drawSize: template.drawSize || 16 // 👈 Cache the size
+            };
             return renderCache[typeID];
         }
     }
@@ -346,11 +390,11 @@ export function drawDroppedItems() {
             const traits = data[idx];
             if (traits === 0) continue; // Nothing on the ground here
 
-            const h = traits & 0xFF;
+            const hTraits = traits & 0xFF; // Used for Health (or Count, for Eggs)
             const v = (traits >> 8) & 0xFF;
             const typeID = (traits >> 20) & 0xFF;
 
-            if (typeID === 2 || typeID === 0) continue;
+            if (typeID === 2 || typeID === 0) continue; // Skip plants and empty space
 
             const screenX = Math.floor(viewport.offset[0] + (tx * 16));
             const screenY = Math.floor(viewport.offset[1] + (ty * 16));
@@ -358,32 +402,58 @@ export function drawDroppedItems() {
             let spriteID = 0;
             let imgToUse = null;
             let sheetWidth = 8;
-
-            // In src/renderer.js -> drawDroppedItems()
+            let drawSize = 16;
 
             // Is this ANY type of fish?
             const isFish = typeID === 1 || (typeID >= 40 && typeID <= 48);
 
             // If the fish is dead (h=0), draw the rotting/bones sprite from cropTileset
-            if (isFish && h <= 0) {
+            if (isFish && hTraits <= 0) {
                 imgToUse = images.cropTileset;
                 sheetWidth = CONFIG.CROP_SHEET_WIDTH_TILES;
                 spriteID = (v > 10) ? 58 : 59; 
+                drawSize = 16;
             } 
             else {
-                // Otherwise (if it's a seed, fresh fish, or poop), use the smart lookup!
+                // Otherwise use the smart lookup for all items
                 const rData = getRenderData(typeID);
-                if (!rData || !rData.img) continue; 
+                if (!rData || !rData.img || !rData.img.complete) continue; 
                 
                 imgToUse = rData.img;
                 spriteID = rData.spriteID;
                 sheetWidth = rData.sheetWidth;
+                drawSize = rData.drawSize || 16;
             }
 
-            ctx2.drawImage(
-                imgToUse, (spriteID % sheetWidth) * 16, Math.floor(spriteID / sheetWidth) * 16, 
-                16, 16, screenX, screenY, 16, 16
-            );
+            // Calculate the offset to keep smaller items (4x4, 8x8) centered inside the 16x16 tile
+            const offset = Math.floor((16 - drawSize) / 2);
+
+            // 🥚 VISUAL EGG CLUTCH LOGIC
+            if (typeID === 16) { 
+                const eggCount = Math.min(8, hTraits); // Limit visual eggs to 8
+                for (let i = 0; i < eggCount; i++) {
+                    // Draw a cute little grid of 4x4 eggs scattered on the tile
+                    const ex = (i % 3) * 4;
+                    const ey = Math.floor(i / 3) * 4;
+                    ctx2.drawImage(
+                        imgToUse, 
+                        (spriteID % sheetWidth) * 16, Math.floor(spriteID / sheetWidth) * 16, 
+                        16, 16, 
+                        screenX + 2 + ex, screenY + 2 + ey, 
+                        4, 4 // Draw eggs as 4x4
+                    );
+                }
+            } 
+            // STANDARD DROPPED ITEM LOGIC
+            else {
+                ctx2.drawImage(
+                    imgToUse, 
+                    (spriteID % sheetWidth) * 16, Math.floor(spriteID / sheetWidth) * 16, 
+                    16, 16, 
+                    screenX + offset, screenY + offset, // Apply centering offset
+                    drawSize, drawSize                  // Apply custom scaled size
+                );
+            }
         }
     }
 }

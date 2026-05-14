@@ -66,7 +66,12 @@ const imageSources = {
     weaponTileset:   "images/weaponTileset.png", // 👈 Ensure this is here!
     gardenTileset:   "images/gardenTileset.png",  // 👈 ADD THIS LINE
     fishTileset:     "images/fishTileset.png", // 👈 ADD THIS LINE
-    mainTileset2:    "images/mainTileset2.png" // 👈 ADD THIS LINE
+    mainTileset2:    "images/mainTileset2.png", // 👈 ADD THIS LINE
+    foodTileset:     "images/foodTileset.png", // 👈 ADD THIS LINE
+
+
+    transparentTileset: "images/transparentTileset.png",
+
 
 
 

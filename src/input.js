@@ -49,7 +49,43 @@ export function getUIButtons() {
 }
 
 export function initInput(canvas) {
+
+    // 👇 NEW: Listen for the Chat "SEND" button being clicked/tapped
+    const chatSendBtn = document.getElementById('chat-send-btn');
+    const chatInput = document.getElementById('chat-input');
+    
+    if (chatSendBtn && chatInput) {
+        chatSendBtn.addEventListener('click', () => {
+            const msg = chatInput.value.trim();
+            if (msg.length > 0) {
+                import('./multiplayer.js').then(m => m.sendChatMessage(msg));
+            }
+            chatInput.value = ''; // Clear box
+            chatInput.blur();     // Close virtual keyboard
+        });
+    }
+    
     window.addEventListener("keydown", (e) => {
+
+        // 👇 NEW: Check if Chat is focused
+        if (document.activeElement && document.activeElement.id === 'chat-input') {
+            if (e.code === 'Enter') {
+                const msg = document.activeElement.value.trim();
+                if (msg.length > 0) {
+                    import('./multiplayer.js').then(m => m.sendChatMessage(msg));
+                }
+                document.activeElement.value = ''; // Clear box
+                document.activeElement.blur();     // Unfocus
+            }
+            return; // 🛑 EXIT EARLY: Don't trigger game inputs!
+        }
+        
+        // Quick focus for chat if they hit Enter while playing
+        if (e.code === 'Enter') {
+            const chatInput = document.getElementById('chat-input');
+            if (chatInput) chatInput.focus();
+            return;
+        }
                 
         inputState.inputType = 'keyboard'; // 👈 Switch to PC Mode
         keysDown[e.code] = true;
