@@ -32,6 +32,9 @@ export const BACTERIA_TYPES = {
     "fish_trout": 40, "fish_panfish": 41, "fish_mackerel": 42, 
     "fish_muskellunge": 43, "fish_trevally": 44, "fish_squid": 45, 
     "fish_octopus": 46, "fish_eel": 47, "fish_angler": 48,
+
+        "raw_chicken": 50, // 👈 ADD THIS
+
 };
 
 

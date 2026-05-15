@@ -110,6 +110,21 @@ var update = function (modifier) {
         return; 
     }
 
+    // 👇 NEW: Location Banner Tracker
+    const currentCX = Math.floor(hero.x / 1600);
+    const currentCY = Math.floor(hero.y / 1600);
+
+    // If we just spawned in, or crossed the border into a new chunk
+    if (!gameState.lastLoggedCell || gameState.lastLoggedCell.cx !== currentCX || gameState.lastLoggedCell.cy !== currentCY) {
+        gameState.lastLoggedCell = { cx: currentCX, cy: currentCY };
+        
+        // Grab the blueprint data for this chunk
+        const globalIdx = currentCY * CONFIG.MAP_SIZE + currentCX;
+        const cellType = worldMap[globalIdx];
+        
+        import('./uiManager.js').then(m => m.triggerLocationBanner(currentCX, currentCY, cellType));
+    }
+
     // ==========================================
     // ⚡ REAL-TIME LOOP (Runs every frame)
     // ==========================================

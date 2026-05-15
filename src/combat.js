@@ -1,29 +1,27 @@
-// js/combat.js
+// src/combat.js
 import { remotePlayers } from './multiplayer.js';
+import { animals } from './animals.js';
 
 export let currentTarget = null;
 
-// To this:
 if (typeof window !== 'undefined') {
     logStep("combat.js");
 }
 
-
 /**
- * PvP Style: Find the nearest Remote Player in range
- * Priority is given to the player with the lowest HP
+ * PvP Style: Find the nearest Remote Player or Animal in range
+ * Priority is given to the entity with the lowest HP
  */
 export function findPriorityTarget(hero, range = 150) {
     let bestTarget = null;
     let lowestHP = Infinity;
 
-    // We now iterate through remotePlayers (Map) instead of animals
+    // 1. Scan Players
     remotePlayers.forEach((player) => {
         const dx = player.x - hero.x;
         const dy = player.y - hero.y;
         const distSq = dx * dx + dy * dy;
 
-        // Only target players who are alive and in range
         if (distSq < range * range && player.hp > 0) {
             if (player.hp < lowestHP) { 
                 lowestHP = player.hp;
@@ -32,14 +30,24 @@ export function findPriorityTarget(hero, range = 150) {
         }
     });
 
-    // Update global target reference
+    // 2. Scan Animals
+    animals.forEach((anim) => {
+        const dx = anim.x - hero.x;
+        const dy = anim.y - hero.y;
+        const distSq = dx * dx + dy * dy;
+
+        if (distSq < range * range && anim.hp > 0) {
+            if (anim.hp < lowestHP) { 
+                lowestHP = anim.hp;
+                bestTarget = anim;
+            }
+        }
+    });
+
     currentTarget = bestTarget;
     return bestTarget;
 }
 
-/**
- * Logic to clear the target if they die or move too far away
- */
 export function validateTarget(hero, range = 250) {
     if (!currentTarget) return;
 
@@ -47,18 +55,10 @@ export function validateTarget(hero, range = 250) {
     const dy = currentTarget.y - hero.y;
     const distSq = dx * dx + dy * dy;
 
-    // 🕵️ THE PROOF LOG
     if (currentTarget.hp <= 0 || distSq > range * range) {
-        console.log(`🎯 TARGET LOST | HP: ${currentTarget.hp} | Dist: ${Math.sqrt(distSq).toFixed(1)}px (Limit: ${range}px)`);
-        
+        console.log(`🎯 TARGET LOST | HP: ${currentTarget.hp}`);
         currentTarget = null;
         hero.isAttacking = false;
         hero.isWindingUp = false;
     }
 }
-
-/**
- * CLEANUP: Projectiles are removed for Bare Bones PvP
- * If you want to add them back later (spells), you can re-insert 
- * the spawnProjectile logic here.
- */

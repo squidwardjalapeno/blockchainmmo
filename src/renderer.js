@@ -1370,6 +1370,8 @@ export function drawAbilityButtons(ctxUI) {
     drawHUDButton(ctxUI, btns.INTERACT.x, btns.INTERACT.y, btns.INTERACT.r, "USE", "🖐️", inputState.interact, 0, 0, 0);
     drawHUDButton(ctxUI, btns.DROP.x, btns.DROP.y, btns.DROP.r, "DROP", "⏬", inputState.drop, 0, 0, 0);
     drawHUDButton(ctxUI, btns.PLANT.x, btns.PLANT.y, btns.PLANT.r, "PLANT", "🌱", inputState.keyV, 0, 0, 0);
+    drawHUDButton(ctxUI, btns.EAT.x, btns.EAT.y, btns.EAT.r, "EAT", "🍗", inputState.keyC, 0, 0, 0); // 👈 ADD THIS LINE
+
     // 👇 NEW: Draw the Backpack Button
     drawHUDButton(ctxUI, btns.INV.x, btns.INV.y, btns.INV.r, "INV", "🎒", false, 0, 0, 0);
 }

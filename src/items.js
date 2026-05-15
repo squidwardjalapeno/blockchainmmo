@@ -41,8 +41,8 @@ export const ITEM_TYPES = {
         name: "Plant Matter", // 👈 Changed name
         decayRate: 0.5, 
         seedType: "plant_matter", // 👈 Changed seed type
-        baseHealth: 12, baseVirulence: 2, baseFertility: 20, spriteID: 36,
-        tileset: "worldTilesColor", // 👈 ADD THIS LINE
+        baseHealth: 12, baseVirulence: 2, baseFertility: 20, spriteID: 152,                // 👈 Updated to 152
+        tileset: "gardenTileset",     // 👈 Updated to gardenTileset
         maxStack: 8 
     },
 
@@ -262,6 +262,11 @@ export const ITEM_TYPES = {
         maxStack: 8, // 👈 Task 3
         drawSize: 4 // 👈 ADD THIS
 
+    },
+
+    RAW_CHICKEN: { 
+        name: "Raw Chicken", decayRate: 1.5, seedType: "raw_chicken", 
+        baseHealth: 50, baseVirulence: 10, baseFertility: 100, spriteID: 15, tileset: "foodTileset", maxStack: 8, drawSize: 8 
     },
 
     KEY: {

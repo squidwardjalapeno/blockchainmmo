@@ -13,6 +13,7 @@ import { getObjectAt } from './staticObjects.js';
 import { CONFIG } from './config.js'
 import { CC_RESTRICT } from './entities.js'; // 👈 Import the restriction masks
 
+import { animals } from './animals.js';
 
 // To this:
 if (typeof window !== 'undefined') {
@@ -55,26 +56,46 @@ export function giveItemToHero(newItem) {
     console.log("🎒 Backpack is full!");
     return false; 
 }
-/**
- * 💡 MAIN ENTRY POINT: Call this in your game loop update()
- */
 export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityMatrix) {
-    // 1. Project a target exactly 1 tile in front of the hero's feet
-    let interactX = hero.x + 8;
-    let interactY = hero.y + 15;
+    // 1. FORGIVING HITBOX LOGIC (For Interactions)
+    let bx = 0, by = 0;
+    if (hero.dir.includes('North')) by = -1;
+    if (hero.dir.includes('South')) by = 1;
+    if (hero.dir.includes('West'))  bx = -1;
+    if (hero.dir.includes('East'))  bx = 1;
 
-    if (hero.dir.includes('North')) interactY -= 16;
-    if (hero.dir.includes('South')) interactY += 16;
-    if (hero.dir.includes('West'))  interactX -= 16;
-    if (hero.dir.includes('East'))  interactX += 16;
+    const currentTX = Math.floor((hero.x + 8) / 16);
+    const currentTY = Math.floor((hero.y + 15) / 16);
+    
+    // Build a list of tiles to check (Standing tile, and front tile)
+    let tilesToCheck = [
+        {tx: currentTX + bx, ty: currentTY + by}, 
+        {tx: currentTX, ty: currentTY}
+    ];
 
-    const tx = Math.floor(interactX / 16);
-    const ty = Math.floor(interactY / 16);
+    // If facing diagonal, check the adjacent corners too!
+    if (bx !== 0 && by !== 0) {
+        tilesToCheck.push({tx: currentTX + bx, ty: currentTY});
+        tilesToCheck.push({tx: currentTX, ty: currentTY + by});
+    }
 
-    // We don't need fx/fy anymore, just use tx/ty
-    let fx = tx, fy = ty;
+    let tx = currentTX + bx, ty = currentTY + by;
+    let obj = null;
+    let target = getTileData(tx * 16, ty * 16, worldMatrix, roomMatrix);
 
-    // 👇 NEW: Feet target (Used ONLY for picking items up off the floor)
+    // Loop through the forgiving hitbox to find the first valid object/door
+    for (let t of tilesToCheck) {
+        const foundObj = getObjectAt(t.tx, t.ty);
+        const tgt = getTileData(t.tx * 16, t.ty * 16, worldMatrix, roomMatrix);
+        if (foundObj || (tgt && (tgt.tileID === 49 || tgt.tileID === 12) && tgt.roomID !== 0)) {
+            tx = t.tx; ty = t.ty;
+            obj = foundObj;
+            target = tgt;
+            break;
+        }
+    }
+
+    // FEET COORDS (For Pickup/Planting)
     const feetTX = Math.floor((hero.x + 8) / 16);
     const feetTY = Math.floor((hero.y + 15) / 16);
 
@@ -86,189 +107,115 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
 
     if (inputState.interact || inputState.action) {
         
-        // --- THE NEW REGISTRY CHECK ---
-        const obj = getObjectAt(tx, ty);
-        const target = getTileData(fx * 16, fy * 16, worldMatrix, roomMatrix); // Physical Tile Layer
-        
         if (obj) {
             if (obj.type === 'SMELTER') {
-                console.log(`🔥 Smelter accessed in House #${obj.houseId}`);
                 openSmelterMenu();
                 inputState.interact = false;
                 inputState.action = false;
                 return;
             }
 
-            // 🆕 THE BEDROLL LOGOUT LOGIC
             if (obj.type === 'BEDROLL') {
                 if (confirm("🛌 Do you want to sleep here and safely log out?")) {
-                    console.log("Logging off safely...");
-                    
-                    // 1. Force the server to record our final position and stats
                     if (socket) {
-                        socket.emit('updateStats', { 
-                            hp: hero.hp, 
-                            energy: hero.energy,
-                            xp: hero.xp
-                        });
+                        socket.emit('updateStats', { hp: hero.hp, energy: hero.energy, xp: hero.xp });
                     }
-
-                    // 2. Wait half a second for the emit to finish, then reload
-                    setTimeout(() => {
-                        window.location.reload(); 
-                    }, 500);
+                    setTimeout(() => { window.location.reload(); }, 500);
                 }
-                
                 inputState.interact = false;
                 inputState.action = false;
                 return;
             }
-// 🆕 UPDATED STORE COUNTER LOGIC
+
             if (obj.type === 'STORE_COUNTER') {
-                if (!playerWallet) {
-                    alert("You must connect your wallet to trade at the general store!");
-                    return;
-                }
-                console.log("🏪 Accessing Trade Counter...");
-                const storeId = `store_${tx}_${ty}`; 
-                
-                if (socket) {
-                    socket.emit('requestStore', storeId);
-                }
-                
+                if (!playerWallet) { alert("Connect your wallet to trade!"); return; }
+                if (socket) socket.emit('requestStore', `store_${tx}_${ty}`);
                 inputState.interact = false;
                 inputState.action = false;
                 return;
             }
             
-            // 2. 🆕 UPDATED ROOT CELLAR LOGIC
             if (obj.type === 'FOOD_STORAGE') {
-                console.log("🧺 Inspecting the Root Cellar...");
-                const cellarId = `cellar_${tx}_${ty}`; 
-                
-                if (socket) {
-                    socket.emit('requestCellar', cellarId);
-                }
-                
+                if (socket) socket.emit('requestCellar', `cellar_${tx}_${ty}`);
                 inputState.interact = false;
                 inputState.action = false;
                 return;
             }
 
-    // 🆕 UPDATED CHEST LOGIC
             if (obj.type === 'CHEST_STORAGE') {
-                console.log("📦 Requesting chest data from server...");
-                // Create a unique ID based on the chest's physical coordinates
-                const chestId = `chest_${tx}_${ty}`; 
-                
-                if (socket) {
-                    socket.emit('requestChest', chestId);
-                }
-                
+                if (socket) socket.emit('requestChest', `chest_${tx}_${ty}`);
                 inputState.interact = false;
                 inputState.action = false;
                 return;
             }
 
-            // 🆕 TEMPLE ALTAR LOGIC
             if (obj.type === 'TEMPLE_ALTAR') {
-                console.log("⛩️ Approached the Holy Altar.");
                 openTempleMenu();
                 inputState.interact = false;
                 inputState.action = false;
                 return;
             }
 
-            // 🆕 KITCHEN LOGIC
             if (obj.type === 'KITCHEN') {
-                console.log("🍳 Opened the Kitchen.");
                 openKitchenMenu();
                 inputState.interact = false;
                 inputState.action = false;
                 return;
             }
 
-            // 🆕 MAP TABLE LOGIC
             if (obj.type === 'MAP_TABLE') {
-                console.log("🗺️ Consulting the Map Table...");
                 openMapTableMenu();
                 inputState.interact = false;
                 inputState.action = false;
                 return;
             }
 
-            // 🆕 HAY TABLE & STORAGE LOGIC
             if (obj.type === 'HAY_TABLE') {
-                console.log("🌾 Using the Hay Table.");
                 openHayTableMenu();
                 inputState.interact = false;
                 inputState.action = false;
                 return;
             }
+
             if (obj.type === 'HAY_STORAGE') {
-                console.log("🌾 Inspecting the Hay Storage...");
-                const hayStorageId = `hay_${tx}_${ty}`; 
-                if (socket) {
-                    socket.emit('requestHayStorage', hayStorageId);
-                }
+                if (socket) socket.emit('requestHayStorage', `hay_${tx}_${ty}`);
                 inputState.interact = false;
                 inputState.action = false;
                 return;
             }
 
-    if (obj.type === 'MILITARY_STORAGE') {
-        console.log("🛡️ This rack holds sharpened spears and sturdy leather armor. The town is ready for trouble.");
-        inputState.interact = false;
-        inputState.action = false;
-        return;
-    }
+            if (obj.type === 'MILITARY_STORAGE') {
+                inputState.interact = false;
+                inputState.action = false;
+                return;
+            }
 
- if (obj && obj.type === 'STAIRS_TOGGLE') {
-    // Flip between 1 and 2
-    hero.floor = (hero.floor === 1) ? 2 : 1;
-    
-    console.log(`🏠 Switched to Floor ${hero.floor}`);
-    
-    // Prevent double-clicking
-    inputState.interact = false;
-    inputState.action = false;
-    return;
-}
-
-
+            if (obj.type === 'STAIRS_TOGGLE') {
+                hero.floor = (hero.floor === 1) ? 2 : 1;
+                inputState.interact = false;
+                inputState.action = false;
+                return;
+            }
         }
 
-        // js/interactionManager.js -> inside handleInteractions()
-
-// ... inside if (inputState.interact || inputState.action) block ...
-
-// B. PHYSICAL TILE ACTIONS
-// Claiming Keys (Updated to include Barn Doors)
-if (target && (target.tileID === 49 || target.tileID === 12) && target.roomID !== 0) {
-    if (!hasKeyForHouse(target.roomID)) {
-        if (hero.inventory.length < hero.maxSlots) {
-            const newKey = createItem(ITEM_TYPES.KEY);
-            newKey.houseId = target.roomID;
-            
-            // Dynamic naming based on door type
-            const buildingName = (target.tileID === 12) ? "Barn" : "House";
-            newKey.name = `Key to ${buildingName} #${target.roomID}`;
-            
-            giveItemToHero(newKey);
-            console.log(`🔑 ${buildingName} #${target.roomID} claimed!`);
-            
-            inputState.interact = false;
-            inputState.action = false;
-            return;
+        // B. PHYSICAL TILE ACTIONS (Doors/Mining)
+        if (target && (target.tileID === 49 || target.tileID === 12) && target.roomID !== 0) {
+            if (!hero.inventory.some(item => item.isKey && item.houseId === target.roomID)) {
+                if (hero.inventory.length < hero.maxSlots) {
+                    const newKey = createItem(ITEM_TYPES.KEY);
+                    newKey.houseId = target.roomID;
+                    newKey.name = `Key to ${(target.tileID === 12) ? "Barn" : "House"} #${target.roomID}`;
+                    giveItemToHero(newKey);
+                    inputState.interact = false;
+                    inputState.action = false;
+                    return;
+                }
+            }
         }
-    }
-}
 
-        // C. MINING LOGIC
         if (target.tileID === 29) {
             if (hero.inventory.length < hero.maxSlots) {
                 giveItemToHero(createItem(ITEM_TYPES.GOLD_ORE));
-                console.log("⛏️ Mined Gold Ore!");
                 inputState.interact = false;
                 inputState.action = false;
                 return;
@@ -283,24 +230,18 @@ if (target && (target.tileID === 49 || target.tileID === 12) && target.roomID !=
     }
 
     // --- 5. PICKUP LOGIC (E key only) ---
+    // 👇 THE FIX: ONLY checks the tile directly under your feet!
     if (inputState.interact) {
-        // 👇 THE FIX: Only check the tile directly under the hero!
         const picked = processPickup(feetTX, feetTY);
         if (picked) inputState.interact = false;
     }
 
-    // In src/interactionManager.js -> handleInteractions()
-
-    // Inside handleInteractions:
     // --- 6. DROP ITEM (G Key) ---
     if (inputState.drop) {
         inputState.drop = false;
         if (hero.equipment.mainHand) {
             const item = hero.equipment.mainHand;
-            
-            // Drop exactly 1 tile in front of us
             seedBacteria(tx, ty, item.seedType, item.health, item.virulence);
-
             item.count--;
             if (item.count <= 0) hero.equipment.mainHand = null;
         }
@@ -313,28 +254,24 @@ if (target && (target.tileID === 49 || target.tileID === 12) && target.roomID !=
             const item = hero.equipment.mainHand;
 
             if (item.seedType && (item.seedType.includes("_seed") || item.seedType === "potato_item")) {
-                const cx = Math.floor(tx / 100); const cy = Math.floor(ty / 100);
-                const lx = ((tx % 100) + 100) % 100; const ly = ((ty % 100) + 100) % 100;
+                // 👇 Seeds are planted at the feet!
+                const cx = Math.floor(feetTX / 100); const cy = Math.floor(feetTY / 100);
+                const lx = ((feetTX % 100) + 100) % 100; const ly = ((feetTY % 100) + 100) % 100;
                 const tileID = worldMatrix[cx]?.[cy]?.[(ly * 100) + lx];
                 const roomID = roomMatrix[cx]?.[cy]?.[(ly * 100) + lx] || 0;
 
-                if (tileID === 63 && (roomID === 0 || roomID === 9999) && !plants.has(`${tx}_${ty}`)) {
+                if (tileID === 63 && (roomID === 0 || roomID === 9999) && !plants.has(`${feetTX}_${feetTY}`)) {
                     const plantType = item.seedType.replace("_seed", "").replace("_item", "");
-                    createPlant(tx, ty, fertilityMatrix, 0, plantType);
-
+                    createPlant(feetTX, feetTY, fertilityMatrix, 0, plantType);
                     item.count--;
                     if (item.count <= 0) hero.equipment.mainHand = null;
-                    console.log(`🌱 Planted ${plantType}!`);
                 }
-            } else {
-                console.log("❌ You are not holding a seed!");
             }
         }
     }
 
-    // --- 7. RESIDUAL ACTIONS (Cooking/Fishing) ---
     if (inputState.action) {
-        processAction(tx, ty, worldMatrix, roomMatrix);
+        processCasting(tx, ty, worldMatrix, roomMatrix); 
     }
 }
 
@@ -746,12 +683,24 @@ export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remoteP
 
     // 1. RE-SYNC TARGET (Ghost Killer)
     if (hero.target) {
-        const liveData = remotePlayers.get(hero.target.id);
-        if (liveData) {
-            hero.target.x = liveData.x;
-            hero.target.y = liveData.y;
-            hero.target.hp = liveData.hp; // Keep HP synced too
+        // 👇 NEW: Sync Chicken targets
+        if (hero.target.isAnimal) {
+            const liveData = animals.find(a => a.id === hero.target.id);
+            if (liveData) {
+                hero.target.x = liveData.x;
+                hero.target.y = liveData.y;
+                hero.target.hp = liveData.hp; 
+            }
         } 
+        // Sync Player targets
+        else {
+            const liveData = remotePlayers.get(hero.target.id);
+            if (liveData) {
+                hero.target.x = liveData.x;
+                hero.target.y = liveData.y;
+                hero.target.hp = liveData.hp; 
+            } 
+        }
     }
 
     // 0. DEATH & MANUAL OVERRIDE
@@ -763,11 +712,12 @@ export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remoteP
     }
 
     // 2. TARGET SELECTION (Search nearby)
-    let targetPlayer = findNearestPlayer(hero, remotePlayers, 200);
+    // 👇 THE FIX: Use our new scanner that sees both Players AND Chickens!
+    let targetEntity = findPriorityTarget(hero, 200);
 
     // 3. CLICK-TO-LOCK
-    if (inputState.mainBtn && targetPlayer) {
-        hero.target = targetPlayer;
+    if (inputState.mainBtn && targetEntity) {
+        hero.target = targetEntity;
         hero.isAttacking = true;
         inputState.mainBtn = false;
     }
@@ -835,6 +785,7 @@ export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remoteP
                 if (hero.attackTimer >= windUpLimit) {
                     console.log("👊 IMPACT TRIGGERED!");
                     
+                    let fluxShieldToGain = 0; // 👈 THE FIX: Declare the variable!
                     let finalDamage = hero.ad;
 
                     if (hero.buffs.vaultEmpowered) {
@@ -889,8 +840,13 @@ export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remoteP
                         }
                     }
 
-                    // Apply Damage to Target
-                    applyPlayerDamage(hero.target, finalDamage);
+                    // 👇 THE FIX: Apply damage locally if it's an animal!
+                    if (hero.target.isAnimal) {
+                        hero.target.hp -= finalDamage;
+                        console.log(`🐔 Hit chicken for ${finalDamage}! HP: ${hero.target.hp}`);
+                    } else {
+                        applyPlayerDamage(hero.target, finalDamage);
+                    }
                     
                     // 4. APPLY ALL FLUX SHIELDS TO SELF (Flux Shot + Holy Shield)
                     if (fluxShieldToGain > 0) {

@@ -42,6 +42,8 @@ export function getUIButtons() {
         INTERACT: { x: 25, y: H - 75, r: 14 },
         DROP:     { x: 25, y: H - 110, r: 14 },
         PLANT:    { x: 25, y: H - 145, r: 14 },
+        EAT:      { x: 25, y: H - 180, r: 14 }, // 👈 ADD THIS LINE
+
 
         // 👇 NEW: Inventory Button (Top-Left, below the XP bar)
         INV:      { x: 25, y: 50, r: 16 }
@@ -64,7 +66,7 @@ export function initInput(canvas) {
             chatInput.blur();     // Close virtual keyboard
         });
     }
-    
+
     window.addEventListener("keydown", (e) => {
 
         // 👇 NEW: Check if Chat is focused
@@ -171,6 +173,8 @@ export function initInput(canvas) {
                 if (hit(btns.INTERACT)) { inputState.interact = true; inputState.action = true; }
                 if (hit(btns.DROP)) inputState.drop = true;
                 if (hit(btns.PLANT)) inputState.keyV = true;
+                if (hit(btns.EAT)) inputState.keyC = true; // 👈 ADD THIS LINE
+
                 
                 // 👇 NEW: Toggle the menu if they tap the backpack!
                 if (hit(btns.INV)) {

@@ -7,21 +7,18 @@ import { hero } from './entities.js';
 
 export const animals = []; 
 
+// 1. Add stats to spawnChicken:
 export function spawnChicken(gx, gy) {
     animals.push({
-        x: gx * 16,
-        y: gy * 16,
-        floor: 1, 
-        inventory: [], 
-        speed: 20,
-        hunger: 80, 
-        eggTimer: 180.0, // 👈 3 minutes to lay an egg
-        state: 'idle',
-        goal: 'wander',  // 👈 Tracks what it's currently trying to do
-        path: [], 
-        moveTimer: Math.random() * 2,
-        dir: 'East',
-        lastUpdated: Date.now()
+        id: 'animal_' + Math.random().toString(36).substr(2, 9),
+        isAnimal: true, // 👈 Identifies them to the combat system
+        x: gx * 16, y: gy * 16, floor: 1, inventory: [], speed: 20,
+        
+        hp: 30, maxHp: 30,             // 👈 NEW STATS
+        energy: 100, maxEnergy: 100,   // 👈 NEW STATS
+        
+        hunger: 80, eggTimer: 10.0, state: 'idle', goal: 'wander', path: [], 
+        moveTimer: Math.random() * 2, dir: 'East', lastUpdated: Date.now()
     });
 }
 
@@ -113,6 +110,15 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
     const heroCY = Math.floor(hero.y / 1600);
     const now = Date.now();
 
+    // 👇 1. CLEANUP DEAD CHICKENS AT THE VERY TOP
+    for (let i = animals.length - 1; i >= 0; i--) {
+        if (animals[i].hp <= 0) {
+            import('./bacteria.js').then(m => m.seedBacteria(Math.floor(animals[i].x/16), Math.floor(animals[i].y/16), "raw_chicken", 50, 0));
+            animals.splice(i, 1);
+            continue;
+        }
+    }
+
     animals.forEach(chicken => {
         const chickenCX = Math.floor(chicken.x / 1600);
         const chickenCY = Math.floor(chicken.y / 1600);
@@ -136,11 +142,11 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                 const stepTime = Math.min(30.0, timeRemaining);
                 timeRemaining -= stepTime;
 
-                chicken.hunger += stepTime * 2.0;
+                chicken.energy = Math.max(0, chicken.energy - (stepTime * 2.0));
                 chicken.eggTimer -= stepTime;
 
-                // 1. IS IT HUNGRY?
-                if (chicken.hunger >= 50) {
+                // 1. IS IT HUNGRY? (Energy < 50)
+                if (chicken.energy < 50) {
                     let foundFood = false;
                     let bestPlantKey = null;
                     let bestDistSq = Infinity;
@@ -164,7 +170,7 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                     if (bestPlantKey) {
                         simX = foodX; simY = foodY;
                         const p = plants.get(bestPlantKey);
-                        chicken.hunger = Math.max(0, chicken.hunger - Math.max(5, p.growth));
+                        chicken.energy = Math.min(100, chicken.energy + Math.max(20, p.growth));
                         
                         import('./bacteria.js').then(m => {
                             const bac = m.getBacteriaData(p.gx, p.gy);
@@ -179,15 +185,11 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                         simX = wanderResult.x; simY = wanderResult.y;
                     }
                 } 
-                // 2. IS IT READY TO LAY AN EGG?
-                else if (chicken.eggTimer <= 0) {
-                    // Try to lay an egg nearby
-                    import('./bacteria.js').then(m => {
-                        m.seedBacteria(simX, simY, "egg", 30, 0);
-                    });
-                    chicken.eggTimer = 180.0;
-                    chicken.hunger = Math.min(100, chicken.hunger + 30); // 👈 ADD THIS
-
+                // 2. IS IT READY TO LAY AN EGG? (Requires 40 Energy!)
+                else if (chicken.eggTimer <= 0 && chicken.energy >= 40) {
+                    chicken.energy -= 40;
+                    import('./bacteria.js').then(m => m.seedBacteria(simX, simY, "egg", 30, 0));
+                    chicken.eggTimer = 10.0;
                 }
                 // 3. WANDER
                 else {
@@ -198,24 +200,10 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                 // 4. POOP ON THE TRAIL
                 if (poopsToDrop > 0 && Math.random() < 0.3) {
                     if (isWalkable(simX, simY, worldMatrix, roomMatrix)) {
-                        import('./bacteria.js').then(m => {
-                            m.seedBacteria(simX, simY, "chicken_poop", 3, 12); 
-                        });
+                        import('./bacteria.js').then(m => m.seedBacteria(simX, simY, "chicken_poop", 3, 12));
                         poopsToDrop--;
                     }
                 }
-            }
-
-            // Scatter remaining poops
-            while (poopsToDrop > 0) {
-                const px = simX + Math.floor(Math.random() * 5) - 2;
-                const py = simY + Math.floor(Math.random() * 5) - 2;
-                if (isWalkable(px, py, worldMatrix, roomMatrix)) {
-                    import('./bacteria.js').then(m => {
-                        m.seedBacteria(px, py, "chicken_poop", 3, 12); 
-                    });
-                }
-                poopsToDrop--;
             }
 
             chicken.x = simX * 16;
@@ -228,7 +216,7 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
         // ==========================================
         // ⚡ REAL-TIME NORMAL TICK 
         // ==========================================
-        chicken.hunger = Math.min(100, chicken.hunger + (modifier * 2)); 
+        chicken.energy = Math.max(0, chicken.energy - (modifier * 0.5)); // Slow drain
         chicken.frustration = Math.max(0, (chicken.frustration || 0) - modifier);
         chicken.moveTimer -= modifier;
         chicken.eggTimer -= modifier;
@@ -239,8 +227,8 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
         // --- 🧠 AI DECISION MAKING ---
         if (chicken.moveTimer <= 0 && (!chicken.path || chicken.path.length === 0)) {
             
-            // PRIORITY 1: HUNGER
-            if (chicken.hunger >= 50 && chicken.frustration <= 0) { 
+            // PRIORITY 1: HUNGER (Energy < 50)
+            if (chicken.energy < 50 && chicken.frustration <= 0) { 
                 const pathToFood = findPathToTarget(currTX, currTY, worldMatrix, roomMatrix, null);
                 if (pathToFood) {
                     chicken.path = pathToFood;
@@ -250,18 +238,16 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                     chicken.goal = 'wander';
                 }
             } 
-            // PRIORITY 2: LAY EGG
-            else if (chicken.eggTimer <= 0) {
+            // PRIORITY 2: LAY EGG (Requires 40 Energy!)
+            else if (chicken.eggTimer <= 0 && chicken.energy >= 40) {
                 const pathToBox = findPathToTarget(currTX, currTY, worldMatrix, roomMatrix, 44);
                 if (pathToBox) {
                     chicken.path = pathToBox;
                     chicken.goal = 'egg';
                 } else {
-                    // No box found? Lay it right here!
+                    chicken.energy -= 40;
                     import('./bacteria.js').then(m => m.seedBacteria(currTX, currTY, "egg", 30, 0));
-                    chicken.eggTimer = 180.0;
-                    chicken.hunger = Math.min(100, chicken.hunger + 30); // 👈 ADD THIS
-
+                    chicken.eggTimer = 10.0;
                     
                     assignRandomWalk(chicken, currTX, currTY, worldMatrix, roomMatrix);
                     chicken.goal = 'wander';
@@ -295,9 +281,7 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                 const moveX = (dx / dist) * chicken.speed * modifier;
                 const moveY = (dy / dist) * chicken.speed * modifier;
 
-                const successfullyMoved = moveEntity(chicken, moveX, moveY, worldMatrix, roomMatrix);
-
-                if (!successfullyMoved) {
+                if (!moveEntity(chicken, moveX, moveY, worldMatrix, roomMatrix)) {
                     chicken.path = [];
                     chicken.state = 'idle';
                     chicken.frustration = 3.0; 
@@ -313,9 +297,9 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                     chicken.state = 'idle';
                     const key = `${currTX}_${currTY}`;
 
-                    if (chicken.goal === 'food' && chicken.hunger > 0 && plants.has(key)) {
+                    if (chicken.goal === 'food' && plants.has(key)) {
                         const targetPlant = plants.get(key);
-                        chicken.hunger = Math.max(0, chicken.hunger - Math.max(5, targetPlant.growth));
+                        chicken.energy = Math.min(100, chicken.energy + Math.max(20, targetPlant.growth));
                         
                         import('./bacteria.js').then(m => {
                             const bac = m.getBacteriaData(targetPlant.gx, targetPlant.gy);
@@ -323,12 +307,10 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                         });
                         plants.delete(key);
                     } 
-                    else if (chicken.goal === 'egg') {
-                        // Lay the egg!
+                    else if (chicken.goal === 'egg' && chicken.energy >= 40) {
+                        chicken.energy -= 40;
                         import('./bacteria.js').then(m => m.seedBacteria(currTX, currTY, "egg", 30, 0));
-                        chicken.eggTimer = 180.0;
-                        chicken.hunger = Math.min(100, chicken.hunger + 30); // 👈 ADD THIS
-
+                        chicken.eggTimer = 10.0;
                     }
                 }
             }
@@ -338,9 +320,7 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
 
         // --- 💩 POOP LOGIC ---
         if (Math.random() > 0.998) {
-            import('./bacteria.js').then(m => {
-                m.seedBacteria(currTX, currTY, "chicken_poop", 3, 12); 
-            });
+            import('./bacteria.js').then(m => m.seedBacteria(currTX, currTY, "chicken_poop", 3, 12));
         }
     });
 }

@@ -1461,3 +1461,60 @@ document.body.addEventListener('mouseout', (e) => {
     const itemEl = e.target.closest('.inv-item');
     if (itemEl) tooltip.style.display = 'none';
 });
+
+// ==========================================
+// 🗺️ LOCATION BANNER ENGINE
+// ==========================================
+const prefixes = ["Oak", "Pine", "River", "Stone", "Iron", "Gold", "Silver", "Wind", "Storm", "High", "Low", "Dark", "Light", "Ash", "Thorn", "Green", "Red", "Blue", "Gryph", "Dragon", "Dawn", "Dusk"];
+const suffixes = ["wood", "ford", "bridge", "mont", "ville", "town", "bury", "ton", "vale", "dale", "peak", "haven", "keep", "watch", "fall", "stead", "moor", "marsh", "gate", "run", "brook"];
+
+function getZoneName(cx, cy) {
+    // A simple, deterministic math hash based on coordinates
+    const hash = Math.sin(cx * 12.9898 + cy * 78.233) * 43758.5453;
+    const rand1 = Math.floor(Math.abs(hash) * 100);
+    const rand2 = Math.floor(Math.abs(hash * 10) * 100);
+    
+    const pre = prefixes[rand1 % prefixes.length];
+    const suf = suffixes[rand2 % suffixes.length];
+    
+    return pre + suf;
+}
+
+let bannerTimeout = null;
+
+export function triggerLocationBanner(cx, cy, cellType) {
+    const banner = document.getElementById('location-banner');
+    const nameEl = document.getElementById('location-name');
+    const typeEl = document.getElementById('location-type');
+    if (!banner || !nameEl || !typeEl) return;
+
+    let zoneName = "The Wilds";
+    let zoneDesc = "UNCLAIMED TERRITORY";
+
+    if (cellType === 101) {
+        zoneName = getZoneName(cx, cy);
+        zoneDesc = "PEACEFUL VILLAGE";
+    } else if (cellType === 102) {
+        zoneName = getZoneName(cx, cy);
+        zoneDesc = "FORTIFIED TOWN";
+    } else if (cellType === 103) {
+        zoneName = getZoneName(cx, cy) + " Castle";
+        zoneDesc = "ROYAL STRONGHOLD";
+    } else if (cellType < 55) { // CONFIG.LAND_THRESHOLD is 55
+        zoneName = "The Great Sea";
+        zoneDesc = "OPEN WATER";
+    }
+
+    // Set text
+    nameEl.innerText = zoneName;
+    typeEl.innerText = zoneDesc;
+
+    // Fade IN
+    banner.style.opacity = "1";
+
+    // Clear any existing timeout, then wait 4 seconds and Fade OUT
+    if (bannerTimeout) clearTimeout(bannerTimeout);
+    bannerTimeout = setTimeout(() => {
+        banner.style.opacity = "0";
+    }, 4000);
+}

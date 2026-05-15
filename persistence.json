@@ -1,7 +1,7 @@
 {
-  "Guest_104379": {
-    "x": 23121.341900000003,
-    "y": 77669.62189999997,
+  "Guest_601161": {
+    "x": 132495.34341534213,
+    "y": 130525.99205821859,
     "hp": 100,
     "maxHp": 100,
     "shield": 0,
@@ -17,7 +17,7 @@
     "armor": 0,
     "magic": 10,
     "mr": 0,
-    "dir": "West",
+    "dir": "SouthWest",
     "inGameUni": 0,
     "animFrame": 0,
     "isMoving": false,
@@ -25,13 +25,13 @@
     "xp": 0,
     "speed": 100,
     "currentTileID": 63,
-    "wallet": "Guest_104379",
+    "wallet": "Guest_601161",
     "charClass": "Paladin",
     "skills": [
       "p1",
-      "p2",
       "p6",
-      "p5"
+      "p9",
+      "p10"
     ],
     "target": null
   }

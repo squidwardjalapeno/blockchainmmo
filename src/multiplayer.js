@@ -187,6 +187,8 @@ export function initMultiplayer() {
             if (data.bubblePopped === undefined) { 
                 // A normal hit occurred. If we had resonance, assume it was consumed.
                 // (This is a quick shortcut so we don't have to send a separate CC clear packet!)
+                // 👈 THE FIX: Safely initialize victim.cc if it doesn't exist yet!
+                if (!victim.cc) victim.cc = {}; 
                 if (victim === hero) hero.cc.hasResonance = false;
                 else victim.cc.hasResonance = false;
             }
