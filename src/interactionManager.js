@@ -34,7 +34,6 @@ function hasKeyForHouse(houseId) {
 
 // src/interactionManager.js
 
-// 🎒 SAFE STACKING HELPER
 export function giveItemToHero(newItem) {
     if (!newItem) return false;
 
@@ -42,8 +41,15 @@ export function giveItemToHero(newItem) {
     if (newItem.maxStack > 1) {
         const existing = hero.inventory.find(i => i.seedType === newItem.seedType && i.count < newItem.maxStack);
         if (existing) {
-            existing.count++;
-            return true;
+            const space = newItem.maxStack - existing.count;
+            if (newItem.count <= space) {
+                existing.count += newItem.count;
+                return true;
+            } else {
+                // Fill this stack, and let the rest of the items fall through to a new slot!
+                existing.count = newItem.maxStack;
+                newItem.count -= space;
+            }
         }
     }
 
@@ -56,6 +62,8 @@ export function giveItemToHero(newItem) {
     console.log("🎒 Backpack is full!");
     return false; 
 }
+
+
 export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityMatrix) {
     // 1. FORGIVING HITBOX LOGIC (For Interactions)
     let bx = 0, by = 0;
@@ -261,7 +269,7 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
         if (hero.equipment.mainHand) {
             const item = hero.equipment.mainHand;
             
-            // 👇 Just pass the raw houseId into the health parameter!
+            // 👇 THE FIX: Pass raw 16-bit ID directly! No bit-splitting!
             let dropHealth = item.isKey ? item.houseId : item.health;
 
             seedBacteria(feetTX, feetTY, item.seedType, dropHealth, item.virulence);
@@ -508,8 +516,15 @@ function processPickup(tx, ty) {
     const plantKey = `${tx}_${ty}`;
     if (plants.has(plantKey)) {
         const plant = plants.get(plantKey);
-        const stagesArray = PLANT_DEFS[plant.type].stages;
-        const isMature = Math.floor(plant.growth / (100 / stagesArray.length)) >= (stagesArray.length - 1);
+        const def = PLANT_DEFS[plant.type];
+        const stagesArray = def.stages;
+        
+        // Calculate the current visual stage index (0 to length-1)
+        const currentStageIdx = Math.min(stagesArray.length - 1, Math.floor(plant.growth / (100 / stagesArray.length)));
+        
+        // 🍅 Only the Tomato has a harvestWindow of 3. Everything else defaults to 1 (the final stage).
+        const harvestWindow = def.harvestWindow || 1;
+        const isMature = currentStageIdx >= (stagesArray.length - harvestWindow);
         
         if (isMature) {
             // FULL HARVEST DICTIONARY
@@ -542,17 +557,30 @@ function processPickup(tx, ty) {
                 if (ITEM_TYPES[seedConstName]) {
                     giveItemToHero(createItem(ITEM_TYPES[seedConstName]));
                 }
+
             }
+
+            // 🔄 CYCLICAL REVERT LOGIC
+            const def = PLANT_DEFS[plant.type];
+            if (def.isCyclical) {
+                plant.growth = def.resetGrowth; // Revert to vegetative stage (e.g., 26%)
+                plant.hasFlowered = false;      // Reset flower flag so it drains fertility next cycle
+                plant.seedsRemaining = Math.floor(Math.random() * 2) + 3; // Reset seeds
+                console.log(`🍅 Harvested cyclical ${plant.type}! Reverting to vegetative stage.`);
+                return true; 
+            }
+
+
         } else {
             // Picked too early -> becomes ruined Plant Matter
             giveItemToHero(createItem(ITEM_TYPES.PLANT_MATTER));
         }
 
-        // Wipe the plant and its bacteria anchor from the world
+        // 🗑️ STANDARD DELETION (Only runs for non-cyclical plants or immature picks)
         plants.delete(plantKey);
         const plantBac = getBacteriaData(plant.gx, plant.gy);
         if (plantBac && plantBac.data) plantBac.data[plantBac.idx] = 0;
-        return true; 
+        return true;
     }
 
     return false; // Nothing found directly under feet

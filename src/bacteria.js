@@ -474,6 +474,14 @@ export function attemptInfection(gx, gy, attackerTraits, worldMatrix) {
     const aHealth = attackerTraits & 0xFF;
 
     let dTypeID = (defenderTraits >> 20) & 0xFF; // 👈 CHANGED from 0x0F to 0xFF!    let dHealth = defenderTraits & 0xFF;
+
+    // 🛑 INANIMATE OBJECT PROTECTOR
+    // Keys (61) and Weapons (60) cannot be infected, overgrown, or rotted!
+    if (dTypeID === 60 || dTypeID === 61) {
+        return; 
+    }
+
+    let dHealth = defenderTraits & 0xFF;
     let dVir    = (defenderTraits >> 8) & 0xFF;
     let dPeak   = (defenderTraits >>> 31);
 

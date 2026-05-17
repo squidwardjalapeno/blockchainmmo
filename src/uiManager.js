@@ -1336,7 +1336,6 @@ document.getElementById('cancel-split-btn').onclick = () => {
 
 // In src/uiManager.js
 
-// src/uiManager.js
 function dropItemToWorld(index, amount) {
     const item = hero.inventory[index];
     const originTX = Math.floor((hero.x + 8) / 16);
@@ -1346,18 +1345,18 @@ function dropItemToWorld(index, amount) {
 
     import('./bacteria.js').then(m => {
         
-        // 👇 Just pass the raw houseId into the health parameter!
         let dropHealth = item.health;
         let dropVirulence = item.virulence;
 
+        // 👇 THE FIX: Pass the raw 16-bit ID directly! No bit-splitting!
         if (item.isKey) {
             dropHealth = item.houseId; 
+            dropVirulence = 0;
         } else if (item.seedType === "egg") {
-            dropHealth = amount;
+            dropHealth = 1; // Drop 1 egg per tile scattered
         }
 
-
-        // If we are dropping exactly 1 item, try to put it directly at the feet first!
+        // If dropping 1 item, put it directly at feet
         if (amount === 1) {
             const bac = m.getBacteriaData(originTX, originTY);
             if (bac && bac.data[bac.idx] === 0) {
@@ -1366,7 +1365,7 @@ function dropItemToWorld(index, amount) {
             }
         }
 
-        // If the feet are blocked (or we are scattering a stack), use the 3x3 grid
+        // Scatter grid if feet are blocked or dropping a stack
         if (droppedCount < amount) {
             for (let dx = -1; dx <= 1 && droppedCount < amount; dx++) {
                 for (let dy = -1; dy <= 1 && droppedCount < amount; dy++) {
@@ -1382,10 +1381,6 @@ function dropItemToWorld(index, amount) {
             }
         }
 
-        if (droppedCount < amount) {
-            console.log(`⚠️ Not enough empty space to drop the full stack! Dropped ${droppedCount}.`);
-        }
-
         item.count -= droppedCount;
         if (item.count <= 0) {
             hero.inventory.splice(index, 1);
@@ -1394,6 +1389,7 @@ function dropItemToWorld(index, amount) {
         renderTabContent();
     });
 }
+
 
 window.checkSystemUnlock = (sysX, sysY) => {
     const sysKey = `${sysX}_${sysY}`;
@@ -1431,9 +1427,35 @@ window.checkSystemUnlock = (sysX, sysY) => {
 };
 
 // ==========================================
-// 🪧 TOOLTIP ENGINE
+// 📱 UNIFIED TOUCH DRAG & TOOLTIP ENGINE
 // ==========================================
 const tooltip = document.getElementById('item-tooltip');
+let touchTimer = null;
+let dragClone = null;
+let dragData = null;
+
+function showTooltip(itemEl, x, y) {
+    const item = getItemFromDOM(itemEl.dataset.source, parseInt(itemEl.dataset.index));
+    if (item) {
+        document.getElementById('tt-name').innerText = item.name;
+        document.getElementById('tt-type').innerText = item.typeLabel || "Item";
+        
+        const statsEl = document.getElementById('tt-stats');
+        if (item.energy) statsEl.innerText = `Nutrition: +${item.energy} Energy`;
+        else if (item.ad) statsEl.innerText = `Damage: +${item.ad} ATK`;
+        else statsEl.innerText = "";
+        
+        document.getElementById('tt-desc').innerText = item.description || "No description available.";
+        
+        tooltip.style.display = 'block';
+        
+        let px = x + 15; let py = y + 15;
+        if (px + 160 > window.innerWidth) px = x - 175;
+        if (py + 100 > window.innerHeight) py = y - 115;
+        tooltip.style.left = px + 'px';
+        tooltip.style.top = py + 'px';
+    }
+}
 
 function getItemFromDOM(source, index) {
     if (source === 'hero' || source.startsWith('hero-')) return hero.inventory[index];
@@ -1444,45 +1466,79 @@ function getItemFromDOM(source, index) {
     return null;
 }
 
+// --- MOUSE LISTENERS (For PC) ---
 document.body.addEventListener('mouseover', (e) => {
     const itemEl = e.target.closest('.inv-item');
-    if (itemEl && itemEl.dataset.index && itemEl.dataset.source) {
-        const item = getItemFromDOM(itemEl.dataset.source, parseInt(itemEl.dataset.index));
-        if (item) {
-            document.getElementById('tt-name').innerText = item.name;
-            document.getElementById('tt-type').innerText = item.typeLabel || "Item";
-            
-            const statsEl = document.getElementById('tt-stats');
-            if (item.energy) statsEl.innerText = `Nutrition: +${item.energy} Energy`;
-            else if (item.ad) statsEl.innerText = `Damage: +${item.ad} ATK`;
-            else statsEl.innerText = "";
-            
-            document.getElementById('tt-desc').innerText = item.description || "No description available.";
-            
-            tooltip.style.display = 'block';
+    const isInsideMenu = e.target.closest('.pixel-panel') || e.target.closest('#hud');
+    if (itemEl && isInsideMenu && itemEl.dataset.index) showTooltip(itemEl, e.clientX, e.clientY);
+});
+document.body.addEventListener('mouseout', (e) => {
+    if (e.target.closest('.inv-item')) tooltip.style.display = 'none';
+});
+
+// --- TOUCH LISTENERS (For Mobile) ---
+document.body.addEventListener('touchstart', (e) => {
+    const itemEl = e.target.closest('.draggable-item');
+    if (!itemEl) return;
+
+    // 1. Start timer for Long-Press (Tooltip)
+    touchTimer = setTimeout(() => {
+        showTooltip(itemEl, e.touches[0].clientX, e.touches[0].clientY);
+    }, 400); // Hold for 400ms to show tooltip
+
+    // 2. Prep Drag Data
+    dragData = { index: itemEl.dataset.index, source: itemEl.dataset.source, element: itemEl };
+}, { passive: false });
+
+document.body.addEventListener('touchmove', (e) => {
+    if (!dragData) return;
+
+    // If they start moving their finger, cancel the tooltip!
+    clearTimeout(touchTimer);
+    tooltip.style.display = 'none';
+
+    // Create the drag clone
+    if (!dragClone) {
+        dragClone = dragData.element.cloneNode(true);
+        dragClone.style.position = 'fixed';
+        dragClone.style.zIndex = '99999';
+        dragClone.style.opacity = '0.8';
+        dragClone.style.pointerEvents = 'none'; // Crucial so we can drop it!
+        document.body.appendChild(dragClone);
+        
+        if (navigator.vibrate) navigator.vibrate(50); // Tactile feedback on pickup
+    }
+
+    // Move the clone
+    e.preventDefault(); // Stop screen from scrolling
+    const touch = e.touches[0];
+    dragClone.style.left = (touch.clientX - 25) + 'px';
+    dragClone.style.top = (touch.clientY - 25) + 'px';
+}, { passive: false });
+
+document.body.addEventListener('touchend', (e) => {
+    clearTimeout(touchTimer);
+    tooltip.style.display = 'none';
+
+    if (dragClone) {
+        dragClone.remove();
+        dragClone = null;
+
+        // Find what UI element we dropped it on
+        const touch = e.changedTouches[0];
+        const dropTarget = document.elementFromPoint(touch.clientX, touch.clientY);
+
+        if (dropTarget) {
+            // Generate a synthetic HTML5 drop event!
+            // This magically triggers all the drop listeners we already wrote!
+            const dropEvent = new Event('drop', { bubbles: true });
+            dropEvent.dataTransfer = { getData: (key) => dragData[key] };
+            dropTarget.dispatchEvent(dropEvent);
         }
     }
+    dragData = null;
 });
 
-document.body.addEventListener('mousemove', (e) => {
-    if (tooltip.style.display === 'block') {
-        // Offset by 15px so it doesn't sit directly under the cursor
-        let x = e.clientX + 15;
-        let y = e.clientY + 15;
-        
-        // Keep it on screen
-        if (x + 160 > window.innerWidth) x = e.clientX - 175;
-        if (y + 100 > window.innerHeight) y = e.clientY - 115;
-        
-        tooltip.style.left = x + 'px';
-        tooltip.style.top = y + 'px';
-    }
-});
-
-document.body.addEventListener('mouseout', (e) => {
-    const itemEl = e.target.closest('.inv-item');
-    if (itemEl) tooltip.style.display = 'none';
-});
 
 // ==========================================
 // 🗺️ LOCATION BANNER ENGINE

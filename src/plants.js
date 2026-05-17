@@ -16,9 +16,43 @@ export const PLANT_DEFS = {
     violet: { stages: [22, 21, 20, 19, 18], growthRate: 0.25, fertilityReq: 8, spreadRange: 2 },
     sunflower: { stages: [118, 117, 116, 115, 114], growthRate: 0.25, fertilityReq: 12, spreadRange: 2 },
     turnip: { stages: [4, 3, 2, 1], growthRate: 0.4, fertilityReq: 5, spreadRange: 1 },
-    tomato: { stages: [28, 27, 26, 25], growthRate: 0.2, fertilityReq: 40, spreadRange: 1 },
-    eggplant: { stages: [40, 39, 38, 37], growthRate: 0.15, fertilityReq: 85, spreadRange: 1 },
-    strawberry: { stages: [76, 75, 74, 73], growthRate: 0.24, fertilityReq: 45, spreadRange: 1 },
+    tomato: { 
+        stages: [23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12], 
+        tileset: 'cropTileset2', // 👈 Point to the new image!
+        growthRate: 0.2, 
+        fertilityReq: 40, 
+        spreadRange: 1,
+        isCyclical: true,        // 👈 NEW: Tells the engine not to delete it!
+        resetGrowth: 26,         // 👈 NEW: Resets to 26% (Tile 20 - Mature Plant)
+        flowerGrowth: 34,        // 👈 NEW: Hits the flower stage at 34% (Tile 19)
+        flowerFertilityCost: 15,  // 👈 NEW: Drains 15 fertility every time it flowers!
+        harvestWindow: 3 // 👈 NEW: It can be harvested in the last 3 stages (14, 13, 12)
+
+    },
+    eggplant: { 
+        stages: [46, 45, 44, 43, 42, 41, 40, 39, 38, 37], // 10 stages total
+        tileset: 'cropTileset2', // Uses the new tileset!
+        growthRate: 0.15, 
+        fertilityReq: 85, 
+        spreadRange: 1,
+        isCyclical: true,        // 👈 Makes it a recurring crop
+        resetGrowth: 31,         // 👈 Reverts to Tile 43 (Index 3) after harvest
+        flowerGrowth: 41,        // 👈 Hits the flower stage at Tile 42 (Index 4)
+        flowerFertilityCost: 20  // 👈 Drains fertility every time it flowers
+    },
+
+    strawberry: { 
+        stages: [82, 81, 80, 79, 78, 77, 76, 75, 74, 73], // 10 stages total
+        tileset: 'cropTileset2',
+        growthRate: 0.24, 
+        fertilityReq: 45, 
+        spreadRange: 1,
+        isCyclical: true,        // 👈 Recurring crop
+        resetGrowth: 31,         // 👈 Reverts to Tile 79 (Mature leaves, no fruit)
+        flowerGrowth: 41,        // 👈 Flowers at Tile 78
+        flowerFertilityCost: 10  // 👈 Drains fertility every time it flowers
+    },
+    
     pumpkin: { stages: [100, 99, 98, 97], growthRate: 0.35, fertilityReq: 25, spreadRange: 1 },
     watermelon: { stages: [34, 33, 32, 31], growthRate: 0.35, fertilityReq: 28, spreadRange: 1 },
     corn: { stages: [112, 111, 110, 109], growthRate: 0.35, fertilityReq: 8, spreadRange: 1 },
@@ -62,6 +96,8 @@ export function createPlant(gx, gy, fertilityMatrix, startingGrowth = 0, type = 
         spriteStage: initialStage,
         seedsRemaining: Math.floor(Math.random() * 2) + 3,
         seedTimer: startingGrowth >= 100 ? (Math.random() * 200.0) : 0,
+        hasFlowered: false, // 👈 NEW: Tracks if it paid the fertility cost yet
+
         
         // 🕰️ TIME TRAVEL FIX: If this seed was theoretically dropped 500 seconds ago,
         // we set its "birth date" to 500 seconds in the past!
@@ -102,27 +138,40 @@ export function updatePlants(modifier, fertilityMatrix, worldMatrix, roomMatrix)
         if (plant.growth < 100) {
             const ratePerSec = plant.growthRate * 0.1; 
             const growthAdded = ratePerSec * simulatedTime;
+            const def = PLANT_DEFS[plant.type];
+
+            // 🌸 CYCLICAL FLOWERING FERTILITY DRAIN
+            if (def.isCyclical && !plant.hasFlowered && plant.growth >= def.flowerGrowth) {
+                plant.hasFlowered = true;
+                
+                // Drain fertility from the soil!
+                const cx = Math.floor(plant.gx / 100);
+                const cy = Math.floor(plant.gy / 100);
+                const lx = ((plant.gx % 100) + 100) % 100;
+                const ly = ((plant.gy % 100) + 100) % 100;
+                
+                if (fertilityMatrix[cx] && fertilityMatrix[cx][cy]) {
+                    const idx = (ly * 100) + lx;
+                    fertilityMatrix[cx][cy][idx] = Math.max(0, fertilityMatrix[cx][cy][idx] - def.flowerFertilityCost);
+                }
+                console.log(`🌸 ${plant.type} flowered! Drained ${def.flowerFertilityCost} fertility.`);
+            }
             
             // Did it reach 100% while we were gone?
             if (plant.growth + growthAdded >= 100) {
                 const timeTo100 = (100 - plant.growth) / ratePerSec;
                 
                 plant.growth = 100;
-                plant.spriteStage = 4; 
+                plant.spriteStage = def.stages.length - 1; 
                 plant.seedTimer = 100.0; 
                 
-                // Subtract the time it took to finish growing
                 simulatedTime -= timeTo100; 
             } else {
-                // Still growing normally
                 plant.growth += growthAdded;
-                if (plant.growth > 30) plant.spriteStage = 1;
-                if (plant.growth > 80) plant.spriteStage = 2;
-                
-                // Used all our time, stop simulating
+                // We let the renderer calculate the visual stage dynamically now!
                 simulatedTime = 0; 
             }
-        } 
+        }
         
         // --- 2. SEEDING & WITHERING PHASE ---
         // If it's fully grown and we STILL have simulated time leftover!

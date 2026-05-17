@@ -188,7 +188,7 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                 // 2. IS IT READY TO LAY AN EGG? (Requires 40 Energy!)
                 else if (chicken.eggTimer <= 0 && chicken.energy >= 40) {
                     chicken.energy -= 40;
-                    import('./bacteria.js').then(m => m.seedBacteria(simX, simY, "egg", 30, 0));
+                    import('./bacteria.js').then(m => m.seedBacteria(simX, simY, "egg", 1, 0));
                     chicken.eggTimer = 10.0;
                 }
                 // 3. WANDER
@@ -246,7 +246,7 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                     chicken.goal = 'egg';
                 } else {
                     chicken.energy -= 40;
-                    import('./bacteria.js').then(m => m.seedBacteria(currTX, currTY, "egg", 30, 0));
+                    import('./bacteria.js').then(m => m.seedBacteria(currTX, currTY, "egg", 1, 0));
                     chicken.eggTimer = 10.0;
                     
                     assignRandomWalk(chicken, currTX, currTY, worldMatrix, roomMatrix);
@@ -309,7 +309,7 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                     } 
                     else if (chicken.goal === 'egg' && chicken.energy >= 40) {
                         chicken.energy -= 40;
-                        import('./bacteria.js').then(m => m.seedBacteria(currTX, currTY, "egg", 30, 0));
+                        import('./bacteria.js').then(m => m.seedBacteria(currTX, currTY, "egg", 1, 0));
                         chicken.eggTimer = 10.0;
                     }
                 }

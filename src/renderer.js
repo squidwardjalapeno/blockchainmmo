@@ -341,16 +341,12 @@ if (tID >= 200 && tID <= 208) {
 }
 
 export function drawPlants(roomMatrix) {
-    const img = images.cropTileset; 
-    if (!img || !img.complete) return;
-
     // 1. Check if the hero is currently inside a building
     const hTX = Math.floor((hero.x + 8) / 16);
     const hTY = Math.floor((hero.y + 14) / 16);
     const rCol = roomMatrix[Math.floor(hTX / 100)]?.[Math.floor(hTY / 100)];
     const heroHouseId = rCol ? rCol[((hTY % 100 + 100) % 100 * 100) + ((hTX % 100 + 100) % 100)] : 0;
 
-    // 👇 THE EXACT FIX: Only hide plants if we are in a REAL building (Not 0 and Not 9999)
     if (heroHouseId !== 0 && heroHouseId !== 9999) return;
 
     plants.forEach((plant) => {
@@ -359,12 +355,16 @@ export function drawPlants(roomMatrix) {
 
         if (screenX < -16 || screenX > window.innerWidth || screenY < -16 || screenY > window.innerHeight) return;
 
-        const stagesArray = PLANT_DEFS[plant.type].stages;
+        const def = PLANT_DEFS[plant.type];
+        
+        // 👇 DYNAMIC TILESET LOOKUP
+        const tilesetName = def.tileset || 'cropTileset';
+        const img = images[tilesetName];
+        if (!img || !img.complete) return;
+
+        const stagesArray = def.stages;
         const maxStage = stagesArray.length - 1;
-        
-        // 👇 DYNAMIC MATH: Divides 100% by the amount of stages the plant has!
         const stageIdx = Math.min(maxStage, Math.floor(plant.growth / (100 / stagesArray.length)));
-        
         const plantSpriteID = stagesArray[stageIdx];
 
         ctx2.drawImage(
@@ -596,7 +596,9 @@ export function drawHero() {
         let drawY = Math.floor(hero.y + viewport.offset[1]) - Math.floor((destH - 16) / 2);
 
         // 1. STATE CHECKS
-        const isImpact = (hero.attackTimer < 0 && hero.attackTimer > -0.2);
+        // The attack timer is set to -1.7 when an attack lands. It counts UP to 0.
+        // So the first 0.2 seconds of the cooldown is between -1.7 and -1.5!
+        const isImpact = (hero.attackTimer < 0 && hero.attackTimer < -1.5);
         const isWindingUp = hero.isWindingUp;
 
         // --- ⚔️ PVP SHAKE & LUNGE ---
