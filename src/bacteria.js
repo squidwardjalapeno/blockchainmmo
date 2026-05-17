@@ -34,6 +34,10 @@ export const BACTERIA_TYPES = {
     "fish_octopus": 46, "fish_eel": 47, "fish_angler": 48,
 
         "raw_chicken": 50, // 👈 ADD THIS
+    
+        // 👇 ADD THESE TWO LINES:
+    "weapon_dagger": 60,
+    "key": 61,
 
 };
 
@@ -158,10 +162,17 @@ function processCellSpread(cx, cy, worldMatrix, fertilityMatrix) {
         let traits = data[idx];
         if (traits === 0) continue;
 
+        let typeID = (traits >> 20) & 0xFF; // 👈 Grab the type first
+
+        // 🛑 INANIMATE OBJECT PROTECTOR
+        // Keys (61) and Weapons (60) do not rot. Skip the biological simulation entirely!
+        if (typeID === 60 || typeID === 61) {
+            continue; 
+        }
+
         let h = traits & 0xFF;
         let v = (traits >> 8) & 0xFF;
         let r = (traits >> 16) & 0x0F;
-        let typeID = (traits >> 20) & 0xFF; // 👈 CHANGED from 0x0F to 0xFF!
         let hasPeaked = (traits >>> 31);
 
         if (h > 0 || v > 0) {
@@ -400,6 +411,13 @@ if (typeID === 5) {
             // Check if it's a "Ghost" (0 health and 0 virulence)
             const tempH = data[j] & 0xFF;
             const tempV = (data[j] >> 8) & 0xFF;
+            const tempType = (data[j] >> 20) & 0xFF; // 👈 Read the type
+
+            // 🛑 PROTECT METAL FROM GARBAGE COLLECTION
+            if (tempType === 60 || tempType === 61) {
+                activeCount++;
+                continue;
+            }
             
             if (tempH === 0 && tempV === 0) {
                 data[j] = 0; // Final wipe of the ghost
@@ -513,43 +531,40 @@ export function attemptInfection(gx, gy, attackerTraits, worldMatrix) {
  * Seeds a specific tile with bacteria traits.
  * Now uses the BACTERIA_TYPES registry for scalability.
  */
-// Add 'isRemote = false' to the arguments list
 export function seedBacteria(gx, gy, typeName, health, virulence, isRemote = false) {
     const { data, idx } = getBacteriaData(gx, gy);
     const typeId = BACTERIA_TYPES[typeName] || 0;
-
+    
     // 🥚 EGG STACKING LOGIC
     if (typeId === 16) {
-        const existingTraits = data[idx];
-        const existingTypeID = (existingTraits >> 20) & 0xFF;
-        if (existingTypeID === 16) {
-            const currentCount = existingTraits & 0xFF; // Read the current stack count
-            if (currentCount < 8) {
-                health = currentCount + 1; // Add 1 to the clutch
-            } else {
-                return; // Clutch is full (8 max). Skip laying!
-            }
-        } else {
-            health = 1; // First egg in the clutch
-        }
+        // ... (keep existing egg logic)
     }
 
-    
-    // Default range (you can make this dynamic later)
     let range = 2;
+    let packed = 0;
 
-    const packed = (
-        (Math.floor(health) & 0xFF) | 
-        ((Math.floor(virulence) & 0xFF) << 8) | 
-        ((range & 0x0F) << 16) | 
-        ((typeId & 0xFF) << 20) // 👈 THE FIX: Changed from 0x0F to 0xFF!
-    ) >>> 0;
+    // 👇 16-BIT KEY OVERRIDE
+    // We completely bypass health and virulence, and just shove the raw 
+    // 16-bit House ID into the bottom half of the integer!
+    if (typeId === 61) { // 61 is the ID for "key"
+        const houseId = health; // We passed the raw houseId into the health parameter!
+        packed = (
+            (houseId & 0xFFFF) |           // 👈 Store full 16-bit ID in the bottom!
+            ((typeId & 0xFF) << 20)        // 👈 Store the typeID at the top!
+        ) >>> 0;
+    } 
+    // STANDARD BACTERIA PACKING
+    else {
+        packed = (
+            (Math.floor(health) & 0xFF) | 
+            ((Math.floor(virulence) & 0xFF) << 8) | 
+            ((range & 0x0F) << 16) | 
+            ((typeId & 0xFF) << 20) 
+        ) >>> 0;
+    }
 
     data[idx] = packed;
 
-    // 🛡️ THE FIX: Now 'isRemote' is defined!
-    // We only tell the server if WE (local) planted this.
-    // If it came FROM the server (isRemote = true), we stay quiet.
     if (!isRemote && typeof socket !== 'undefined' && socket) {
         socket.emit('syncTile', { gx, gy, traits: packed });
     }

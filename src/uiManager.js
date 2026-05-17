@@ -1336,25 +1336,48 @@ document.getElementById('cancel-split-btn').onclick = () => {
 
 // In src/uiManager.js
 
+// src/uiManager.js
 function dropItemToWorld(index, amount) {
     const item = hero.inventory[index];
     const originTX = Math.floor((hero.x + 8) / 16);
-    const originTY = Math.floor((hero.y + 15) / 16);
+    const originTY = Math.floor((hero.y + 15) / 16); // Feet
 
     let droppedCount = 0;
 
     import('./bacteria.js').then(m => {
-        // Scatter around the player in a 3x3 grid
-        for (let dx = -1; dx <= 1 && droppedCount < amount; dx++) {
-            for (let dy = -1; dy <= 1 && droppedCount < amount; dy++) {
-                const targetTX = originTX + dx;
-                const targetTY = originTY + dy;
-                
-                // Only drop if there is no bacteria already here!
-                const bac = m.getBacteriaData(targetTX, targetTY);
-                if (bac && bac.data[bac.idx] === 0) {
-                    m.seedBacteria(targetTX, targetTY, item.seedType, item.health, item.virulence);
-                    droppedCount++;
+        
+        // 👇 Just pass the raw houseId into the health parameter!
+        let dropHealth = item.health;
+        let dropVirulence = item.virulence;
+
+        if (item.isKey) {
+            dropHealth = item.houseId; 
+        } else if (item.seedType === "egg") {
+            dropHealth = amount;
+        }
+
+
+        // If we are dropping exactly 1 item, try to put it directly at the feet first!
+        if (amount === 1) {
+            const bac = m.getBacteriaData(originTX, originTY);
+            if (bac && bac.data[bac.idx] === 0) {
+                m.seedBacteria(originTX, originTY, item.seedType, dropHealth, dropVirulence);
+                droppedCount++;
+            }
+        }
+
+        // If the feet are blocked (or we are scattering a stack), use the 3x3 grid
+        if (droppedCount < amount) {
+            for (let dx = -1; dx <= 1 && droppedCount < amount; dx++) {
+                for (let dy = -1; dy <= 1 && droppedCount < amount; dy++) {
+                    const targetTX = originTX + dx;
+                    const targetTY = originTY + dy;
+                    
+                    const bac = m.getBacteriaData(targetTX, targetTY);
+                    if (bac && bac.data[bac.idx] === 0) {
+                        m.seedBacteria(targetTX, targetTY, item.seedType, dropHealth, dropVirulence);
+                        droppedCount++;
+                    }
                 }
             }
         }
@@ -1366,7 +1389,6 @@ function dropItemToWorld(index, amount) {
         item.count -= droppedCount;
         if (item.count <= 0) {
             hero.inventory.splice(index, 1);
-            if (hero.activeSlot === index) hero.activeSlot = null;
         }
         
         renderTabContent();

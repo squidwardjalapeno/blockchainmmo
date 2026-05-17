@@ -307,7 +307,9 @@ export const ITEM_TYPES = {
         ad: 5, // Grants +5 Attack Damage when equipped
         baseHealth: 100, // Can act as Durability later!
         baseVirulence: 0,
-        baseFertility: 0
+        baseFertility: 0,
+        drawSize: 8 // 👈 ADD THIS
+
     },
 };
 

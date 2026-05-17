@@ -1,6 +1,6 @@
 
 import { hero, getLevelInfo } from './entities.js';
-import { getTileData, checkCollision } from './physics.js';
+import { getTileData, checkCollision, moveEntity } from './physics.js';
 import { ITEM_TYPES, createItem } from './items.js';
 // Near the top of src/interactionManager.js
 import { updatePlants, createPlant, plants, PLANT_DEFS } from './plants.js';
@@ -22,7 +22,7 @@ if (typeof window !== 'undefined') {
 
 
 // 🛑 ADD THIS LINE (or add it to your existing combat.js import)
-import { findPriorityTarget, currentTarget } from './combat.js';
+import { currentTarget } from './combat.js';
 // js/interactionManager.js
 import { getWaitModifier, getRandomFish, globalFishCount } from './fish.js';
 
@@ -201,11 +201,30 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
         // B. PHYSICAL TILE ACTIONS (Doors/Mining)
         if (target && (target.tileID === 49 || target.tileID === 12) && target.roomID !== 0) {
             if (!hero.inventory.some(item => item.isKey && item.houseId === target.roomID)) {
+                
+                // 🛑 NEW: Check if the door is already claimed!
+                const cx = Math.floor(tx / 100);
+                const cy = Math.floor(ty / 100);
+                const lx = ((tx % 100) + 100) % 100;
+                const ly = ((ty % 100) + 100) % 100;
+                
+                if (fertilityMatrix[cx][cy][(ly * 100) + lx] === 254) {
+                    console.log("🔒 This door is already claimed by someone else!");
+                    inputState.interact = false;
+                    inputState.action = false;
+                    return;
+                }
+
                 if (hero.inventory.length < hero.maxSlots) {
                     const newKey = createItem(ITEM_TYPES.KEY);
                     newKey.houseId = target.roomID;
                     newKey.name = `Key to ${(target.tileID === 12) ? "Barn" : "House"} #${target.roomID}`;
                     giveItemToHero(newKey);
+                    
+                    // 🛑 NEW: Mark the door as claimed so it doesn't dispense infinite keys!
+                    fertilityMatrix[cx][cy][(ly * 100) + lx] = 254;
+                    
+                    console.log(`🔑 Claimed ${(target.tileID === 12) ? "Barn" : "House"} #${target.roomID}!`);
                     inputState.interact = false;
                     inputState.action = false;
                     return;
@@ -241,9 +260,16 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
         inputState.drop = false;
         if (hero.equipment.mainHand) {
             const item = hero.equipment.mainHand;
-            seedBacteria(tx, ty, item.seedType, item.health, item.virulence);
+            
+            // 👇 Just pass the raw houseId into the health parameter!
+            let dropHealth = item.isKey ? item.houseId : item.health;
+
+            seedBacteria(feetTX, feetTY, item.seedType, dropHealth, item.virulence);
+            
             item.count--;
-            if (item.count <= 0) hero.equipment.mainHand = null;
+            if (item.count <= 0 || isNaN(item.count)) {
+                hero.equipment.mainHand = null;
+            }
         }
     }
 
@@ -433,89 +459,17 @@ function processFishing(modifier) {
 }
 
 function processPickup(tx, ty) {
-    // 1. Calculate the exact pixel coordinate of where the player is interacting
-    const interactPxX = tx * 16 + 8;
-    const interactPxY = ty * 16 + 8;
+    if (hero.inventory.length >= hero.maxSlots) return false;
 
-    // 2. FORGIVING HITBOX: Find the closest plant within 24 pixels (1.5 tiles)
-    let closestPlantKey = null;
-    let closestDist = 24 * 24; // 24 squared
-
-    for (let [key, plant] of plants) {
-        // Find the center pixel of the plant
-        const plantPxX = plant.gx * 16 + 8;
-        const plantPxY = plant.gy * 16 + 8;
-        
-        const dx = interactPxX - plantPxX;
-        const dy = interactPxY - plantPxY;
-        const distSq = (dx * dx) + (dy * dy);
-
-        if (distSq < closestDist) {
-            closestDist = distSq;
-            closestPlantKey = key;
-        }
-    }
-
-    // In src/interactionManager.js -> processPickup()
-
-    // 3. IF WE FOUND A PLANT TO PICK UP
-    if (closestPlantKey && hero.inventory.length < hero.maxSlots) {
-        const plant = plants.get(closestPlantKey);
-        
-        // 👇 THE FIX: Use the exact same dynamic math as the renderer!
-        const stagesArray = PLANT_DEFS[plant.type].stages;
-        const maxStageIndex = stagesArray.length - 1;
-        
-        // E.g. For 4 stages: 100 / 4 = 25. Growth of 75 / 25 = Stage 3 (Mature!)
-        const currentVisualStage = Math.floor(plant.growth / (100 / stagesArray.length));
-        
-        const isMature = currentVisualStage >= maxStageIndex;
-        
-        if (isMature) {
-            if (plant.type === 'turnip') { giveItemToHero(createItem(ITEM_TYPES.TURNIP_ITEM)); } 
-            else if (plant.type === 'tomato') { giveItemToHero(createItem(ITEM_TYPES.TOMATO_ITEM)); }
-            else if (plant.type === 'eggplant') { giveItemToHero(createItem(ITEM_TYPES.EGGPLANT_ITEM)); }
-            else if (plant.type === 'strawberry') { giveItemToHero(createItem(ITEM_TYPES.STRAWBERRY_ITEM)); }
-            else if (plant.type === 'pumpkin') { giveItemToHero(createItem(ITEM_TYPES.PUMPKIN_ITEM)); }
-            else if (plant.type === 'watermelon') { giveItemToHero(createItem(ITEM_TYPES.WATERMELON_ITEM)); }
-            else if (plant.type === 'corn') { giveItemToHero(createItem(ITEM_TYPES.CORN_ITEM)); }
-            else if (plant.type === 'pineapple') { giveItemToHero(createItem(ITEM_TYPES.PINEAPPLE_ITEM)); }
-            else if (plant.type === 'potato') { giveItemToHero(createItem(ITEM_TYPES.POTATO_ITEM)); }
-            else if (plant.type === 'wheat') { giveItemToHero(createItem(ITEM_TYPES.WHEAT_ITEM)); }
-            else { giveItemToHero(createItem(ITEM_TYPES.PLANT_MATTER)); }    
-            
-            // Yield Seeds
-            const seedConstName = `${plant.type.toUpperCase()}_SEED`;
-            const seedCount = Math.floor(Math.random() * 2) + 1; 
-            for (let i = 0; i < seedCount; i++) {
-                if (ITEM_TYPES[seedConstName]) giveItemToHero(createItem(ITEM_TYPES[seedConstName]));
-            }
-            console.log(`🌱 Harvested mature ${plant.type}!`);
-        } 
-        else {
-            // 👇 If picked too early, it's just ruined Plant Matter
-            giveItemToHero(createItem(ITEM_TYPES.PLANT_MATTER));
-            console.log(`🍂 Harvested immature plant. You got Plant Matter.`);
-        }
-
-        // Wipe it from memory and clear the bacteria anchor
-        plants.delete(closestPlantKey);
-        const bac = getBacteriaData(plant.gx, plant.gy);
-        if (bac && bac.data) bac.data[bac.idx] = 0;
-        
-        return true; 
-    }
-
-    // In src/interactionManager.js -> processPickup()
-
-    // 4. IF NO PLANT WAS FOUND, CHECK FOR DROPPED ITEMS (BACTERIA)
+    // ==========================================
+    // PRIORITY 1: DROPPED ITEMS (Keys, Weapons, Eggs, Dropped Crops)
+    // ==========================================
     const bac = getBacteriaData(tx, ty);
     const traits = bac ? bac.data[bac.idx] : 0;
 
-    if (traits > 0 && hero.inventory.length < hero.maxSlots) {
+    if (traits > 0) {
         const typeID = (traits >> 20) & 0xFF; 
         
-        // 👇 Dynamic Reverse Lookup! Maps ID 25 directly back to "pumpkin_seed"
         const matchedSeedType = Object.keys(BACTERIA_TYPES).find(key => 
             BACTERIA_TYPES[key] === typeID && !['organic_drop', 'organic_plant', 'grass'].includes(key)
         );
@@ -526,23 +480,82 @@ function processPickup(tx, ty) {
                 const item = createItem(template);
                 item.health = traits & 0xFF;
                 item.virulence = (traits >> 8) & 0xFF;
-
-                // 👇 EGG STACKING FIX: Retrieve the count, and restore default health
+                
+                // Unpack Egg Stack
                 if (matchedSeedType === "egg") {
                     item.count = traits & 0xFF;
                     item.health = template.baseHealth; 
                 }
+                // Unpack 16-bit Key ID
+                else if (matchedSeedType === "key") {
+                    item.houseId = traits & 0xFFFF; 
+                    item.health = template.baseHealth; 
+                    item.virulence = template.baseVirulence;
+                    item.name = `Key to House #${item.houseId}`; 
+                }
                 
-                // If it successfully stacks or finds a slot
                 if (giveItemToHero(item)) {
-                    bac.data[bac.idx] = 0;
-                    return true;
+                    bac.data[bac.idx] = 0; // Remove from floor
+                    return true; // Successfully picked up an item!
                 }
             }
         }
     }
-    
-    return false; // Nothing was picked up
+
+    // ==========================================
+    // PRIORITY 2: GROWING PLANTS (Crops, Flowers, Grass)
+    // ==========================================
+    const plantKey = `${tx}_${ty}`;
+    if (plants.has(plantKey)) {
+        const plant = plants.get(plantKey);
+        const stagesArray = PLANT_DEFS[plant.type].stages;
+        const isMature = Math.floor(plant.growth / (100 / stagesArray.length)) >= (stagesArray.length - 1);
+        
+        if (isMature) {
+            // FULL HARVEST DICTIONARY
+            const yieldMap = {
+                // Crops
+                'turnip': ITEM_TYPES.TURNIP_ITEM, 
+                'tomato': ITEM_TYPES.TOMATO_ITEM,
+                'eggplant': ITEM_TYPES.EGGPLANT_ITEM, 
+                'strawberry': ITEM_TYPES.STRAWBERRY_ITEM,
+                'pumpkin': ITEM_TYPES.PUMPKIN_ITEM, 
+                'watermelon': ITEM_TYPES.WATERMELON_ITEM,
+                'corn': ITEM_TYPES.CORN_ITEM, 
+                'pineapple': ITEM_TYPES.PINEAPPLE_ITEM,
+                'potato': ITEM_TYPES.POTATO_ITEM, 
+                'wheat': ITEM_TYPES.WHEAT_ITEM,
+                
+                // Flowers and Grass yield Plant Matter
+                'grass': ITEM_TYPES.PLANT_MATTER,
+                'rose': ITEM_TYPES.PLANT_MATTER,
+                'violet': ITEM_TYPES.PLANT_MATTER,
+                'sunflower': ITEM_TYPES.PLANT_MATTER
+            };
+            
+            giveItemToHero(createItem(yieldMap[plant.type] || ITEM_TYPES.PLANT_MATTER));    
+            
+            // Yield Seeds (Dynamically checks ITEM_TYPES for ANY matching seed)
+            const seedConstName = `${plant.type.toUpperCase()}_SEED`;
+            const seedCount = Math.floor(Math.random() * 2) + 1; 
+            for (let i = 0; i < seedCount; i++) {
+                if (ITEM_TYPES[seedConstName]) {
+                    giveItemToHero(createItem(ITEM_TYPES[seedConstName]));
+                }
+            }
+        } else {
+            // Picked too early -> becomes ruined Plant Matter
+            giveItemToHero(createItem(ITEM_TYPES.PLANT_MATTER));
+        }
+
+        // Wipe the plant and its bacteria anchor from the world
+        plants.delete(plantKey);
+        const plantBac = getBacteriaData(plant.gx, plant.gy);
+        if (plantBac && plantBac.data) plantBac.data[plantBac.idx] = 0;
+        return true; 
+    }
+
+    return false; // Nothing found directly under feet
 }
 
 // js/interactionManager.js
@@ -675,205 +688,146 @@ export function updateHeroStats(modifier, hero) {
 
 
 
-// js/interactionManager.js
-
-// js/interactionManager.js
-
 export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remotePlayers) {
 
-    // 1. RE-SYNC TARGET (Ghost Killer)
+    // 1. RE-SYNC LOCKED TARGET (Ghost Killer)
     if (hero.target) {
-        // 👇 NEW: Sync Chicken targets
         if (hero.target.isAnimal) {
             const liveData = animals.find(a => a.id === hero.target.id);
-            if (liveData) {
-                hero.target.x = liveData.x;
-                hero.target.y = liveData.y;
-                hero.target.hp = liveData.hp; 
-            }
-        } 
-        // Sync Player targets
-        else {
+            if (liveData) { hero.target.x = liveData.x; hero.target.y = liveData.y; hero.target.hp = liveData.hp; }
+        } else {
             const liveData = remotePlayers.get(hero.target.id);
-            if (liveData) {
-                hero.target.x = liveData.x;
-                hero.target.y = liveData.y;
-                hero.target.hp = liveData.hp; 
-            } 
+            if (liveData) { hero.target.x = liveData.x; hero.target.y = liveData.y; hero.target.hp = liveData.hp; } 
         }
     }
 
-    // 0. DEATH & MANUAL OVERRIDE
-    if (hero.hp <= 0 || inputState.moveX !== 0 || inputState.moveY !== 0) {
+    // 2. CHECK MANUAL MOVEMENT
+    let isManualMove = false;
+    if (inputState.inputType === 'touch' && inputState.leftJoystick.active) isManualMove = true;
+    if (inputState.moveX !== 0 || inputState.moveY !== 0) isManualMove = true;
+
+    // 2. HOLD-TO-SCAN & LOCK (Triggered by holding the Attack Button)
+    if (inputState.mainBtn) {
+        import('./combat.js').then(c => {
+            // Constantly scan while holding the button to find the nearest target
+            c.scanForTarget(hero, 150);
+            
+            if (c.currentTarget) {
+                // Keep updating the hover target
+                hero.target = c.currentTarget;
+                c.setLockedTarget(c.currentTarget);
+                
+                // Only engage the physical auto-attack if we are NOT manually walking
+                if (!isManualMove) {
+                    hero.isAttacking = true;
+                }
+            }
+        });
+        
+        // 👈 NEW: Don't set mainBtn = false here anymore! 
+        // Let the input.js 'keyup' or 'touchend' events handle turning it off!
+    } else {
+        // If we let go of the button AND we aren't actively fighting, drop the red circle!
+        if (!hero.isAttacking) {
+            hero.target = null;
+            import('./combat.js').then(c => c.setLockedTarget(null));
+        }
+    }
+
+    // 4. CANCEL ATTACK ON DEATH OR MOVEMENT
+    if (hero.hp <= 0) {
         hero.isAttacking = false;
         hero.target = null;
+        import('./combat.js').then(c => c.setLockedTarget(null));
         hero.isWindingUp = false;
         return; 
     }
 
-    // 2. TARGET SELECTION (Search nearby)
-    // 👇 THE FIX: Use our new scanner that sees both Players AND Chickens!
-    let targetEntity = findPriorityTarget(hero, 200);
-
-    // 3. CLICK-TO-LOCK
-    if (inputState.mainBtn && targetEntity) {
-        hero.target = targetEntity;
-        hero.isAttacking = true;
-        inputState.mainBtn = false;
+    if (isManualMove) {
+        // 👈 MOBA FIX: Moving cancels the attack and the wind-up, but KEEPS the target locked!
+        hero.isAttacking = false;
+        hero.isWindingUp = false;
+        return; 
     }
 
-    // 4. COMBAT STATE MACHINE
+    // 5. COMBAT STATE MACHINE
     if (hero.isAttacking && hero.target) {
-        const dx = hero.target.x - hero.x;
-        const dy = hero.target.y - hero.y;
-        const currentDistSq = (dx * dx) + (dy * dy);
         
-        const attackRange = hero.attackRange || 24;
-        const rangeSq = Math.pow(attackRange, 2);
+        // --- PHASE B: COMMITTED WIND-UP & IMPACT ---
+        // If we already started swinging, DO NOT check distance. Commit to the attack!
+        if (hero.isWindingUp) {
+            hero.attackTimer += modifier;
+            const windUpLimit = 0.3 / (hero.attackSpeed || 1.0);
 
-        // --- PHASE A: CHASE (Simple Step Movement) ---
-        if (currentDistSq > rangeSq) {
-            hero.isWindingUp = false;
-            hero.isMoving = true;
+            if (hero.attackTimer >= windUpLimit) {
+                let fluxShieldToGain = 0;
+                let finalDamage = hero.ad;
 
-            let moveX = 0;
-            let moveY = 0;
+                if (hero.buffs.vaultEmpowered) { finalDamage += (hero.ad * 0.4); hero.buffs.vaultEmpowered = false; }
+                if (hero.buffs.fluxShotEmpowered) { finalDamage += (hero.ad * 0.20); hero.buffs.fluxShotEmpowered = false; fluxShieldToGain = finalDamage * 0.28; }
 
-            if (dx > 2)      moveX = hero.speed * modifier;
-            else if (dx < -2) moveX = -hero.speed * modifier;
-            
-            if (dy > 2)      moveY = hero.speed * modifier;
-            else if (dy < -2) moveY = -hero.speed * modifier;
-
-            // 🛠️ BUG FIX: Replaced the old top-left single-pixel collision check with proper 16x16 feet hitboxes
-            const left = 3, right = 12, top = 10, bottom = 15;
-
-            if (moveX !== 0) {
-                const nextX = hero.x + moveX;
-                const sideToCheck = (moveX < 0) ? nextX + left : nextX + right;
-                if (checkCollision(sideToCheck, hero.y + top, worldMatrix, roomMatrix, hero) && 
-                    checkCollision(sideToCheck, hero.y + bottom, worldMatrix, roomMatrix, hero)) {
-                    hero.x = nextX;
-                }
-            }
-
-            if (moveY !== 0) {
-                const nextY = hero.y + moveY;
-                const sideToCheck = (moveY < 0) ? nextY + top : nextY + bottom;
-                if (checkCollision(hero.x + left, sideToCheck, worldMatrix, roomMatrix, hero) && 
-                    checkCollision(hero.x + right, sideToCheck, worldMatrix, roomMatrix, hero)) {
-                    hero.y = nextY;
-                }
-            }
-
-            // 🛠️ BUG FIX: Renamed Left/Right/Up/Down to East/West/North/South for the new spritesheets
-            if (Math.abs(dx) > Math.abs(dy)) hero.dir = dx > 0 ? 'East' : 'West';
-            else hero.dir = dy > 0 ? 'South' : 'North';
-            
-        } 
-        // --- PHASE B: WIND-UP & IMPACT ---
-        else {
-            hero.isMoving = false;
-
-            // Only start the "Shake" if the 2-second cooldown is over
-            if (hero.attackTimer >= 0) {
-                hero.isWindingUp = true;
-                hero.attackTimer += modifier;
-
-                const windUpLimit = 0.3 / (hero.attackSpeed || 1.0);
-
-                if (hero.attackTimer >= windUpLimit) {
-                    console.log("👊 IMPACT TRIGGERED!");
-                    
-                    let fluxShieldToGain = 0; // 👈 THE FIX: Declare the variable!
-                    let finalDamage = hero.ad;
-
-                    if (hero.buffs.vaultEmpowered) {
-                        finalDamage += (hero.ad * 0.4); // +40% AD
-                        hero.buffs.vaultEmpowered = false; // Consume the buff
-                        console.log("✨ Vault Empowered Strike!");
-                    }
-
-                    // 2. 🆕 FLUX SHOT EMPOWERMENT
-                    if (hero.buffs.fluxShotEmpowered) {
-                        finalDamage += (hero.ad * 0.20); // Bonus 20% Physical Damage
-                        hero.buffs.fluxShotEmpowered = false;
-                        
-                        // 28% Physical Flux (Shield based on physical damage dealt)
-                        fluxShieldToGain = finalDamage * 0.28;
-                        console.log(`💫 Flux Shot! +${fluxShieldToGain.toFixed(1)} Flux Shield`);
-                    }
-
-
-                    // 3. 🔄 UPDATED: AATROX-STYLE 3RD HIT LOGIC
-                    if (hero.skills.includes('p2')) {
-                        hero.attackCount++;
-                        if (hero.attackCount >= 3) {
-                            hero.attackCount = 0;
-                            if (hero.energy >= 5) {
-                                hero.energy -= 5;
-                                
-                                // (Optional: Keep the low HP reduction if you want, 
-                                // or remove it if you dropped that mechanic!)
-                                const isLowHp = (hero.hp / hero.maxHp) < 0.5;
-
-                                if (hero.p2_stance === 'blast') {
-                                    // 💥 HOLY BLAST: +20% Magic Damage
-                                    let bonusDmg = hero.magic * 0.20;
-                                    if (isLowHp) bonusDmg *= 0.70; 
-                                    
-                                    finalDamage += bonusDmg; 
-                                    console.log(`💥 HOLY BLAST! +${bonusDmg.toFixed(1)} Magic DMG`);
-                                } 
-                                else if (hero.p2_stance === 'shield') {
-                                    // 🛡️ HOLY SHIELD: 14% Flux (Shield based on the Total Damage dealt)
-                                    let fluxPercent = 0.14;
-                                    if (isLowHp) fluxPercent *= 0.70;
-
-                                    const bonusShield = finalDamage * fluxPercent;
-                                    
-                                    // Add to our running flux total for this swing
-                                    fluxShieldToGain += bonusShield;
-                                    console.log(`🛡️ HOLY SHIELD! +${bonusShield.toFixed(1)} Flux Shield`);
-                                }
+                if (hero.skills.includes('p2')) {
+                    hero.attackCount++;
+                    if (hero.attackCount >= 3) {
+                        hero.attackCount = 0;
+                        if (hero.energy >= 5) {
+                            hero.energy -= 5;
+                            const isLowHp = (hero.hp / hero.maxHp) < 0.5;
+                            if (hero.p2_stance === 'blast') {
+                                let bonusDmg = hero.magic * 0.20;
+                                if (isLowHp) bonusDmg *= 0.70; 
+                                finalDamage += bonusDmg; 
+                            } else if (hero.p2_stance === 'shield') {
+                                let fluxPercent = 0.14;
+                                if (isLowHp) fluxPercent *= 0.70;
+                                fluxShieldToGain += finalDamage * fluxPercent;
                             }
                         }
                     }
-
-                    // 👇 THE FIX: Apply damage locally if it's an animal!
-                    if (hero.target.isAnimal) {
-                        hero.target.hp -= finalDamage;
-                        console.log(`🐔 Hit chicken for ${finalDamage}! HP: ${hero.target.hp}`);
-                    } else {
-                        applyPlayerDamage(hero.target, finalDamage);
-                    }
-                    
-                    // 4. APPLY ALL FLUX SHIELDS TO SELF (Flux Shot + Holy Shield)
-                    if (fluxShieldToGain > 0) {
-                        hero.shield += fluxShieldToGain;
-                        // Sync our new shield to the server immediately!
-                        if (socket) socket.emit('updateStats', { shield: hero.shield });
-                    }
-                    
-                    hero.isWindingUp = false;      
-                    hero.attackTimer = -1.7;
-                    
-                    if (hero.target && hero.target.hp <= 0) {
-                        console.log("its 0");
-                        hero.isAttacking = false;
-                        hero.target = null;
-                    }
                 }
-            } else {
-                // If we are still in the 1.7s cooldown, don't shake
-                hero.isWindingUp = false;
+
+                if (hero.target.isAnimal) hero.target.hp -= finalDamage;
+                else applyPlayerDamage(hero.target, finalDamage);
+                
+                if (fluxShieldToGain > 0) {
+                    hero.shield += fluxShieldToGain;
+                    if (socket) socket.emit('updateStats', { shield: hero.shield });
+                }
+                
+                hero.isWindingUp = false;      
+                hero.attackTimer = -1.7; // Go on cooldown
+                
+                if (hero.target && hero.target.hp <= 0) {
+                    hero.isAttacking = false;
+                    hero.target = null;
+                    import('./combat.js').then(c => c.setLockedTarget(null));
+                }
             }
+        } 
+        // --- PHASE A: RANGE CHECK & START WIND-UP ---
+        else {
+            const hx = hero.x + 8;
+            const hy = hero.y + 8;
+            const tx = hero.target.x + 8;
+            const ty = hero.target.y + 8;
+            
+            const dx = tx - hx;
+            const dy = ty - hy;
+            const currentDistSq = (dx * dx) + (dy * dy);
+            const attackRange = hero.attackRange || 24;
+
+            if (currentDistSq <= attackRange * attackRange) {
+                // We are in range! Face the target.
+                if (Math.abs(dx) > Math.abs(dy)) hero.dir = dx > 0 ? 'East' : 'West';
+                else hero.dir = dy > 0 ? 'South' : 'North';
+
+                // If cooldown is ready, START THE SWING!
+                if (hero.attackTimer >= 0) {
+                    hero.isWindingUp = true;
+                }
+            }
+            // If out of range, do nothing here. The 60-FPS physics engine in input.js will auto-chase!
         }
-    }
-    else if (hero.isAttacking && !hero.target) {
-        // PROOF LOG 4: Target was lost but 'isAttacking' flag is still true
-        console.error("❌ STATE ERROR: isAttacking is true but target is null!");
-        hero.isAttacking = false;
     }
 }
 

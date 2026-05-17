@@ -17,7 +17,7 @@ import { updateBacteria, seedBacteria, getBacteriaData } from './bacteria.js';
 import { ITEM_TYPES, createItem } from './items.js';
 import { updatePlants, plants } from './plants.js'; 
 import { updateAnimals, animals, spawnChicken } from './animals.js';
-import { findPriorityTarget, currentTarget, validateTarget } from './combat.js';
+import { scanForTarget, currentTarget, validateTarget } from './combat.js';
 import { socket, initMultiplayer, playerWallet, remotePlayers, serverProjectiles, updateRemotePlayers } from './multiplayer.js';
 import { handleInteractions, updateHeroStats, handlePvPCombat, handleFinancialActions } from './interactionManager.js';
 import { initUI, updateHUD } from './uiManager.js';
@@ -223,8 +223,8 @@ var render = function () {
     // 👇 ADD THIS LINE to actually draw the flock to the screen!
     drawAnimals(); 
 
-    // 👇 UPDATED: Draw Enemy Target Circle (using hero.target)
-    if (hero.target) drawTargetCircle(ctx2, hero.target); 
+    // 👇 MOBA FIX: Only draw the red circle when we are locked onto an enemy!
+    if (hero.target) drawTargetCircle(ctx2, hero.target);
     
     // 👇 NEW: Draw Hero's Attack Range underneath the hero
     drawHeroRange(ctx2, hero);

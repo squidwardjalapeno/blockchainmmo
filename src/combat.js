@@ -2,63 +2,54 @@
 import { remotePlayers } from './multiplayer.js';
 import { animals } from './animals.js';
 
-export let currentTarget = null;
+export let currentTarget = null; // The passive "hover" target
+export let lockedTarget = null;  // The active "I am attacking this" target
 
-if (typeof window !== 'undefined') {
-    logStep("combat.js");
+// 👇 ADD THIS SETTER FUNCTION:
+export function setLockedTarget(target) {
+    lockedTarget = target;
 }
 
-/**
- * PvP Style: Find the nearest Remote Player or Animal in range
- * Priority is given to the entity with the lowest HP
- */
-export function findPriorityTarget(hero, range = 150) {
+if (typeof window !== 'undefined') logStep("combat.js");
+
+// Runs constantly to find the nearest valid thing to punch
+export function scanForTarget(hero, range = 150) {
+    // If we are actively fighting someone, don't change the hover target!
+    if (lockedTarget) {
+        currentTarget = lockedTarget;
+        return;
+    }
+
     let bestTarget = null;
-    let lowestHP = Infinity;
+    let nearestDist = Infinity; // Wild Rift prioritizes DISTANCE over HP for passive targeting
 
-    // 1. Scan Players
-    remotePlayers.forEach((player) => {
-        const dx = player.x - hero.x;
-        const dy = player.y - hero.y;
+    const checkEntity = (entity) => {
+        if (entity.hp <= 0) return;
+        const dx = entity.x - hero.x;
+        const dy = entity.y - hero.y;
         const distSq = dx * dx + dy * dy;
 
-        if (distSq < range * range && player.hp > 0) {
-            if (player.hp < lowestHP) { 
-                lowestHP = player.hp;
-                bestTarget = player;
-            }
+        if (distSq < range * range && distSq < nearestDist) {
+            nearestDist = distSq;
+            bestTarget = entity;
         }
-    });
+    };
 
-    // 2. Scan Animals
-    animals.forEach((anim) => {
-        const dx = anim.x - hero.x;
-        const dy = anim.y - hero.y;
-        const distSq = dx * dx + dy * dy;
-
-        if (distSq < range * range && anim.hp > 0) {
-            if (anim.hp < lowestHP) { 
-                lowestHP = anim.hp;
-                bestTarget = anim;
-            }
-        }
-    });
+    remotePlayers.forEach(checkEntity);
+    animals.forEach(checkEntity);
 
     currentTarget = bestTarget;
-    return bestTarget;
 }
 
 export function validateTarget(hero, range = 250) {
-    if (!currentTarget) return;
-
-    const dx = currentTarget.x - hero.x;
-    const dy = currentTarget.y - hero.y;
-    const distSq = dx * dx + dy * dy;
-
-    if (currentTarget.hp <= 0 || distSq > range * range) {
-        console.log(`🎯 TARGET LOST | HP: ${currentTarget.hp}`);
-        currentTarget = null;
-        hero.isAttacking = false;
-        hero.isWindingUp = false;
+    if (lockedTarget) {
+        const dx = lockedTarget.x - hero.x;
+        const dy = lockedTarget.y - hero.y;
+        if (lockedTarget.hp <= 0 || (dx * dx + dy * dy) > range * range) {
+            lockedTarget = null;
+            hero.isAttacking = false;
+            hero.target = null; // 👈 FIX: Ensure hero's reference is also dropped!
+            hero.isWindingUp = false;
+        }
     }
 }

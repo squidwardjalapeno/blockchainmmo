@@ -261,6 +261,9 @@ io.on('connection', (socket) => {
                     health: 100,
                     virulence: 0,
                     fertility: 0,
+                                        // 👇 ADD THESE TWO LINES TO PREVENT DUPLICATION!
+                    count: 1,      
+                    maxStack: 1,   
                     timestamp: Date.now()
                 }
             ];

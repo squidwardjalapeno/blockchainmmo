@@ -125,7 +125,10 @@ export function initInput(canvas) {
     window.addEventListener("keyup", (e) => {
         delete keysDown[e.code];
         updateKeyboardVectors();
-        if (e.code === 'Space') inputState.action = false;
+        if (e.code === 'Space') {
+            inputState.action = false;
+            inputState.mainBtn = false; // 👈 Add this line to be safe!
+        }
         if (e.code === 'KeyE')  inputState.interact = false;
         if (e.code === 'KeyC')  inputState.keyC = false; 
         // Inside keyup:
@@ -469,10 +472,47 @@ export function handleHeroUpdate(modifier, worldMatrix, roomMatrix) {
         return; 
     }
 
-    // 🌟 5. NORMAL WALKING PHYSICS
+    // 🌟 5. NORMAL WALKING & AUTO-CHASE PHYSICS
     if (hero.ccFlags && hero.ccFlags.canMove) { 
-        let moveX = inputState.moveX * hero.speed * modifier;
-        let moveY = inputState.moveY * hero.speed * modifier;
+        
+        let velX = inputState.moveX * hero.speed;
+        let velY = inputState.moveY * hero.speed;
+
+        // 👇 MOBA FIX: Detect manual movement instantly at 60 FPS
+        const isManualMove = (inputState.moveX !== 0 || inputState.moveY !== 0);
+
+
+        // --- ⚔️ AAA AUTO-CHASE OVERRIDE ---
+        // If we are locked on, the Virtual Joystick takes over at 60 FPS!
+        if (hero.isAttacking && hero.target && !hero.isWindingUp && !isManualMove) {
+            const hx = hero.x + 8;
+            const hy = hero.y + 8;
+            const tx = hero.target.x + 8;
+            const ty = hero.target.y + 8;
+            
+            const dx = tx - hx;
+            const dy = ty - hy;
+            const dist = Math.hypot(dx, dy);
+            const attackRange = hero.attackRange || 24;
+
+            if (dist > attackRange) {
+                velX = (dx / dist) * hero.speed;
+                velY = (dy / dist) * hero.speed;
+                
+                // Anti-overshoot: Don't walk past the target boundary in a single frame
+                const maxMove = dist - attackRange;
+                if (Math.hypot(velX * modifier, velY * modifier) > maxMove) {
+                    velX = (dx / dist) * (maxMove / modifier);
+                    velY = (dy / dist) * (maxMove / modifier);
+                }
+            } else {
+                velX = 0; velY = 0; // In range! Stop moving!
+            }
+        }
+
+        // Apply time modifier to final velocity
+        let moveX = velX * modifier;
+        let moveY = velY * modifier;
 
         const oldX = hero.x; 
         const oldY = hero.y;
@@ -482,6 +522,7 @@ export function handleHeroUpdate(modifier, worldMatrix, roomMatrix) {
 
         hero.isMoving = (hero.x !== oldX || hero.y !== oldY);
 
+        // --- 🏃 ANIMATION HANDLER ---
         if (hero.isMoving) {
             hero.animState = 'walking';
             if (moveX > 0 && moveY < 0) hero.dir = 'NorthEast';
@@ -497,14 +538,14 @@ export function handleHeroUpdate(modifier, worldMatrix, roomMatrix) {
             hero.frame = Math.floor(hero.animTimer) % 4; // Walking uses 4 frames
         } else {
             hero.animState = 'idle';
-            hero.frame = 0;       // 👈 RESTORED: Locks to the standing frame
-            hero.animTimer = 0;   // 👈 RESTORED: Stops the timer
+            hero.frame = 0;       
+            hero.animTimer = 0;   
         }
     } else {
         // If they cannot move (Rooted/Stunned)
         hero.isMoving = false;
         hero.animState = 'idle';
-        hero.frame = 0;           // 👈 RESTORED: Locks to standing frame
+        hero.frame = 0;           
         hero.animTimer = 0;
     }
 }

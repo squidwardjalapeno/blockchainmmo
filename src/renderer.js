@@ -37,6 +37,7 @@ export const ctx = canvas.getContext("2d");
 export const ctx2 = canvas2.getContext("2d");
 export const ctx3 = canvas3.getContext("2d");
 
+
 // ADD THIS LINE
 const chunkCache = new Map(); // Our new cache for pre-rendered map chunks
 
@@ -46,6 +47,75 @@ const bgCtx = bgBuffer.getContext('2d');
 let lastHeroTX = -1;
 let lastHeroTY = -1;
 let lastHeroFloor = -1;
+
+
+const DAGGER_HILT = { x: 5, y: 10 };
+
+const HERO_SOCKETS = {
+    // === SOUTH (Facing Camera) ===
+    'walkSouth_0': { handX: 5, handY: 11, angle: 135, behind: false },
+    'walkSouth_1': { handX: 7, handY: 12, angle: 135, behind: false },
+    'walkSouth_2': { handX: 4, handY: 8, angle: 135, behind: false },
+    'walkSouth_3': { handX: 4, handY: 9,  angle: 135 , behind: false },
+    'lungeSouth':  { handX: 4, handY: 9, angle: 135, behind: false }, // 👈 NEW
+
+
+    // === SOUTHEAST ===
+    'walkSouthEast_0': { handX: 6, handY: 12, angle: 45, behind: false },
+    'walkSouthEast_1': { handX: 6, handY: 11, angle: 45, behind: false },
+    'walkSouthEast_2': { handX: 4, handY: 10, angle: 45, behind: false },
+    'walkSouthEast_3': { handX: 4, handY: 10,  angle: 45, behind: false },
+    'lungeSouthEast':  { handX: 1, handY: 10, angle: 45, behind: false }, // 👈 NEW
+
+
+    // === EAST ===
+    'walkEast_0': { handX: 7, handY: 11, angle: 45, behind: false },
+    'walkEast_1': { handX: 10, handY: 10, angle: 45, behind: false },
+    'walkEast_2': { handX: 7, handY: 10, angle: 45, behind: false },
+    'walkEast_3': { handX: 7, handY: 10,  angle: 45, behind: false },
+    'lungeEast':  { handX: 14, handY: 8, angle: 45, behind: true }, // 👈 NEW
+
+
+    // === NORTHEAST ===
+    'walkNorthEast_0': { handX: 11, handY: 11, angle: 0, behind: true},
+    'walkNorthEast_1': { handX: 12, handY: 11, angle: 0, behind: true},
+    'walkNorthEast_2': { handX: 9, handY: 11, angle: 0, behind: true},
+    'walkNorthEast_3': { handX: 9, handY: 11,  angle: 0, behind: true},
+    'lungeNorthEast':  { handX: 11, handY: 6,  angle: 0, behind: true }, // 👈 NEW
+
+
+    // === NORTH ===
+    'walkNorth_0': { handX: 11, handY: 9, angle: 315, behind: true},
+    'walkNorth_1': { handX: 11, handY: 9, angle: 315, behind: true},
+    'walkNorth_2': { handX: 11, handY: 10, angle: 315, behind: true},
+    'walkNorth_3': { handX: 11, handY: 11,  angle: 315, behind: true},
+    'lungeNorth':  { handX: 8, handY: 6, angle: 315, behind: true }, // 👈 NEW
+
+
+    // === NORTHWEST ===
+    'walkNorthWest_0': { handX: 7, handY: 7, angle: 270, behind: true},
+    'walkNorthWest_1': { handX: 9, handY: 8, angle: 270, behind: true},
+    'walkNorthWest_2': { handX: 12, handY: 9, angle: 270, behind: true},
+    'walkNorthWest_3': { handX: 11, handY: 9,  angle: 270, behind: true},
+    'lungeNorthWest':  { handX: 3, handY: 7, angle: 270, behind: true }, // 👈 NEW
+
+
+    // === WEST ===
+    'walkWest_0': { handX: 9, handY: 12, angle: 270, behind: true},
+    'walkWest_1': { handX: 6, handY: 11, angle: 270, behind: true},
+    'walkWest_2': { handX: 9, handY: 11, angle: 270, behind: true },
+    'walkWest_3': { handX: 9, handY: 11,  angle: 270, behind: true },
+    'lungeWest':  { handX: 1, handY: 8, angle: 270, behind: true }, // 👈 NEW
+
+
+    // === SOUTHWEST ===
+    'walkSouthWest_0': { handX: 4, handY: 10, angle: 225, behind: false },
+    'walkSouthWest_1': { handX: 5, handY: 10, angle: 225, behind: false },
+    'walkSouthWest_2': { handX: 6, handY: 10, angle: 225, behind: true },
+    'walkSouthWest_3': { handX: 6, handY: 11,  angle: 225, behind: true },
+    'lungeSouthWest':  { handX: 3, handY: 9,  angle: 225, behind: false }, // 👈 NEW
+
+};
 
 
 
@@ -331,6 +401,9 @@ function getRenderData(typeID) {
             else if (tilesetStr === "worldTilesColor") w = 8;
             else if (tilesetStr === "transparentTileset") w = 10; // 👈 ADD THIS LINE
             else if (tilesetStr === "foodTileset") w = 10; // 👈 ADD THIS LINE
+            // 👇 ADD THESE TWO LINES
+            else if (tilesetStr === "keyTileset") w = 16;
+            else if (tilesetStr === "weaponTileset") w = 16;
 
 
             
@@ -647,119 +720,92 @@ export function drawHero() {
         // ==========================================
         // 🗡️ WEAPON PAPERDOLL & VFX
         // ==========================================
-        const wpn = hero.equipment ? hero.equipment.weapon : null;
-        let wpnDrawX = drawX;
-        let wpnDrawY = drawY;
-        let wpnAngle = 0;
+        const wpn = hero.equipment ? hero.equipment.mainHand : null;
+        
         let isWeaponBehind = false;
+        let socket = null;
 
         if (wpn) {
-            // A. Position the weapon based on direction
-            const holdOffset = 3; // 👈 Reduced from 8 to pull it closer to the body!
-
-            // Shift X
-            if (hero.dir.includes('East')) wpnDrawX += holdOffset;
-
-            if (hero.dir.includes('West')) 
-                {
-                    wpnDrawX -= holdOffset;
-                    isWeaponBehind = true; // Draw under hero
-                }
-
-            // Shift Y and handle Z-Index
-            if (hero.dir.includes('North')) {
-                wpnDrawY -= holdOffset;
-                isWeaponBehind = true; // Draw under hero
-            }
-            if (hero.dir.includes('South')) {
-                wpnDrawY += holdOffset;
-            }
-
-            // Set the exact rotation angle for all 8 directions
-            if (hero.dir === 'North') wpnAngle = -Math.PI / 2;
-            else if (hero.dir === 'South') wpnAngle = Math.PI / 2;
-            else if (hero.dir === 'East') wpnAngle = 0;
-            else if (hero.dir === 'West') wpnAngle = Math.PI;
-            else if (hero.dir === 'NorthEast') wpnAngle = -Math.PI / 4;
-            else if (hero.dir === 'NorthWest') wpnAngle = -Math.PI * 0.75;
-            else if (hero.dir === 'SouthEast') wpnAngle = Math.PI / 4;
-            else if (hero.dir === 'SouthWest') wpnAngle = Math.PI * 0.75;
-
-            // B. Add attack motion (Thrust forward)
+            // 👇 THE FIX: Choose the Lunge socket if we are attacking!
+            let socketKey = `walk${hero.dir}_${hero.frame}`;
             if (isImpact) {
-                const thrustOffset = 4; // 👈 Reduced from 6 so it doesn't detach from the hand
-                if (hero.dir.includes('North')) wpnDrawY -= thrustOffset;
-                if (hero.dir.includes('South')) wpnDrawY += thrustOffset;
-                if (hero.dir.includes('East'))  wpnDrawX += thrustOffset;
-                if (hero.dir.includes('West'))  wpnDrawX -= thrustOffset;
+                socketKey = `lunge${hero.dir}`;
             }
-
-            // C. Draw Weapon Function
-            const drawWeapon = () => {
-                const wImg = images[wpn.tileset];
-                if (!wImg || !wImg.complete) return;
-                
-                ctx2.save();
-                // Move canvas origin to the weapon's center
-                ctx2.translate(wpnDrawX + 8, wpnDrawY + 8);
-                ctx2.rotate(wpnAngle);
-
-                // 🆕 FLUX SHOT GLOW EFFECT
-                if (hero.buffs && hero.buffs.fluxShotEmpowered) {
-                    ctx2.shadowColor = "rgba(0, 255, 255, 0.8)"; // Cyan Glow
-                    ctx2.shadowBlur = 8;
-                }
-                
-                // Draw the sprite (Offset by -4 to center it on the rotation point)
-                ctx2.drawImage(
-                    wImg,
-                    (wpn.spriteID % 16) * 16, Math.floor(wpn.spriteID / 16) * 16, // Assuming 16 items wide
-                    16, 16,
-                    -4, -4, 
-                    8, 8
-                );
-                ctx2.restore();
-            };
-
-            // D. Draw Weapon BEHIND hero if facing North
-            if (isWeaponBehind) drawWeapon();
             
-            // E. Draw Hero
-            ctx2.drawImage(
-                animData.img, animData.srcX, animData.srcY, animData.srcW, animData.srcH,
-                drawX, drawY, 16, 16
-            );
-
-            // F. Draw Weapon IN FRONT of hero if facing South/East/West
-            if (!isWeaponBehind) drawWeapon();
-
-            // G. Draw "Swoosh" VFX on Impact
-            if (isImpact) {
-                ctx2.strokeStyle = "rgba(255, 255, 255, 0.8)";
-                ctx2.lineWidth = 2;
-                ctx2.beginPath();
-                
-                const swooshX = drawX + 8;
-                const swooshY = drawY + 8;
-                
-                // 👈 Shrunk the radius slightly to match the smaller, closer dagger
-                const r = 10; 
-
-                // 👈 The swoosh offset is now pushed 6 pixels forward (instead of 4) 
-                //    so the arc perfectly traces the tip of the plunging dagger.
-                if (hero.dir.includes('North')) ctx2.arc(swooshX, swooshY - 6, r, Math.PI, 0);
-                if (hero.dir.includes('South')) ctx2.arc(swooshX, swooshY + 6, r, 0, Math.PI);
-                if (hero.dir.includes('East'))  ctx2.arc(swooshX + 6, swooshY, r, -Math.PI/2, Math.PI/2);
-                if (hero.dir.includes('West'))  ctx2.arc(swooshX - 6, swooshY, r, Math.PI/2, -Math.PI/2);
-                
-                ctx2.stroke();
+            socket = HERO_SOCKETS[socketKey] || HERO_SOCKETS[`walk${hero.dir}_0`];
+            
+            if (socket) {
+                isWeaponBehind = socket.behind;
             }
-        } else {
-            // No Weapon? Just draw the hero normally.
+        }
+
+        // C. Draw Weapon Function
+        const drawWeapon = () => {
+            if (!wpn || !socket) return;
+            const wImg = images[wpn.tileset];
+            if (!wImg || !wImg.complete) return;
+            
+            ctx2.save();
+            
+            // 1. Move canvas origin to the exact pixel of the hand
+            let finalHandX = drawX + socket.handX;
+            let finalHandY = drawY + socket.handY;
+
+            // 🛑 (Fake Thrust Logic removed! We now rely 100% on your socket data!)
+
+            ctx2.translate(finalHandX, finalHandY);
+            
+            // 2. Rotate to the exact angle you provided
+            ctx2.rotate(socket.angle * Math.PI / 180);
+
+            // 👇 3. SCALE DOWN THE WEAPON (0.75 = 75% size)
+            // This shrinks the image WITHOUT breaking your DAGGER_HILT coordinates!
+            ctx2.scale(0.50, 0.50);
+
+            if (hero.buffs && hero.buffs.fluxShotEmpowered) {
+                ctx2.shadowColor = "rgba(0, 255, 255, 0.8)";
+                ctx2.shadowBlur = 8;
+            }
+            
+            // 3. Draw the dagger
             ctx2.drawImage(
-                animData.img, animData.srcX, animData.srcY, animData.srcW, animData.srcH,
-                drawX, drawY, 16, 16
+                wImg,
+                (wpn.spriteID % 16) * 16, Math.floor(wpn.spriteID / 16) * 16, 
+                16, 16,
+                -DAGGER_HILT.x, -DAGGER_HILT.y, 
+                16, 16
             );
+            ctx2.restore();
+        };
+
+        // D. Draw Weapon BEHIND hero
+        if (isWeaponBehind) drawWeapon();
+        
+        // E. Draw Hero
+        ctx2.drawImage(
+            animData.img, animData.srcX, animData.srcY, animData.srcW, animData.srcH,
+            drawX, drawY, 16, 16
+        );
+
+        // F. Draw Weapon IN FRONT of hero
+        if (!isWeaponBehind) drawWeapon();
+
+        // G. Draw "Swoosh" VFX on Impact
+        if (isImpact) {
+            ctx2.strokeStyle = "rgba(255, 255, 255, 0.8)";
+            ctx2.lineWidth = 2;
+            ctx2.beginPath();
+            
+            const swooshX = drawX + 8;
+            const swooshY = drawY + 8;
+            const r = 10; 
+
+            if (hero.dir.includes('North')) ctx2.arc(swooshX, swooshY - 6, r, Math.PI, 0);
+            if (hero.dir.includes('South')) ctx2.arc(swooshX, swooshY + 6, r, 0, Math.PI);
+            if (hero.dir.includes('East'))  ctx2.arc(swooshX + 6, swooshY, r, -Math.PI/2, Math.PI/2);
+            if (hero.dir.includes('West'))  ctx2.arc(swooshX - 6, swooshY, r, Math.PI/2, -Math.PI/2);
+            
+            ctx2.stroke();
         }
     }
 }
