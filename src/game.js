@@ -5,11 +5,11 @@ if (typeof window !== 'undefined') logStep("Modules Loaded & Parsed");
 // js/game.js
 import { images, loadAllImages } from './assetLoader.js';
 import { generateWorld, seededRandom } from './mapGenerator.js'; 
-import { drawHouse, drawTemple, drawGeneralStore, drawVillageHall, drawRootCellar, drawBarn, drawRanch, drawStorageRoom, drawVillage, drawBarracks, drawTwoStoryHouse, drawInn, drawMilitaryQuarters, drawBlacksmith, drawForge, drawLargeBarn, drawTownHall,  populateWorld, drawMiningArea, drawTown, drawCastle, decorateCell, linkVillages, ensureLocalCells, drawOreDeposit } from './cellDecorator.js';
+import { drawHouse, drawTemple, drawGeneralStore, drawVillageHall, drawRootCellar, drawBarn, drawRanch, drawStorageRoom, drawVillage, drawBarracks, drawTwoStoryHouse, drawInn, drawMilitaryQuarters, drawBlacksmith, drawForge, drawLargeBarn, drawTownHall,  populateWorld, drawMiningArea, drawTown, drawCastle, decorateCell, linkVillages, ensureLocalCells, linkLakes, drawOreDeposit } from './cellDecorator.js';
 import { applyShorelineRules } from './terrainRules.js';
 import { inputState, initInput, handleHeroUpdate } from './input.js';
 import { viewport } from './viewport.js';
-import { ctx, ctx2, ctx3, canvas, canvas2, canvas3, drawMap, drawJoystick, drawProjectiles, drawTargetCircle, drawHeroRange, drawHealthBar, drawEnergyBar, drawAbilityButtons, drawXPStatus, drawAimIndicator, initRenderer, clearAll, drawAnimals, drawPlants, drawHero, drawRemotePlayers, drawBobber, preRenderMinimap, drawDroppedItems } from './renderer.js';
+import { ctx, ctx2, ctx3, canvas, canvas2, canvas3, drawMap, drawJoystick, drawProjectiles, drawTargetCircle, drawHeroRange, drawHealthBar, drawEnergyBar, drawAbilityButtons, drawXPStatus, drawAimIndicator, initRenderer, clearAll, drawAnimals, drawPlants, drawHero, drawRemotePlayers, drawBobber, preRenderMinimap, drawDroppedItems, drawCanopy } from './renderer.js';
 import { hero, resetEntities, gameState } from './entities.js';
 import { CONFIG } from './config.js'
 import { checkCollision, getTileData } from './physics.js'; 
@@ -236,6 +236,8 @@ var render = function () {
     drawRemotePlayers(ctx2, remotePlayers);
     drawHero(); 
     drawBobber();
+    // 👇 ADD THIS LINE: Draw the leaves over the players' heads!
+    drawCanopy(worldMatrix);
 
     drawJoystick(ctx3); // Placeholder for touch/gamepad on PC
     drawAbilityButtons(ctx3);
@@ -346,7 +348,7 @@ async function mainInit() {
         initRenderer(); // Assuming initRenderer exists
 
         logStep("5. Generating World...");
-        const rawShape = generateWorld(CONFIG.MAP_SIZE, CONFIG.MAP_SIZE, 15);
+        const rawShape = generateWorld(CONFIG.MAP_SIZE, CONFIG.MAP_SIZE, 800);
         worldMap = rawShape;
         const worldData = populateWorld(worldMap); // Assuming populateWorld exists
         worldMatrix = worldData.worldMatrix;
@@ -355,6 +357,10 @@ async function mainInit() {
 
         logStep("6. Linking Villages...");
         linkVillages(worldMap, worldMatrix, roomMatrix, fertilityMatrix, worldMap); // Assuming linkVillages exists
+
+        // 👇 NEW: Draw the physical rivers!
+        logStep("6.5. Linking Lakes with Rivers...");
+        linkLakes(worldMap, worldMatrix, roomMatrix, fertilityMatrix);
         
         logStep("7. Pre-rendering...");
         preRenderMinimap(worldMap); // Assuming preRenderMinimap exists

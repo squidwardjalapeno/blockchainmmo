@@ -52,11 +52,10 @@ export function setGlobalTile(gx, gy, tileID, roomID, worldMatrix, roomMatrix, f
 
     if (worldMatrix[cx][cy] === null) {
         const blueprintIdx = (cy * CONFIG.MAP_SIZE) + cx;
-        
-        // Also a quick fix: Use CONFIG.LAND_THRESHOLD instead of hardcoded 55
         const isLand = worldMap[blueprintIdx] >= CONFIG.LAND_THRESHOLD || worldMap[blueprintIdx] >= 100;
 
-        worldMatrix[cx][cy] = new Uint8Array(10000).fill(isLand ? 63 : 17);
+        // 👇 CHANGE Uint8Array to Uint16Array
+        worldMatrix[cx][cy] = new Uint16Array(10000).fill(isLand ? 63 : 17);
         roomMatrix[cx][cy] = new Uint16Array(10000).fill(0);
         
         // 👇 THE FERTILITY FIX: Changed from 3 to 12!
@@ -140,6 +139,13 @@ function getInbound(i, j) {
 // js/cellDecorator.js
 
 
+
+// A simple stamper for our 2x3 tree (IDs 380, 381 / 392, 393 / 404, 405)
+export function drawTree(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
+    
+    setGlobalTile(gx, gy + 2, 406, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+    setGlobalTile(gx + 1, gy + 2, 407, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+}
 
 export function drawHouse(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     const currentId = nextHouseId++;
@@ -491,6 +497,37 @@ export function drawRanch(gx, gy, width, height, worldMatrix, roomMatrix, fertil
         const by = gy - height + 1;
         const bX = isLeft ? gx + 1 : gx + width - 5;
         drawBarn(bX, by, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+
+        // 4. 🛣️ DRAW THE 3x3 DIRT ROAD OUT OF THE SOUTH GATE
+        const roadCenter = gx + gateX;
+        let roadY = gy + 1; // Start 1 tile south of the gate
+
+        for (let step = 0; step < 10; step++) {
+            const currentY = roadY + step;
+            
+            // Check if we hit a structure (roomID !== 0) or water (17)
+            const cx = Math.floor(roadCenter / 100);
+            const cy = Math.floor(currentY / 100);
+            const lx = ((roadCenter % 100) + 100) % 100;
+            const ly = ((currentY % 100) + 100) % 100;
+            
+            const rID = roomMatrix[cx]?.[cy]?.[(ly * 100) + lx] || 0;
+            const tID = worldMatrix[cx]?.[cy]?.[(ly * 100) + lx] || 63;
+
+            // Stop building the road if we hit a house or water!
+            if (rID !== 0 || tID === 17) {
+                break; 
+            }
+
+            // Paint the 3-wide road using the 300+ offset!
+            // Left Border (35) -> 335
+            setGlobalTile(roadCenter - 1, currentY, 335, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            // Center Dirt (37) -> 337
+            setGlobalTile(roadCenter, currentY, 337, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            // Right Border (31) -> 331
+            setGlobalTile(roadCenter + 1, currentY, 331, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        }
+
         return true; 
     }
     
@@ -564,6 +601,14 @@ export function drawVillage(gvx, gvy, worldMatrix, roomMatrix, fertilityMatrix, 
     setGlobalTile(gvx + 1, gvy, 31, wellId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     setGlobalTile(gvx + 1, gvy + 1, 39, wellId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     setGlobalTile(gvx, gvy + 1, 38, wellId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+
+    // --- DEBUG: OVERLAPPING TREES ---
+    // Tree 1 (Top)
+    drawTree(gvx + 4, gvy - 2, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+    // Tree 2 (Middle - Overlaps Tree 1's trunk!)
+    drawTree(gvx + 4, gvy - 1, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+    // Tree 3 (Bottom - Overlaps Tree 2's trunk!)
+    drawTree(gvx + 4, gvy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
 
     let roadTiles = [];
     for (let x = gvx - 50; x < gvx + 50; x++) {
@@ -1566,10 +1611,12 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
 
     // 1. MEMORY ALLOCATION (Runs if roads/buildings haven't allocated it yet)
     if (worldMatrix[cx][cy] === null) {
-        worldMatrix[cx][cy] = new Uint8Array(10000).fill(isLand ? 63 : 17);
+        
+        // 👇 CHANGE Uint8Array to Uint16Array
+        worldMatrix[cx][cy] = new Uint16Array(10000).fill(isLand ? 63 : 17);
         roomMatrix[cx][cy] = new Uint16Array(10000).fill(0);
         fertilityMatrix[cx][cy] = new Uint8Array(10000).fill(isLand ? 12 : 0); 
-    }
+    }   
 
     // 2. ECOSYSTEM GENERATION (Runs EXACTLY ONCE when the player arrives)
     if (!ecoGenerated.has(cellKey)) {
@@ -1611,6 +1658,45 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
             cellMemory.set(cellKey, out);
         }
 
+
+        // --- 🌲 TREE SPAWNER (Forest Biomes & Coastlines) ---
+        if (cellType === 104 || !isLand) {
+            setWorldSeed((window.worldSeed || 1) + (cx * 1000) + cy + 777);
+            
+            const spawnThreshold = (cellType === 104) ? 0.65 : 0.80;
+            
+            // 👇 Run the loops to 100 to cover the ENTIRE cell!
+            for (let ly = 0; ly < 100; ly++) { 
+                for (let lx = 0; lx < 100; lx++) { 
+                    const idx = (ly * 100) + lx;
+                    
+                    if (worldMatrix[cx][cy][idx] === 63 && roomMatrix[cx][cy][idx] === 0) {
+                        
+                        if (seededRandom() > spawnThreshold) { 
+                            const gx = (cx * 100) + lx;
+                            const gy = (cy * 100) + ly;
+                            
+                            // Because gx/gy can now be right on the chunk edge, 
+                            // getTileID will safely look across into the neighboring chunk!
+                            let isClear = true;
+                            if (getTileID(gx, gy + 2, worldMatrix) !== 63) isClear = false;
+                            if (getTileID(gx + 1, gy + 2, worldMatrix) !== 63) isClear = false;
+                            
+                            if (isClear) {
+                                registerObject(gx, gy, 'FOREST_TREE');
+                                
+                                // setGlobalTile also safely reaches across chunk borders!
+                                setGlobalTile(gx, gy + 2, 406, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+                                setGlobalTile(gx + 1, gy + 2, 407, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- FLORA SPAWNER ---
+        // (Your existing flora spawner code continues here...)
         // --- FLORA SPAWNER ---
         setWorldSeed((window.worldSeed || 1) + (cx * 1000) + cy + 999);
         
@@ -1696,18 +1782,37 @@ export function populateWorld(worldMap) {
 
 export function linkVillages(worldMap, worldMatrix, roomMatrix, fertilityMatrix) {
     const size = CONFIG.MAP_SIZE;
-    const adjacencyList = new Map(); // 🆕 Track who is connected to whom
+    const adjacencyList = new Map(); 
 
-    // 1. COLLECT ALL NODES (Towns and Villages)
+    // 1. COLLECT ALL NODES & CALCULATE EXACT POSITIONS
     const settlements = [];
+    const seed = window.worldSeed || 1; // Used for deterministic hashing
+
     for (let i = 0; i < worldMap.length; i++) {
         if (worldMap[i] === 102 || worldMap[i] === 101 || worldMap[i] === 103) {
-            settlements.push({ 
-                id: i, 
-                type: worldMap[i], 
-                x: i % size, 
-                y: Math.floor(i / size) 
-            });
+            const type = worldMap[i];
+            const cx = i % size;
+            const cy = Math.floor(i / size);
+            
+            let tx, ty;
+            if (type === 103) {
+                // Castle center (100 offset because they take up 4 cells)
+                tx = cx * 100 + 100; ty = cy * 100 + 100; 
+            } else if (type === 102) {
+                // Town center (50 offset, dead center)
+                tx = cx * 100 + 50; ty = cy * 100 + 50; 
+            } else {
+                // 🏘️ VILLAGE: Randomize between tile 20 and 80 inside the cell!
+                // We use a deterministic hash so it is always identical for this seed/coordinate
+                const hash = Math.abs(Math.sin((cx + seed) * 12.9898 + (cy + seed) * 78.233) * 43758.5453);
+                const offX = Math.floor(hash * 60) % 60 + 20;
+                const offY = Math.floor((hash * 10) * 60) % 60 + 20;
+                
+                tx = cx * 100 + offX;
+                ty = cy * 100 + offY;
+            }
+
+            settlements.push({ id: i, type, x: cx, y: cy, tx, ty });
         }
     }
 
@@ -1718,100 +1823,78 @@ export function linkVillages(worldMap, worldMatrix, roomMatrix, fertilityMatrix)
         for (let j = i + 1; j < settlements.length; j++) {
             const B = settlements[j];
 
-            // Distance Check
             const dxAB = A.x - B.x;
             const dyAB = A.y - B.y;
             const distSqAB = (dxAB * dxAB) + (dyAB * dyAB);
 
-            // --- 🆕 DYNAMIC RANGE RULES ---
-            let maxRangeSq = 64; // Default Village (8 cells)
-            if (A.type === 103 || B.type === 103) maxRangeSq = 2500; // 🏰 Castle (50 cells)
-            else if (A.type === 102 && B.type === 102) maxRangeSq = 400; // 🏘️ Town (20 cells)
+            let maxRangeSq = 64; 
+            if (A.type === 103 || B.type === 103) maxRangeSq = 2500; 
+            else if (A.type === 102 && B.type === 102) maxRangeSq = 400; 
 
             if (distSqAB > 0 && distSqAB <= maxRangeSq) {
                 let redundant = false;
 
-                // CIRCULAR CHECK (The RNG Rule)
                 for (let k = 0; k < settlements.length; k++) {
                     if (k === i || k === j) continue;
                     const C = settlements[k];
 
-                    const dxAC = A.x - C.x;
-                    const dyAC = A.y - C.y;
+                    const dxAC = A.x - C.x; const dyAC = A.y - C.y;
                     const distSqAC = (dxAC * dxAC) + (dyAC * dyAC);
 
-                    const dxBC = B.x - C.x;
-                    const dyBC = B.y - C.y;
+                    const dxBC = B.x - C.x; const dyBC = B.y - C.y;
                     const distSqBC = (dxBC * dxBC) + (dyBC * dyBC);
 
-                    // If C is closer to both ends than they are to each other, skip direct road
                     if (distSqAC < distSqAB && distSqBC < distSqAB) {
                         redundant = true;
                         break;
                     }
                 }
 
-                // Circular Check (Keep your existing k-loop here...)
-                // [Insert your existing for (let k = 0...) loop here]
-
-               // Inside linkVillages() ...
                 if (!redundant) {
                     if (!adjacencyList.has(A.id)) adjacencyList.set(A.id, []);
                     if (!adjacencyList.has(B.id)) adjacencyList.set(B.id, []);
                     adjacencyList.get(A.id).push(B);
                     adjacencyList.get(B.id).push(A);
 
-                    const startOff = (A.type === 103) ? 100 : 50;
-                    const endOff   = (B.type === 103) ? 100 : 50;
-
+                    // 👇 THE FIX: Draw from exact calculated points (A.tx, A.ty)
                     drawInterCellRoad(
-                        A.x * 100 + startOff, A.y * 100 + startOff, 
-                        B.x * 100 + endOff,   B.y * 100 + endOff, 
+                        A.tx, A.ty, 
+                        B.tx, B.ty, 
                         worldMatrix, roomMatrix, fertilityMatrix, worldMap, 
-                        45, 2 // 👈 CHANGED: Village Roads use Tile 45
+                        45, 2
                     );
                 }
-
             }
         }
     }
 
-// --- STEP 2: THE PRESTIGE PASS (Cascaded) ---
-
-// 1. ROYAL ROADS (Castle to Castle)
-const castles = settlements.filter(s => s.type === 103);
-castles.forEach(start => {
-    castles.forEach(end => {
-        if (start.id === end.id) return;
-        // Search every connection in the network for Castle-to-Castle paths
-        promotePath(start, end, adjacencyList, 8, 6, 2500, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+    // --- STEP 2: THE PRESTIGE PASS (Cascaded) ---
+    const castles = settlements.filter(s => s.type === 103);
+    castles.forEach(start => {
+        castles.forEach(end => {
+            if (start.id === end.id) return;
+            promotePath(start, end, adjacencyList, 8, 6, 2500, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        });
     });
-});
 
-// 2. TOWN HIGHWAYS (Town to Town OR Town to Castle)
-const hubs = settlements.filter(s => s.type >= 102); // Towns (102) and Castles (103)
-hubs.forEach(start => {
-    hubs.forEach(end => {
-        if (start.id === end.id) return;
-        // Only promote if it's a Town-involved route (we already did Castle-to-Castle)
-        if (start.type === 102 || end.type === 102) {
-            promotePath(start, end, adjacencyList, 7, 4, 900, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-        }
+    const hubs = settlements.filter(s => s.type >= 102); 
+    hubs.forEach(start => {
+        hubs.forEach(end => {
+            if (start.id === end.id) return;
+            if (start.type === 102 || end.type === 102) {
+                promotePath(start, end, adjacencyList, 7, 4, 900, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            }
+        });
     });
-});
-
-
-
 
     // 3. FINAL STAMPING PASS
     for (let i = 0; i < settlements.length; i++) {
         const S = settlements[i];
-        const gx = S.x * 100 + (S.type === 103 ? 100 : 50);
-        const gy = S.y * 100 + (S.type === 103 ? 100 : 50);
-
-        if (S.type === 101) drawVillage(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-        else if (S.type === 102) drawTown(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-        else if (S.type === 103) drawCastle(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        
+        // 👇 THE FIX: Stamp using the exact pre-calculated points!
+        if (S.type === 101) drawVillage(S.tx, S.ty, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        else if (S.type === 102) drawTown(S.tx, S.ty, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        else if (S.type === 103) drawCastle(S.tx, S.ty, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     }
 }
 
@@ -1863,17 +1946,15 @@ function promotePath(startNode, endNode, adj, tileID, thickness, maxRangeSq, wor
     if ((dx * dx + dy * dy) > maxRangeSq) return;
 
     let path = findPathInNetwork(startNode, endNode, adj);
+    // Find `promotePath` and update the drawInterCellRoad call:
     if (path && path.length > 1) {
         for (let i = 0; i < path.length - 1; i++) {
             const [segA, segB] = [path[i], path[i+1]].sort((a, b) => a.id - b.id);
 
-            const sOff = (segA.type === 103) ? 100 : 50;
-            const eOff = (segB.type === 103) ? 100 : 50;
-
-            // Now these variables will be defined!
+            // 👇 THE FIX: Use segA.tx instead of segA.x * 100
             drawInterCellRoad(
-                segA.x * 100 + sOff, segA.y * 100 + sOff, 
-                segB.x * 100 + eOff, segB.y * 100 + eOff, 
+                segA.tx, segA.ty, 
+                segB.tx, segB.ty, 
                 worldMatrix, roomMatrix, fertilityMatrix, worldMap, 
                 tileID, thickness
             );
@@ -1910,6 +1991,80 @@ export function ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix,
     }
 }
 
+// A simple function to physically carve a 3-tile wide river of water (Tile 17)
+function drawRiverPath(startX, startY, endX, endY, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
+    let curX = startX;
+    let curY = startY;
+    let steps = 0;
+    const maxSteps = 200000; // Big enough to cross the map
+
+    while ((curX !== endX || curY !== endY) && steps < maxSteps) {
+        steps++;
+
+        // Simple Manhattan Stepping
+        if (Math.abs(curX - endX) > Math.abs(curY - endY)) {
+            if (curX < endX) curX++; else curX--;
+        } else {
+            if (curY < endY) curY++; else curY--;
+        }
+
+        // A simple 3x3 brush of physical Water (Tile 17)
+        for (let ox = -1; ox <= 1; ox++) {
+            for (let oy = -1; oy <= 1; oy++) {
+                // We use your existing setGlobalTile function to safely place Water!
+                setGlobalTile(curX + ox, curY + oy, 17, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            }
+        }
+    }
+}
+
+// Connects the lakes using actual physical Tile coordinates
+export function linkLakes(worldMap, worldMatrix, roomMatrix, fertilityMatrix) {
+    if (!window.geography || !window.geography.lakes || window.geography.lakes.length < 2) return;
+
+    const lakes = window.geography.lakes;
+    const lakeCenters = [];
+
+    // 1. Get the center TILE coordinate of each lake
+    for (let i = 0; i < lakes.length; i++) {
+        let sumX = 0, sumY = 0;
+        for (let idx of lakes[i]) {
+            sumX += idx % CONFIG.MAP_SIZE;
+            sumY += Math.floor(idx / CONFIG.MAP_SIZE);
+        }
+        const cx = Math.floor(sumX / lakes[i].length);
+        const cy = Math.floor(sumY / lakes[i].length);
+
+        lakeCenters.push({
+            id: i,
+            // Convert chunk coordinates to exact Tile coordinates (center of the chunk)
+            tx: cx * 100 + 50, 
+            ty: cy * 100 + 50
+        });
+    }
+
+    // 2. Connect each lake to its closest neighbor
+    for (let i = 0; i < lakeCenters.length; i++) {
+        const lakeA = lakeCenters[i];
+        let closestLake = null;
+        let shortestDist = Infinity;
+
+        for (let j = 0; j < lakeCenters.length; j++) {
+            if (i === j) continue;
+            
+            const dist = Math.abs(lakeA.tx - lakeCenters[j].tx) + Math.abs(lakeA.ty - lakeCenters[j].ty);
+            if (dist < shortestDist) {
+                shortestDist = dist;
+                closestLake = lakeCenters[j];
+            }
+        }
+
+        if (closestLake) {
+            drawRiverPath(lakeA.tx, lakeA.ty, closestLake.tx, closestLake.ty, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        }
+    }
+    console.log("🌊 Lakes connected with physical rivers.");
+}
 
 
 

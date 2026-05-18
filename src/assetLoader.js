@@ -70,6 +70,8 @@ const imageSources = {
     fishTileset:     "images/fishTileset.png", // 👈 ADD THIS LINE
     mainTileset2:    "images/mainTileset2.png", // 👈 ADD THIS LINE
     foodTileset:     "images/foodTileset.png", // 👈 ADD THIS LINE
+    woodsTileset2:   "images/woodsTileset2.png", // 👈 ADD THIS LINE
+
 
 
     transparentTileset: "images/transparentTileset.png",

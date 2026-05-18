@@ -334,6 +334,13 @@ export function recalculateStats() {
         hero.speed *= hero.bulwarkSpeedBonus; 
     }
 
+    /*
+    // 👇 DEBUG TOOL: SONIC TOMATO
+    if (hero.buffs && hero.buffs.tomatoDebug) {
+        hero.speed += 900;
+    }
+        */
+
     // 🆕 Check for Passives!
     hero.passives.hasFever = hero.skills.includes('p10');
 
@@ -391,6 +398,17 @@ function consumeFood() {
         // Apply restoration
         hero.energy = Math.min(hero.maxEnergy, hero.energy + restoreAmount);
         console.log(`🍗 Consumed ${item.name}! +${restoreAmount} Energy.`);
+
+        /*
+        // 👇 DEBUG TOOL: SONIC TOMATO
+        if (item.seedType === "tomato_item") {
+            if (!hero.buffs) hero.buffs = {};
+            // Toggle it! Eat one to go fast, eat another to go back to normal.
+            hero.buffs.tomatoDebug = !hero.buffs.tomatoDebug; 
+            recalculateStats();
+            console.log(`🍅 DEBUG: Super Speed ${hero.buffs.tomatoDebug ? 'ACTIVATED (+900)' : 'DEACTIVATED'}!`);
+        }
+        */
 
         // 🎒 Subtract from stack
         item.count--;

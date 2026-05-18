@@ -239,13 +239,23 @@ export function resetEntities(worldMap) {
         const pick = settlements[Math.floor(seededRandom() * settlements.length)];
         finalCellX = pick % mapWidth;
         finalCellY = Math.floor(pick / mapWidth);
-        
-        // Calculate the exact pixel coordinates (Centered in the chunk)
-        // We add an offset of 4 tiles (+64px) to the Y axis so the player 
-        // doesn't spawn stuck inside the village's central well!
-        spawnX = (finalCellX * 1600) + 800; 
-        spawnY = (finalCellY * 1600) + 800 + 64; 
-    } 
+        const cellType = worldMap[pick];
+
+        let offX = 50;
+        let offY = 50;
+
+        // 👇 Apply the exact same deterministic hash if it's a village!
+        if (cellType === 101) {
+            const seed = window.worldSeed || 1;
+            const hash = Math.abs(Math.sin((finalCellX + seed) * 12.9898 + (finalCellY + seed) * 78.233) * 43758.5453);
+            offX = Math.floor(hash * 60) % 60 + 20;
+            offY = Math.floor((hash * 10) * 60) % 60 + 20;
+        }
+
+        // Calculate exact pixel coordinates (We add +4 to Y to not spawn IN the well)
+        spawnX = ((finalCellX * 100) + offX) * 16; 
+        spawnY = ((finalCellY * 100) + offY + 4) * 16; 
+    }
     // 4. FALLBACK: WILDERNESS SPAWN
     else {
         let foundLand = false;

@@ -1005,17 +1005,32 @@ export function openKitchenMenu() {
 // ==========================================
 // 🗺️ MAP TABLE UI LOGIC
 // ==========================================
+// ==========================================
+// 🗺️ MAP TABLE UI LOGIC
+// ==========================================
 export function openMapTableMenu() {
     document.getElementById('maptable-menu').classList.remove('hidden');
-    const uiMapCtx = document.getElementById('ui-map-canvas').getContext('2d');
-    uiMapCtx.imageSmoothingEnabled = false;
-    uiMapCtx.clearRect(0, 0, 100, 100);
-    uiMapCtx.drawImage(mapCanvas, 0, 0);
+    const uiMapCanvas = document.getElementById('ui-map-canvas');
+    const uiMapCtx = uiMapCanvas.getContext('2d');
     
+    uiMapCtx.imageSmoothingEnabled = false;
+    uiMapCtx.clearRect(0, 0, uiMapCanvas.width, uiMapCanvas.height);
+    
+    // 1. Draw the 100x100 map memory buffer stretched to fit the 800x800 UI Canvas!
+    uiMapCtx.drawImage(mapCanvas, 0, 0, uiMapCanvas.width, uiMapCanvas.height);
+    
+    // 2. Calculate the UI scale (800 / 100 = 8 pixels per chunk)
+    const scale = uiMapCanvas.width / CONFIG.MAP_SIZE;
+    
+    // 3. Find the player's chunk (0 to 99)
     const pX = Math.floor(hero.x / 1600);
     const pY = Math.floor(hero.y / 1600);
+    
     uiMapCtx.fillStyle = "#FFD700";
-    uiMapCtx.fillRect(pX - 1, pY - 1, 2, 2);
+    
+    // 4. Draw a player blip scaled to match the grid so it stays accurate!
+    // We center it slightly so it looks like a nice square dot.
+    uiMapCtx.fillRect((pX * scale) - (scale / 4), (pY * scale) - (scale / 4), scale * 1.5, scale * 1.5); 
 }
 
 // ==========================================

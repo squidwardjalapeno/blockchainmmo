@@ -1,44 +1,8 @@
 {
-  "Guest_420512": {
-    "x": 95211.62966626741,
-    "y": 20672.424155925528,
-    "hp": 0,
-    "maxHp": 100,
-    "shield": 0,
-    "hasDivineBubble": false,
-    "isInvincible": false,
-    "passives": {
-      "hasFever": true
-    },
-    "resonanceTimer": 0,
-    "energy": 0,
-    "maxEnergy": 100,
-    "ad": 10,
-    "armor": 0,
-    "magic": 10,
-    "mr": 0,
-    "dir": "SouthWest",
-    "inGameUni": 0,
-    "animFrame": 2,
-    "isMoving": true,
-    "isWindingUp": false,
-    "xp": 0,
-    "speed": 100,
-    "currentTileID": 63,
-    "wallet": "Guest_420512",
-    "charClass": "Paladin",
-    "skills": [
-      "p2",
-      "p5",
-      "p9",
-      "p10"
-    ],
-    "target": null
-  },
-  "Guest_326906": {
-    "x": 94781.46309999989,
-    "y": 20003.24799999999,
-    "hp": 0,
+  "Guest_237510": {
+    "x": 56019.20050000021,
+    "y": 44313.1576000002,
+    "hp": 100,
     "maxHp": 100,
     "shield": 0,
     "hasDivineBubble": false,
@@ -47,13 +11,13 @@
       "hasFever": false
     },
     "resonanceTimer": 0,
-    "energy": 0,
+    "energy": 100,
     "maxEnergy": 100,
     "ad": 10,
     "armor": 0,
     "magic": 10,
     "mr": 0,
-    "dir": "East",
+    "dir": "West",
     "inGameUni": 0,
     "animFrame": 0,
     "isMoving": false,
@@ -61,13 +25,13 @@
     "xp": 0,
     "speed": 100,
     "currentTileID": 63,
-    "wallet": "Guest_326906",
+    "wallet": "Guest_237510",
     "charClass": "Paladin",
     "skills": [
       "p1",
-      "p5",
+      "p2",
       "p6",
-      "p9"
+      "p5"
     ],
     "target": null
   }

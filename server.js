@@ -245,10 +245,8 @@ io.on('connection', (socket) => {
         io.emit('chatMessage', { sender: senderName, message: data.message });
     });
 
-    // --- REPLACE the requestChest event in server.js ---
-    
     socket.on('requestChest', (chestId) => {
-        // If chest doesn't exist in DB yet, spawn it with a Dagger!
+        // If chest doesn't exist in DB yet, spawn it with default loot!
         if (!chestDb[chestId]) {
             chestDb[chestId] = [
                 {
@@ -261,11 +259,29 @@ io.on('connection', (socket) => {
                     health: 100,
                     virulence: 0,
                     fertility: 0,
-                                        // 👇 ADD THESE TWO LINES TO PREVENT DUPLICATION!
                     count: 1,      
                     maxStack: 1,   
                     timestamp: Date.now()
                 }
+                /*
+                ,
+                // 👇 DEBUG: THE SONIC TOMATO
+                {
+                    name: "Tomato",
+                    seedType: "tomato_item",
+                    spriteID: 24, // Assuming Tile 24 on your cropTileset
+                    tileset: "cropTileset",
+                    health: 30,
+                    virulence: 0,
+                    fertility: 25,
+                    count: 8,      // Give them a full stack of 8!
+                    maxStack: 8,
+                    typeLabel: "Food", 
+                    energy: 35, 
+                    description: "A hearty fruit. (DEBUG: +900 Speed!)",
+                    timestamp: Date.now()
+                }
+                    */
             ];
         }
         // Send the data back ONLY to the player who asked

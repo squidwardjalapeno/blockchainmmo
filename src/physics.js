@@ -174,7 +174,13 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
 
     // 3. OPEN WORLD RULES
     // 🆕 Added Ranch tiles: 18 (V-Fence), 19 (V-Gate Closed), 21 (H-Fence), 22 (H-Gate Closed), 24 (Corner)
-    const worldSolids = [40, 48, 50, 52, 17, 18, 19, 21, 22, 24, 27, 1, 3];
+    // 3. OPEN WORLD RULES
+    // 🆕 Added Ranch tiles & Forest Tree Tiles
+    const worldSolids = [
+        40, 48, 50, 52, 17, 18, 19, 21, 22, 24, 27, 1, 3,
+        406, 407 // 👈 Trees!
+    ];
+
     if (worldSolids.includes(target.tileID)) return false;
 
     // 4. PERIMETER GUARD (Wilderness blocks entry without a door)

@@ -231,8 +231,48 @@ export function drawMap(worldMatrix, roomMatrix) {
                     
                     continue; // 👈 This completely bypasses the old drawing logic!
                 }
+
+                // 👇 NEW: WOODS TILESET 2 (IDs 300 to 499)
+                if (tID >= 300 && tID < 500) {
+                    const woodsImg = images.woodsTileset2;
+                    if (woodsImg && woodsImg.complete) {
+                        
+                        // ROAD BORDERS
+                        if (tID === 331 || tID === 335) {
+                            const dirtIdx = 337 - 300; 
+                            ctx2.drawImage(woodsImg, (dirtIdx % 12) * 16, Math.floor(dirtIdx / 12) * 16, 16, 16, sX, sY, 16, 16);
+                        }
+
+                        // 🌲 THE SCATTERED TREE FIX (Trunks Only)
+                        if (tID === 406) {
+                            const drawPiece = (localId, offsetX, offsetY) => {
+                                const srcX = (localId % 12) * 16;
+                                const srcY = Math.floor(localId / 12) * 16;
+                                ctx2.drawImage(woodsImg, srcX, srcY, 16, 16, sX + offsetX, sY + offsetY, 16, 16);
+                            };
+
+                            // Draw Bottom Trunks (106, 107) exactly where they are
+                            drawPiece(106, 0, 0);
+                            drawPiece(107, 16, 0);
+                            
+                            continue;
+                        }
+                        if (tID === 407) {
+                            continue; // Do nothing! 406 drew this side.
+                        }
+
+                        // STANDARD TILES (Dirt, etc)
+                        const localIdx = tID - 300; 
+                        const srcX = (localIdx % 12) * 16;
+                        const srcY = Math.floor(localIdx / 12) * 16;
+                        
+                        ctx2.drawImage(woodsImg, srcX, srcY, 16, 16, sX, sY, 16, 16);
+                    }
+                    continue;
+                }
+                
                 // Check if this tile belongs to our new directional road sheet
-if (tID >= 200 && tID <= 208) {
+                if (tID >= 200 && tID <= 208) {
     const roadImg = images.mainTileset2;
     if (roadImg && roadImg.complete) {
         const localIdx = tID - 200; // 0 to 8
@@ -243,7 +283,9 @@ if (tID >= 200 && tID <= 208) {
         
         ctx2.drawImage(roadImg, srcX, srcY, 16, 16, sX, sY, 16, 16);
     }
-} else {
+} 
+
+else {
     // STANDARD TILES (worldTilesColor - 8 tiles wide)
     ctx2.drawImage(tileImg, (tID % 8) * 16, Math.floor(tID / 8) * 16, 16, 16, sX, sY, 16, 16);
 }
@@ -1006,39 +1048,91 @@ export function drawBobber() {
     }
 }
 
-// js/renderer.js
-
 export const mapCanvas = document.createElement('canvas');
-mapCanvas.width = CONFIG.MAP_SIZE;
-mapCanvas.height = CONFIG.MAP_SIZE;
+const MAP_SCALE = 1; // 👈 Reverted to 1 pixel per chunk
+mapCanvas.width = CONFIG.MAP_SIZE * MAP_SCALE;  // 900x900
+mapCanvas.height = CONFIG.MAP_SIZE * MAP_SCALE;
 let mapCtx = mapCanvas.getContext('2d');
 
 export function preRenderMinimap(worldMap) {
     const size = CONFIG.MAP_SIZE;
-    mapCtx.clearRect(0, 0, size, size);
+    mapCtx.clearRect(0, 0, mapCanvas.width, mapCanvas.height); 
     
+    // --- PASS 1: DRAW BASE MAP ---
     for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
             const val = worldMap[y * size + x];
         
-            if (val === 103) {
-            mapCtx.fillStyle = "#1b0218"; // Bright black for castle
-        }
-        else if (val === 102) {
-            mapCtx.fillStyle = "#a32192"; // Bright purple for town
-        }    // Add a check for your new Village ID
-          else if (val === 101) {
-            mapCtx.fillStyle = "#e74c3c"; // Bright Red for Villages
-        } else if (val >= CONFIG.LAND_THRESHOLD) {
-            mapCtx.fillStyle = "#00FF00"; // Grass
-        } else {
-            mapCtx.fillStyle = "#3498db"; // Water
-        }
+            if (val === 103) mapCtx.fillStyle = "#1b0218"; // Castle
+            else if (val === 102) mapCtx.fillStyle = "#a32192"; // Town
+            else if (val === 101) mapCtx.fillStyle = "#e74c3c"; // Village
+            else if (val === 106) mapCtx.fillStyle = "#723d01"; // 🏔️ MOUNTAIN (Snowy Ice White)
+            else if (val === 105) mapCtx.fillStyle = "#f1c40f"; // 🏜️ DESERT (Sandy Yellow)
+            else if (val === 104 || val === 12) mapCtx.fillStyle = "#1e6b30"; // 🌲 FORESTS (Dark Green)
+            else if (val >= CONFIG.LAND_THRESHOLD) mapCtx.fillStyle = "#2ecc71"; // Grass
+            else if (val === 11) mapCtx.fillStyle = "#00FFFF"; // LAKES (Cyan)
+            else mapCtx.fillStyle = "#3498db"; // OCEAN
 
-        mapCtx.fillRect(x, y, 1, 1);
+            mapCtx.fillRect(x, y, 1, 1);
         }
     }
-    console.log("🗺️ Minimap baked to buffer!");
+
+    // --- PASS 2: DRAW RIVER LINES ---
+    // ... (keep the rest of the file untouched)
+
+    // --- PASS 2: DRAW RIVER LINES ---
+    // ... (keep the rest of the file untouched)
+
+    // --- PASS 2: DRAW RIVER LINES ---
+    if (window.geography && window.geography.lakes && window.geography.lakes.length >= 2) {
+        const lakes = window.geography.lakes;
+        const lakeCenters = [];
+
+        for (let i = 0; i < lakes.length; i++) {
+            let sumX = 0, sumY = 0;
+            for (let idx of lakes[i]) {
+                sumX += idx % size;
+                sumY += Math.floor(idx / size);
+            }
+            lakeCenters.push({
+                x: Math.floor(sumX / lakes[i].length),
+                y: Math.floor(sumY / lakes[i].length)
+            });
+        }
+
+        mapCtx.strokeStyle = "rgba(255, 255, 255, 0.9)"; // White
+        mapCtx.lineWidth = 1; // 1 pixel wide
+
+        for (let i = 0; i < lakeCenters.length; i++) {
+            const lakeA = lakeCenters[i];
+            let closestLake = null;
+            let shortestDist = Infinity;
+
+            for (let j = 0; j < lakeCenters.length; j++) {
+                if (i === j) continue;
+                const dist = Math.abs(lakeA.x - lakeCenters[j].x) + Math.abs(lakeA.y - lakeCenters[j].y);
+                if (dist < shortestDist) {
+                    shortestDist = dist;
+                    closestLake = lakeCenters[j];
+                }
+            }
+
+            if (closestLake) {
+                mapCtx.beginPath();
+                // Draw from the exact center of the 1x1 block
+                const cx1 = (lakeA.x * MAP_SCALE) + (MAP_SCALE / 2);
+                const cy1 = (lakeA.y * MAP_SCALE) + (MAP_SCALE / 2);
+                const cx2 = (closestLake.x * MAP_SCALE) + (MAP_SCALE / 2);
+                const cy2 = (closestLake.y * MAP_SCALE) + (MAP_SCALE / 2);
+                
+                mapCtx.moveTo(cx1, cy1);
+                mapCtx.lineTo(cx2, cy2);
+                mapCtx.stroke();
+            }
+        }
+    }
+
+    console.log("🗺️ Global Minimap baked to buffer!");
 }
 
 
@@ -1533,7 +1627,51 @@ export function drawAimIndicator(ctxUI) {
     }
 }
 
+export function drawCanopy(worldMatrix) {
+    const w = canvas.width, h = canvas.height;
+    const hTX = Math.floor((hero.x + 8) / 16);
+    const hTY = Math.floor((hero.y + 8) / 16);
+    // Expand the bounding box slightly so leaves don't pop out at the edges
+    const halfX = Math.ceil((w / 16) / 2) + 2; 
+    const halfY = Math.ceil((h / 16) / 2) + 4; 
 
+    const woodsImg = images.woodsTileset2;
+    if (!woodsImg || !woodsImg.complete) return;
+
+    for (let k = hTX - halfX; k <= hTX + halfX; k++) {
+        const cx = Math.floor(k / 100);
+        const lx = ((k % 100) + 100) % 100;
+        const wCol = worldMatrix[cx];
+
+        for (let l = hTY - halfY; l <= hTY + halfY; l++) {
+            const cy = Math.floor(l / 100);
+            const wChunk = wCol?.[cy];
+            if (!wChunk) continue;
+
+            const ly = ((l % 100) + 100) % 100;
+            const tID = wChunk[(ly * 100) + lx];
+
+            if (tID === 406) {
+                const sX = (k * 16) + viewport.offset[0];
+                const sY = (l * 16) + viewport.offset[1];
+
+                const drawPiece = (localId, offsetX, offsetY) => {
+                    const srcX = (localId % 12) * 16;
+                    const srcY = Math.floor(localId / 12) * 16;
+                    ctx2.drawImage(woodsImg, srcX, srcY, 16, 16, sX + offsetX, sY + offsetY, 16, 16);
+                };
+
+                // Draw Top Leaves (78, 79) shifted up 32 pixels
+                drawPiece(78, 0, -32);
+                drawPiece(79, 16, -32);
+                
+                // Draw Middle Leaves (88, 89) shifted up 16 pixels
+                drawPiece(88, 0, -16);
+                drawPiece(89, 16, -16);
+            }
+        }
+    }
+}
 
 
 // In renderer.js
