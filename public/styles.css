@@ -299,3 +299,45 @@ canvas {
     font-size: 24px;
     box-shadow: inset 4px 4px 0px rgba(0,0,0,0.1);
 }
+
+/* =========================================
+   10. MOBILE RESPONSIVE TWEAKS (iPhones)
+   ========================================= */
+@media (max-width: 768px) {
+    /* Stack chest and temple panes vertically instead of side-by-side */
+    .chest-layout {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    /* Shrink the grids so they fit vertically on screen */
+    .inv-grid {
+        min-height: 80px;
+        max-height: 130px;
+        grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+    }
+    
+    .inv-item {
+        height: 60px;
+    }
+
+    /* Constrain the panels */
+    .pixel-panel {
+        padding: 12px;
+        max-height: 98vh;
+        overflow-y: auto;
+    }
+    
+    /* Make the Map Table fit the screen */
+    #ui-map-canvas {
+        width: 100% !important;
+        height: auto !important;
+        aspect-ratio: 1 / 1;
+    }
+
+    /* Move Chat up slightly so it doesn't block the action buttons */
+    #chat-container {
+        width: 250px !important;
+        bottom: 80px !important; 
+    }
+}

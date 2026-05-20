@@ -1561,9 +1561,9 @@ document.body.addEventListener('touchend', (e) => {
 const prefixes = ["Oak", "Pine", "River", "Stone", "Iron", "Gold", "Silver", "Wind", "Storm", "High", "Low", "Dark", "Light", "Ash", "Thorn", "Green", "Red", "Blue", "Gryph", "Dragon", "Dawn", "Dusk"];
 const suffixes = ["wood", "ford", "bridge", "mont", "ville", "town", "bury", "ton", "vale", "dale", "peak", "haven", "keep", "watch", "fall", "stead", "moor", "marsh", "gate", "run", "brook"];
 
-function getZoneName(cx, cy) {
-    // A simple, deterministic math hash based on coordinates
-    const hash = Math.sin(cx * 12.9898 + cy * 78.233) * 43758.5453;
+function getZoneName(seed1, seed2) {
+    // A simple, deterministic math hash based on coordinates/IDs
+    const hash = Math.sin(seed1 * 12.9898 + seed2 * 78.233) * 43758.5453;
     const rand1 = Math.floor(Math.abs(hash) * 100);
     const rand2 = Math.floor(Math.abs(hash * 10) * 100);
     
@@ -1583,6 +1583,7 @@ export function triggerLocationBanner(cx, cy, cellType) {
 
     let zoneName = "The Wilds";
     let zoneDesc = "UNCLAIMED TERRITORY";
+    const chunkIdx = cy * CONFIG.MAP_SIZE + cx;
 
     if (cellType === 101) {
         zoneName = getZoneName(cx, cy);
@@ -1593,9 +1594,49 @@ export function triggerLocationBanner(cx, cy, cellType) {
     } else if (cellType === 103) {
         zoneName = getZoneName(cx, cy) + " Castle";
         zoneDesc = "ROYAL STRONGHOLD";
-    } else if (cellType < 55) { // CONFIG.LAND_THRESHOLD is 55
-        zoneName = "The Great Sea";
-        zoneDesc = "OPEN WATER";
+    } else if (cellType < 55 || cellType === 10 || cellType === 11 || cellType === 12) {
+        // --- WATER GEOGRAPHY ---
+        let isLake = false;
+        let lakeId = -1;
+        
+        // Scan the geography arrays to see if this chunk belongs to a lake
+        if (window.geography && window.geography.lakes) {
+            for (let i = 0; i < window.geography.lakes.length; i++) {
+                if (window.geography.lakes[i].includes(chunkIdx)) {
+                    isLake = true; lakeId = i; break;
+                }
+            }
+        }
+
+        if (isLake) {
+            zoneName = getZoneName(lakeId * 10, lakeId * 20) + " Lake";
+            zoneDesc = "FRESH WATER";
+        } else if (cellType === 12) {
+            zoneName = getZoneName(cx, cy) + " River";
+            zoneDesc = "FLOWING WATER";
+        } else {
+            zoneName = getZoneName(999, 999) + " Ocean"; // Constant seed for the main ocean
+            zoneDesc = "OPEN WATER";
+        }
+    } else {
+        // --- LAND GEOGRAPHY (Continents) ---
+        let contId = -1;
+        if (window.geography && window.geography.continents) {
+            for (let i = 0; i < window.geography.continents.length; i++) {
+                if (window.geography.continents[i].includes(chunkIdx)) {
+                    contId = i; break;
+                }
+            }
+        }
+
+        // Continent 0 is always the largest landmass (sorted in mapGenerator)
+        let landName = getZoneName(contId * 5, contId * 15);
+        zoneName = landName + (contId === 0 ? " Continent" : " Isle");
+        
+        if (cellType === 104) zoneDesc = "FOREST BIOME";
+        else if (cellType === 105) zoneDesc = "DESERT BIOME";
+        else if (cellType === 106) zoneDesc = "MOUNTAIN BIOME";
+        else zoneDesc = "THE WILDS";
     }
 
     // Set text

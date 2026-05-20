@@ -198,7 +198,7 @@ export function drawMap(worldMatrix, roomMatrix) {
     const tileImg = images.worldTilesColor;
 
     if (hHouseId === 0 || hHouseId === 9999) {
-        ctx2.fillStyle = "rgb(0, 255, 0)";
+        ctx2.fillStyle = "rgb(0, 204, 0)";
         ctx2.fillRect(0, 0, w, h);
 
         for (let k = hTX - halfX; k <= hTX + halfX; k++) {
@@ -237,11 +237,14 @@ export function drawMap(worldMatrix, roomMatrix) {
                     const woodsImg = images.woodsTileset2;
                     if (woodsImg && woodsImg.complete) {
                         
-                        // ROAD BORDERS
-                        if (tID === 331 || tID === 335) {
+                        // ROAD BORDERS (Now includes ALL 12 borders)
+                        const roadBorders = [302, 303, 304, 313, 315, 331, 335, 350, 351, 353, 354, 367];
+                        if (roadBorders.includes(tID)) {
                             const dirtIdx = 337 - 300; 
                             ctx2.drawImage(woodsImg, (dirtIdx % 12) * 16, Math.floor(dirtIdx / 12) * 16, 16, 16, sX, sY, 16, 16);
                         }
+
+                        // 🌲 THE SCATTERED TREE FIX (Trunks Only)
 
                         // 🌲 THE SCATTERED TREE FIX (Trunks Only)
                         if (tID === 406) {
@@ -783,40 +786,55 @@ export function drawHero() {
             }
         }
 
-        // C. Draw Weapon Function
+        // C. Draw Item in Hand
         const drawWeapon = () => {
             if (!wpn || !socket) return;
-            const wImg = images[wpn.tileset];
+            
+            // 1. Smart Tileset Resolution
+            const tilesetStr = wpn.tileset || "cropTileset";
+            const wImg = images[tilesetStr];
             if (!wImg || !wImg.complete) return;
+            
+            // 2. Smart Sheet Width Resolution
+            let sheetWidth = 16; 
+            if (tilesetStr === "cropTileset" || tilesetStr === "cropTileset2") sheetWidth = CONFIG.CROP_SHEET_WIDTH_TILES || 12;
+            else if (tilesetStr === "worldTilesColor") sheetWidth = 8;
+            else if (tilesetStr === "transparentTileset" || tilesetStr === "foodTileset") sheetWidth = 10;
+            else if (tilesetStr === "gardenTileset") sheetWidth = CONFIG.GARDEN_SHEET_WIDTH_TILES || 16;
             
             ctx2.save();
             
-            // 1. Move canvas origin to the exact pixel of the hand
+            // 3. Move canvas origin to the exact pixel of the hand
             let finalHandX = drawX + socket.handX;
             let finalHandY = drawY + socket.handY;
 
-            // 🛑 (Fake Thrust Logic removed! We now rely 100% on your socket data!)
-
             ctx2.translate(finalHandX, finalHandY);
             
-            // 2. Rotate to the exact angle you provided
+            // 4. Rotate to the exact angle defined by the socket
             ctx2.rotate(socket.angle * Math.PI / 180);
 
-            // 👇 3. SCALE DOWN THE WEAPON (0.75 = 75% size)
-            // This shrinks the image WITHOUT breaking your DAGGER_HILT coordinates!
-            ctx2.scale(0.50, 0.50);
+            // 5. 📏 DYNAMIC SCALING based on drawSize property!
+            const drawSize = wpn.drawSize || 16;  // Default to full 16x16 size if undefined
+            const scale = drawSize / 16.0;        // 8 -> 0.50, 4 -> 0.25, 16 -> 1.0
+            ctx2.scale(scale, scale);
 
-            if (hero.buffs && hero.buffs.fluxShotEmpowered) {
+            // Only add the glowing weapon VFX if it's actually a weapon
+            if (hero.buffs && hero.buffs.fluxShotEmpowered && wpn.isWeapon) {
                 ctx2.shadowColor = "rgba(0, 255, 255, 0.8)";
                 ctx2.shadowBlur = 8;
             }
             
-            // 3. Draw the dagger
+            // 6. Dynamic Hilt Pivot
+            // Hold weapons by the handle, hold other items by their visual center
+            const hiltX = wpn.isWeapon ? DAGGER_HILT.x : 8;
+            const hiltY = wpn.isWeapon ? DAGGER_HILT.y : 8;
+
+            // 7. Draw the item
             ctx2.drawImage(
                 wImg,
-                (wpn.spriteID % 16) * 16, Math.floor(wpn.spriteID / 16) * 16, 
+                (wpn.spriteID % sheetWidth) * 16, Math.floor(wpn.spriteID / sheetWidth) * 16, 
                 16, 16,
-                -DAGGER_HILT.x, -DAGGER_HILT.y, 
+                -hiltX, -hiltY, 
                 16, 16
             );
             ctx2.restore();

@@ -5,7 +5,7 @@ if (typeof window !== 'undefined') logStep("Modules Loaded & Parsed");
 // js/game.js
 import { images, loadAllImages } from './assetLoader.js';
 import { generateWorld, seededRandom } from './mapGenerator.js'; 
-import { drawHouse, drawTemple, drawGeneralStore, drawVillageHall, drawRootCellar, drawBarn, drawRanch, drawStorageRoom, drawVillage, drawBarracks, drawTwoStoryHouse, drawInn, drawMilitaryQuarters, drawBlacksmith, drawForge, drawLargeBarn, drawTownHall,  populateWorld, drawMiningArea, drawTown, drawCastle, decorateCell, linkVillages, ensureLocalCells, linkLakes, drawOreDeposit } from './cellDecorator.js';
+import { drawHouse, drawTemple, drawGeneralStore, drawVillageHall, drawRootCellar, drawBarn, drawRanch, drawStorageRoom, planVillage, drawBarracks, drawTwoStoryHouse, drawInn, drawMilitaryQuarters, drawBlacksmith, drawForge, drawLargeBarn, drawTownHall,  populateWorld, drawMiningArea, drawTown, drawCastle, decorateCell, linkVillages, ensureLocalCells, linkLakes, drawOreDeposit, planAllSettlements, drawPlannedRanchRoads, drawRingRoads, buildPlannedStructures, buildPlannedWells, autoTileRoads } from './cellDecorator.js';
 import { applyShorelineRules } from './terrainRules.js';
 import { inputState, initInput, handleHeroUpdate } from './input.js';
 import { viewport } from './viewport.js';
@@ -336,88 +336,91 @@ var render = function () {
 async function mainInit() {
     try {
         logStep("1. Init Input...");
-        initInput(canvas3); // Assuming initInput exists
+        initInput(canvas3); 
         
         logStep("2. Waiting on Multiplayer...");
-        await initMultiplayer(); // Assuming initMultiplayer is async
+        await initMultiplayer(); 
         
         logStep("3. Waiting on Images...");
-        await loadAllImages(); // Assuming loadAllImages is async
+        await loadAllImages(); 
         
         logStep("4. Init Renderer...");
-        initRenderer(); // Assuming initRenderer exists
+        initRenderer(); 
 
         logStep("5. Generating World...");
         const rawShape = generateWorld(CONFIG.MAP_SIZE, CONFIG.MAP_SIZE, 800);
         worldMap = rawShape;
-        const worldData = populateWorld(worldMap); // Assuming populateWorld exists
+        const worldData = populateWorld(worldMap); 
         worldMatrix = worldData.worldMatrix;
         roomMatrix = worldData.roomMatrix;
         fertilityMatrix = worldData.fertilityMatrix;
 
-        logStep("6. Linking Villages...");
-        linkVillages(worldMap, worldMatrix, roomMatrix, fertilityMatrix, worldMap); // Assuming linkVillages exists
+        // ==========================================
+        // 🏗️ THE PERFECT 8-STEP GENERATION PIPELINE
+        // ==========================================
 
-        // 👇 NEW: Draw the physical rivers!
-        logStep("6.5. Linking Lakes with Rivers...");
+        // ==========================================
+        // 🏗️ THE PERFECT 9-STEP GENERATION PIPELINE
+        // ==========================================
+
+        // ==========================================
+        // 👑 THE ULTIMATE GENERATION PIPELINE
+        // ==========================================
+
+        logStep("Steps 1/2/3: Continents, Shorelines, & Forests");
+
+        logStep("Step 4/5: Drawing Rivers & Main Village Roads...");
         linkLakes(worldMap, worldMatrix, roomMatrix, fertilityMatrix);
-        
-        logStep("7. Pre-rendering...");
-        preRenderMinimap(worldMap); // Assuming preRenderMinimap exists
-        resetEntities(worldMap); // Assuming resetEntities exists
-        ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix, worldMap); // Assuming ensureLocalCells exists
+        linkVillages(worldMap, worldMatrix, roomMatrix, fertilityMatrix); 
 
-        // DRAW STOFF
+        logStep("Step 6: Planning Houses, Ranches, and Storage...");
+        // Plans ALL structures in one pass. They safely avoid the Highways.
+        planAllSettlements(worldMap, worldMatrix, roomMatrix, fertilityMatrix);
 
-        // 👇 ADD THIS TO FORCE A TOWN EXACTLY AT SPAWN 👇
-        
-        // 1. Find exactly which 100x100 Chunk the hero spawned in
+        logStep("Step 7: Drawing the Village Ring Roads...");
+        // Uses the furthest bounding boxes of all planned buildings to draw the circle.
+        drawRingRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+
+        logStep("Step 8: Connecting Ranch Roads...");
+        // Merges gates into the nearest dirt (Highway or Ring Road)
+        drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+
+        logStep("Step 8.5: Auto-Tiling Roads...");
+        // Borders applied to all dirt BEFORE buildings are drawn
+        autoTileRoads(worldMatrix);
+
+        logStep("Step 9: Constructing Buildings and Wells...");
+        // Stamped last so they sit perfectly clean on top of the auto-tiled roads.
+        buildPlannedStructures(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        buildPlannedWells(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+
+        // ==========================================
+
+        // ==========================================
+
+        // ==========================================
+
+        // ==========================================
+
+        logStep("8. Pre-rendering...");
+        preRenderMinimap(worldMap); 
+        resetEntities(worldMap); 
+        ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix, worldMap); 
+
+        // 👇 OPTIONAL DEBUG: Force a town exactly at spawn
         const chunkX = Math.floor(hero.x / 1600);
         const chunkY = Math.floor(hero.y / 1600);
-
-        // 2. Calculate the exact mathematical center of that chunk
-        // (Tile 50 is the dead center of a 100-tile chunk)
         const gridX = (chunkX * 100) + 50;
         const gridY = (chunkY * 100) + 50;
-
-        // 3. Spawn the Village perfectly snapped to the grid!
-        //drawVillage(gridX, gridY, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
         
-
-        //drawHouse(gridX + 8, gridY + 8, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-
-        /*
-        // 🐔 SPAWN THE TEST FLOCK!
-        spawnChicken(gridX + 20, gridY + 20);
-        spawnChicken(gridX + 20, gridY + 22);
-        spawnChicken(gridX + 20, gridY + 21);
-
-        // 🐔 SPAWN THE TEST FLOCK!
-        spawnChicken(gridX + 21, gridY + 20);
-        spawnChicken(gridX + 21, gridY + 22);
-        spawnChicken(gridX + 21, gridY + 21);
-
-        // 🐔 SPAWN THE TEST FLOCK!
-        spawnChicken(gridX + 22, gridY + 20);
-        spawnChicken(gridX + 22, gridY + 22);
-        spawnChicken(gridX + 22, gridY + 21);
-        */
-
-
-        //drawTemple(gridX + 16, gridY + 16, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-
-
-        // 5. OPTIONAL: Snap the hero perfectly to the grid so you don't start off-center
         hero.x = gridX * 16;
         hero.y = (gridY + 10) * 16; // Start slightly south of the center
         // 👆 ------------------------------------------- 👆
 
-
-
-        logStep("8. Init UI...");
-        initUI(); // Assuming initUI exists
+        logStep("9. Init UI...");
+        initUI(); 
         
-        logStep("9. STARTING LOOP!");
+        logStep("10. STARTING LOOP!");
         
         const term = document.getElementById('debug-terminal');
         if (term) term.style.display = 'none';

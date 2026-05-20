@@ -1,7 +1,7 @@
 {
-  "Guest_237510": {
-    "x": 56019.20050000021,
-    "y": 44313.1576000002,
+  "Guest_47133": {
+    "x": 99305.49739999995,
+    "y": 95992.87679999982,
     "hp": 100,
     "maxHp": 100,
     "shield": 0,
@@ -25,13 +25,13 @@
     "xp": 0,
     "speed": 100,
     "currentTileID": 63,
-    "wallet": "Guest_237510",
+    "wallet": "Guest_47133",
     "charClass": "Paladin",
     "skills": [
       "p1",
       "p2",
-      "p6",
-      "p5"
+      "p5",
+      "p6"
     ],
     "target": null
   }

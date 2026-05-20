@@ -260,7 +260,9 @@ io.on('connection', (socket) => {
                     virulence: 0,
                     fertility: 0,
                     count: 1,      
-                    maxStack: 1,   
+                    maxStack: 1,  
+                    drawSize: 8,   // 👈 ADD THIS LINE HERE!
+ 
                     timestamp: Date.now()
                 }
                 /*
