@@ -369,30 +369,39 @@ async function mainInit() {
 
         logStep("Steps 1/2/3: Continents, Shorelines, & Forests");
 
+        
         logStep("Step 4/5: Drawing Rivers & Main Village Roads...");
         linkLakes(worldMap, worldMatrix, roomMatrix, fertilityMatrix);
         linkVillages(worldMap, worldMatrix, roomMatrix, fertilityMatrix); 
 
+        
         logStep("Step 6: Planning Houses, Ranches, and Storage...");
         // Plans ALL structures in one pass. They safely avoid the Highways.
         planAllSettlements(worldMap, worldMatrix, roomMatrix, fertilityMatrix);
 
+        
         logStep("Step 7: Drawing the Village Ring Roads...");
         // Uses the furthest bounding boxes of all planned buildings to draw the circle.
         drawRingRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
 
+        
         logStep("Step 8: Connecting Ranch Roads...");
         // Merges gates into the nearest dirt (Highway or Ring Road)
         drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
 
+
+        
         logStep("Step 8.5: Auto-Tiling Roads...");
         // Borders applied to all dirt BEFORE buildings are drawn
         autoTileRoads(worldMatrix);
 
+        
         logStep("Step 9: Constructing Buildings and Wells...");
         // Stamped last so they sit perfectly clean on top of the auto-tiled roads.
         buildPlannedStructures(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
         buildPlannedWells(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        /*
+        */
 
         // ==========================================
 

@@ -1594,6 +1594,9 @@ export function triggerLocationBanner(cx, cy, cellType) {
     } else if (cellType === 103) {
         zoneName = getZoneName(cx, cy) + " Castle";
         zoneDesc = "ROYAL STRONGHOLD";
+    } else if (cellType === 107) { // 👈 NEW: Mining Camp Banner
+        zoneName = getZoneName(cx, cy) + " Camp";
+        zoneDesc = "MINING EXPEDITION";
     } else if (cellType < 55 || cellType === 10 || cellType === 11 || cellType === 12) {
         // --- WATER GEOGRAPHY ---
         let isLake = false;

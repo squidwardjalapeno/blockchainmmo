@@ -1372,11 +1372,23 @@ export function drawInterCellRoad(startX, startY, endX, endY, worldMatrix, roomM
         const lx = ((targetX % 100) + 100) % 100, ly = ((targetY % 100) + 100) % 100;
         const idx = (ly * 100) + lx;
 
-        // 🛑 OBSTACLE AVOIDANCE: Don't paint over Blueprints (9998), Water (17), or Fences
+        // Inside drawInterCellRoad -> paintTile()
+        // 🛑 OBSTACLE AVOIDANCE: 4x4 check (1-tile buffer)
         if (avoidObstacles) {
-            const rID = roomMatrix[cx]?.[cy]?.[idx];
-            const tID = worldMatrix[cx]?.[cy]?.[idx];
-            if ((rID !== 0 && rID !== 9999) || [17, 18, 21, 24].includes(tID)) return;
+            for (let ox = -1; ox <= 1; ox++) {
+                for (let oy = -1; oy <= 1; oy++) {
+                    const checkX = targetX + ox;
+                    const checkY = targetY + oy;
+                    const cCX = Math.floor(checkX / 100), cCY = Math.floor(checkY / 100);
+                    if (worldMatrix[cCX]?.[cCY]) {
+                        const cLX = ((checkX % 100) + 100) % 100;
+                        const cLY = ((checkY % 100) + 100) % 100;
+                        const rID = roomMatrix[cCX][cCY][cLY * 100 + cLX];
+                        const tID = worldMatrix[cCX][cCY][cLY * 100 + cLX];
+                        if (rID === 9998 || [18, 21, 24].includes(tID)) return;
+                    }
+                }
+            }
         }
 
         const globalIdx = (cy * 100 + ly) * CONFIG.MAP_SIZE + (cx * 100 + lx);
@@ -1416,37 +1428,6 @@ export function drawInterCellRoad(startX, startY, endX, endY, worldMatrix, roomM
         if (e2 >= dy) { err += dy; curX += sx; }
         if (e2 <= dx) { err += dx; curY += sy; }
     }
-}
-
-
-export function drawOreDeposit(gx, gy, worldMatrix, roomMatrix, fertilityMatrix) {
-    // A 2x2 cluster using Tile 30 (Ore)
-    // We set roomID to 0 because ores aren't "inside" anything
-    for (let x = 0; x < 2; x++) {
-        for (let y = 0; y < 2; y++) {
-            setGlobalTile(gx + x, gy + y, 29, 0, worldMatrix, roomMatrix, fertilityMatrix);
-        }
-    }
-}
-
-// js/cellDecorator.js
-
-export function drawMiningArea(gvx, gvy, worldMatrix, roomMatrix, fertilityMatrix) {
-    const depositCount = Math.floor(Math.random() * 2) + 3; // 3 to 4 clusters
-    
-    for (let i = 0; i < depositCount; i++) {
-        // Scatter the 2x2 deposits within 8 tiles of each other
-        const offsetX = Math.floor(Math.random() * 16) - 8;
-        const offsetY = Math.floor(Math.random() * 16) - 8;
-        
-        drawOreDeposit(gvx + offsetX, gvy + offsetY, worldMatrix, roomMatrix, fertilityMatrix);
-
-        
-
-        
-    }
-
-    setGlobalTile(gvx, gvy, 62, 0, worldMatrix, roomMatrix, fertilityMatrix);
 }
 
 
@@ -1774,9 +1755,15 @@ export function populateWorld(worldMap) {
             }
             else if (roll > 0.99942129629) {
                 //worldMap[i] = 102; // Mark as TOWN
-            } else if (roll > 0.99305555555) {
+            }
+            // 👇 NEW: 1 in 111 chance (~0.9%). Exactly 3x rarer than a Village (which is 2.7%)
+            else if (roll > 0.99768518518) {
+                worldMap[i] = 107; // MINING CAMP
+            }
+            else if (roll > 0.99305555555) {
                worldMap[i] = 101; // Mark as VILLAGE
             }
+            
         }
     }
 
@@ -1864,6 +1851,14 @@ export function linkVillages(worldMap, worldMatrix, roomMatrix, fertilityMatrix)
                     if (!adjacencyList.has(B.id)) adjacencyList.set(B.id, []);
                     adjacencyList.get(A.id).push(B);
                     adjacencyList.get(B.id).push(A);
+
+                    // 🌟 YOUR FIX: Stamp a 2x2 dirt pad ONLY because a road is connecting!
+                    for(let ox=0; ox<2; ox++) {
+                        for(let oy=0; oy<2; oy++) {
+                            setGlobalTile(A.tx + ox, A.ty + oy, 337, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+                            setGlobalTile(B.tx + ox, B.ty + oy, 337, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+                        }
+                    }
 
                     // Draw the base highway (Thickness 5)
                     drawInterCellRoad(
@@ -2123,16 +2118,21 @@ export function autoTileRoads(worldMatrix) {
                         else if (mask === 12) borderTile = 354; // SE Corner gets NW Elbow
                         
                         // STRAIGHT SIDES (SWAPPED N<->S, E<->W)
-                        else if (mask === 1) borderTile = 303; // Dirt is North (Swapped with South)
-                        else if (mask === 2) borderTile = 331; // Dirt is West (Swapped with East)
-                        else if (mask === 4) borderTile = 335; // Dirt is East (Swapped with West)
-                        else if (mask === 8) borderTile = 367; // Dirt is South (Swapped with North)
+                        else if (mask === 1) borderTile = 303; 
+                        else if (mask === 2) borderTile = 331; 
+                        else if (mask === 4) borderTile = 335; 
+                        else if (mask === 8) borderTile = 367; 
                         
-                        // END CAPS (Matched to the new swapped sides)
-                        else if (mask === 7) borderTile = 303; 
-                        else if (mask === 11) borderTile = 367;
-                        else if (mask === 13) borderTile = 367;
-                        else if (mask === 14) borderTile = 367;
+                        // 🌟 THE FIX: If 3 or more neighbors are dirt, fill the gap with solid dirt!
+                        // SQUEEZED GAPS & END CAPS -> Fill with solid dirt
+                        else if (mask === 6) borderTile = 337;  // East + West
+                        else if (mask === 9) borderTile = 337;  // North + South
+                        else if (mask === 7) borderTile = 337;  // 3 Neighbors
+                        else if (mask === 11) borderTile = 337; // 3 Neighbors
+                        else if (mask === 13) borderTile = 337; // 3 Neighbors
+                        else if (mask === 14) borderTile = 337; // 3 Neighbors
+                        else if (mask === 15) borderTile = 337; // 4 Neighbors
+
                         
                         // INNER ELBOWS (Swapped exactly as commanded)
                         else if (mask === 0) {
@@ -2154,6 +2154,11 @@ export function autoTileRoads(worldMatrix) {
     // Apply all changes at once!
     for (const update of newTiles) {
         worldMatrix[update.cx][update.cy][update.idx] = update.tile;
+        
+        // 🌿 THE FIX: If the auto-tiler overwrote this tile with a border or dirt, delete any plants!
+        const globalX = (update.cx * 100) + (update.idx % 100);
+        const globalY = (update.cy * 100) + Math.floor(update.idx / 100);
+        plants.delete(`${globalX}_${globalY}`);
     }
 }
 
@@ -2163,32 +2168,6 @@ export function autoTileRoads(worldMatrix) {
 // 🧠 SMART PATHFINDING HELPERS
 // ==========================================
 // ==========================================
-// 🚀 FAST OBSTACLE CHECK (1-tile buffer)
-// ==========================================
-// ==========================================
-// 🚀 LOOSE OBSTACLE CHECK (No Buffer)
-// ==========================================
-function isStepBlocked(tx, ty, worldMatrix, roomMatrix) {
-    // Check ONLY the 2x2 footprint of the road
-    for (let ox = 0; ox < 2; ox++) {
-        for (let oy = 0; oy < 2; oy++) {
-            const x = tx + ox, y = ty + oy;
-            const cx = Math.floor(x / 100), cy = Math.floor(y / 100);
-            
-            if (cx < 0 || cx >= CONFIG.MAP_SIZE || cy < 0 || cy >= CONFIG.MAP_SIZE) return true;
-            if (!worldMatrix[cx]?.[cy]) continue;
-
-            const lx = ((x % 100) + 100) % 100, ly = ((y % 100) + 100) % 100;
-            const idx = (ly * 100) + lx;
-            const tID = worldMatrix[cx][cy][idx];
-            const rID = roomMatrix[cx][cy][idx];
-
-            // Blocked by Buildings (Room > 0, excluding ranch zone), Water, or Fences
-            if ((rID !== 0 && rID !== 9999) || [17, 18, 21, 24].includes(tID)) return true;
-        }
-    }
-    return false;
-}
 
 // ==========================================
 // 🏗️ PIPELINE EXECUTORS
@@ -2201,7 +2180,8 @@ export function planAllSettlements(worldMap, worldMatrix, roomMatrix, fertilityM
 
     for (let i = 0; i < worldMap.length; i++) {
         const type = worldMap[i];
-        if (type === 101 || type === 102 || type === 103) {
+        if (type === 101 || type === 102 || type === 103 || type === 107) {
+
             const cx = i % size, cy = Math.floor(i / size);
             let tx, ty;
             
@@ -2219,28 +2199,49 @@ export function planAllSettlements(worldMap, worldMatrix, roomMatrix, fertilityM
                 reserveFootprint(tx - 100, ty - 100, 200, 200, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
                 plannedBuildings.push({ func: drawCastle, args: [tx, ty] });
             }
+            // 👇 ADD THIS EXACTLY HERE:
+            else if (type === 107) {
+                // If your function uses the "phase" argument, uncomment this wrapper:
+                // if (phase === 'BUILDINGS') {
+                    planMiningCamp(tx, ty, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+                // }
+            }
         }
     }
 }
 
+// ==========================================
+// 🚜 PLANNED RANCH ROADS (Obstacle Aware)
+// ==========================================
+// ==========================================
+// 🚜 PLANNED RANCH ROADS (Clean Driveways)
+// ==========================================
+// ==========================================
+// 🚜 PLANNED RANCH ROADS
+// ==========================================
+// ==========================================
+// 🚜 PLANNED RANCH ROADS (Clean Driveways)
+// ==========================================
+// ==========================================
+// 🚜 PLANNED RANCH ROADS (No Driveway, 1-Tile Buffer)
+// ==========================================
 export function drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     
-    // 🧠 HELPER: Checks if a 2x2 road footprint hits a reserved building or water
-    function isRoadBlocked(tx, ty) {
-        for(let ox = 0; ox < 2; ox++) {
-            for(let oy = 0; oy < 2; oy++) {
-                const cx = Math.floor((tx + ox) / 100);
-                const cy = Math.floor((ty + oy) / 100);
+    // 🚀 Helper: 2x2 Road + 1-Tile Buffer = 4x4 Check
+    function isRanchStepBlocked(tx, ty) {
+        for (let ox = -1; ox <= 1; ox++) {
+            for (let oy = -1; oy <= 1; oy++) {
+                const x = tx + ox, y = ty + oy;
+                const cx = Math.floor(x / 100), cy = Math.floor(y / 100);
                 if (cx < 0 || cx >= CONFIG.MAP_SIZE || cy < 0 || cy >= CONFIG.MAP_SIZE) return true;
-                if (!worldMatrix[cx]?.[cy]) return true;
+                if (!worldMatrix[cx]?.[cy]) continue;
 
-                const lx = ((tx + ox) % 100 + 100) % 100;
-                const ly = ((ty + oy) % 100 + 100) % 100;
-                const idx = ly * 100 + lx;
-                
-                // 9998 = Planned Building Blueprint. 17 = Water.
-                if (roomMatrix[cx][cy][idx] === 9998) return true;
-                if (worldMatrix[cx][cy][idx] === 17) return true;
+                const lx = ((x % 100) + 100) % 100, ly = ((y % 100) + 100) % 100;
+                const tID = worldMatrix[cx][cy][ly * 100 + lx];
+                const rID = roomMatrix[cx][cy][ly * 100 + lx];
+
+                // 🛑 Block on Blueprints (9998), Water (17), or Fences (18, 21, 24)
+                if (rID === 9998 || [17, 18, 21, 24].includes(tID)) return true;
             }
         }
         return false;
@@ -2250,74 +2251,100 @@ export function drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, 
         let targetX = r.wellX, targetY = r.wellY;
         let minDist = Math.abs(r.gx + r.gateX - r.wellX) + Math.abs(r.gy - r.wellY);
 
-        // Find nearest highway (337) or old road (6) to merge into
+        // 1. Scan for nearest highway (337) or old road (6) to merge into
         for (let ox = -30; ox <= 30; ox++) {
             for (let oy = -30; oy <= 30; oy++) {
                 const checkX = r.gx + r.gateX + ox, checkY = r.gy + oy;
                 const cx = Math.floor(checkX / 100), cy = Math.floor(checkY / 100);
+                
                 if (cx >= 0 && cx < CONFIG.MAP_SIZE && cy >= 0 && cy < CONFIG.MAP_SIZE) {
                     if (worldMatrix[cx]?.[cy]) {
                         const lx = ((checkX % 100) + 100) % 100, ly = ((checkY % 100) + 100) % 100;
                         const tID = worldMatrix[cx][cy][ly * 100 + lx];
                         if (tID === 337 || tID === 6) {
                             const d = Math.abs(ox) + Math.abs(oy);
-                            if (d < minDist) { minDist = d; targetX = checkX; targetY = checkY; }
+                            if (d < minDist) { 
+                                minDist = d; 
+                                targetX = checkX; 
+                                targetY = checkY; 
+                            }
                         }
                     }
                 }
             }
         }
 
-        // 1. Manually stamp the driveway connecting the gate to the road start
         const gateX = r.gx + r.gateX;
-        setGlobalTile(gateX, r.gy + 1, 337, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-        setGlobalTile(gateX + 1, r.gy + 1, 337, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        const gateY = r.gy;
 
-        // 2. Greedy Stepper for the rest of the road
-        let curX = gateX;
-        let curY = r.gy + 2; // Start 2 tiles away from the fence so it doesn't get trapped by its own ranch!
-        let life = 0;
-        let visited = new Set();
+        // 🌟 THE FIX: No more manual driveway stamps!
+        // We start the road EXACTLY 2 tiles below the gate (gateY + 2).
+        // Because the obstacle buffer checks -1 (gateY + 1), it leaves a perfect 1-tile grass gap!
+        let startX = gateX;
+        let startY = gateY + 2; 
 
-        while (life++ < 150) {
-            // Stop if we reach the target highway/well
-            if (Math.abs(curX - targetX) <= 1 && Math.abs(curY - targetY) <= 1) break;
+        let openSet = [{ x: startX, y: startY, g: 0, f: 0, path: [] }];
+        let closedSet = new Set([`${startX}_${startY}`]);
+        let steps = 0;
+        let finalPath = null;
 
-            visited.add(`${curX}_${curY}`);
-            let bestX = curX, bestY = curY;
-            let bestDist = Infinity;
+        // 2. TRUE A* PATHFINDING
+        while (openSet.length > 0 && steps++ < 2000) {
+            let lowestIdx = 0;
+            for (let i = 1; i < openSet.length; i++) {
+                if (openSet[i].f < openSet[lowestIdx].f) lowestIdx = i;
+            }
+            let curr = openSet.splice(lowestIdx, 1)[0];
 
-            const moves = [{x: 0, y: 1}, {x: 0, y: -1}, {x: 1, y: 0}, {x: -1, y: 0}];
-            for (let m of moves) {
-                let nx = curX + m.x, ny = curY + m.y;
-                
-                // Only step if we haven't been here before AND we aren't hitting a 9998 Blueprint
-                if (!visited.has(`${nx}_${ny}`) && !isRoadBlocked(nx, ny)) {
-                    
-                    // Introduce a tiny bit of noise to prevent locking into perfect diagonals looking unnatural
-                    let dist = Math.abs(nx - targetX) + Math.abs(ny - targetY) + (Math.random() * 0.5);
-                    if (dist < bestDist) {
-                        bestDist = dist;
-                        bestX = nx;
-                        bestY = ny;
-                    }
-                }
+            if (Math.abs(curr.x - targetX) <= 1 && Math.abs(curr.y - targetY) <= 1) {
+                finalPath = curr.path;
+                break;
             }
 
-            if (bestX === curX && bestY === curY) break; // Trapped in a corner, stop drawing.
+            const neighbors = [
+                {x:0, y:1}, {x:0, y:-1}, {x:1, y:0}, {x:-1, y:0},
+                {x:1, y:1}, {x:-1, y:-1}, {x:1, y:-1}, {x:-1, y:1}
+            ];
 
-            curX = bestX;
-            curY = bestY;
+            for (let n of neighbors) {
+                let nx = curr.x + n.x, ny = curr.y + n.y;
+                let key = `${nx}_${ny}`;
 
-            // Stamp 2x2 road
-            /*
-            setGlobalTile(curX, curY, 337, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-            
-            setGlobalTile(curX + 1, curY, 337, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-            setGlobalTile(curX, curY + 1, 337, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-            */
-            setGlobalTile(curX + 1, curY + 1, 337, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-            
+                if (!closedSet.has(key) && !isRanchStepBlocked(nx, ny)) {
+                    closedSet.add(key);
+                    let cost = (n.x !== 0 && n.y !== 0) ? 1.4 : 1; 
+                    let g = curr.g + cost;
+                    let h = Math.abs(nx - targetX) + Math.abs(ny - targetY); 
+                    openSet.push({ x: nx, y: ny, g: g, f: g + h, path: [...curr.path, {x: nx, y: ny}] });
+                }
+            }
+        }
+
+        // 3. DRAW THE ROAD
+        if (finalPath) {
+            finalPath.unshift({ x: startX, y: startY });
+
+            let prevX = startX, prevY = startY;
+
+            finalPath.forEach(node => {
+                // If we moved diagonally, fill the corner (L-Shape) to prevent 1-tile fractures
+                if (Math.abs(node.x - prevX) > 0 && Math.abs(node.y - prevY) > 0) {
+                    for (let ox = 0; ox < 1; ox++) {
+                        for (let oy = 0; oy < 1; oy++) {
+                            setGlobalTile(prevX + ox, node.y + oy, 337, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+                        }
+                    }
+                }
+
+                // Stamp the actual 2x2 road
+                for (let ox = 0; ox < 1; ox++) {
+                    for (let oy = 0; oy < 1; oy++) {
+                        setGlobalTile(node.x + ox, node.y + oy, 337, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+                    }
+                }
+                prevX = node.x;
+                prevY = node.y;
+            });
         }
     });
 }
@@ -2333,7 +2360,13 @@ export function buildPlannedStructures(worldMatrix, roomMatrix, fertilityMatrix,
 }
 export function buildPlannedWells(worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     plannedWells.forEach(w => {
-        const wellId = 999;
+        // Check what is currently on the ground
+        const currentTile = getTileData(w.x * 16, w.y * 16, worldMatrix, roomMatrix).tileID;
+        
+        // If it is Dirt (337) or a road border (300-399), mark it as Connected (998)
+        // If it is Grass (63), mark it as Isolated (999)
+        const wellId = (currentTile >= 300 && currentTile < 400) ? 998 : 999;
+        
         setGlobalTile(w.x, w.y, 30, wellId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
         setGlobalTile(w.x + 1, w.y, 31, wellId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
         setGlobalTile(w.x, w.y + 1, 38, wellId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
@@ -2370,6 +2403,91 @@ function isInsideVillagePolygon(gx, gy) {
 // ==========================================
 // ⭕ DYNAMIC PERIMETER ROADS
 // ==========================================
+// ==========================================
+// ⭕ DYNAMIC PERIMETER ROADS (Steering Fix)
+// ==========================================
+// ==========================================
+// ⭕ DYNAMIC PERIMETER ROADS (Shrink-Wrap Fix)
+// ==========================================
+// ==========================================
+// ⭕ DYNAMIC PERIMETER ROADS (Reverted to Polygon)
+// ==========================================
+// ==========================================
+// ⭕ DYNAMIC PERIMETER ROADS (Shrink-Wrap)
+// ==========================================
+// ==========================================
+// ⭕ DYNAMIC PERIMETER ROADS (Shrink-Wrap)
+// ==========================================
+// ==========================================
+// 🚀 1-TILE BUFFER OBSTACLE CHECK
+// ==========================================
+function isStepBlocked(tx, ty, worldMatrix, roomMatrix) {
+    // 3x3 Check ensures a strict 1-tile gap between the road and buildings/fences
+    for (let ox = -1; ox <= 1; ox++) {
+        for (let oy = -1; oy <= 1; oy++) {
+            const x = tx + ox, y = ty + oy;
+            const cx = Math.floor(x / 100), cy = Math.floor(y / 100);
+            if (cx < 0 || cx >= CONFIG.MAP_SIZE || cy < 0 || cy >= CONFIG.MAP_SIZE) return true;
+            if (!worldMatrix[cx]?.[cy]) continue;
+
+            const lx = ((x % 100) + 100) % 100, ly = ((y % 100) + 100) % 100;
+            const tID = worldMatrix[cx][cy][ly * 100 + lx];
+            const rID = roomMatrix[cx][cy][ly * 100 + lx];
+
+            // 🛑 Block on Blueprints (9998), Water (17), or Fences (18, 21, 24)
+            if (rID === 9998 || [17, 18, 21, 24].includes(tID)) return true;
+        }
+    }
+    return false;
+}
+
+// ==========================================
+// 🧠 DIAGONAL PATHFINDER (Wall Hugger)
+// ==========================================
+function findRingPath(startX, startY, endX, endY, worldMatrix, roomMatrix) {
+    let openSet = [{ x: startX, y: startY, g: 0, f: 0, path: [] }];
+    let closedSet = new Set([`${startX}_${startY}`]);
+    let steps = 0;
+
+    // High maxSteps ensures it doesn't give up on wrapping around large buildings
+    while (openSet.length > 0 && steps++ < 3000) {
+        let lowestIdx = 0;
+        for (let i = 1; i < openSet.length; i++) {
+            if (openSet[i].f < openSet[lowestIdx].f) lowestIdx = i;
+        }
+        let curr = openSet.splice(lowestIdx, 1)[0];
+
+        // Flexible arrival: If we are adjacent to the target, call it good!
+        if (Math.abs(curr.x - endX) <= 1 && Math.abs(curr.y - endY) <= 1) {
+            return curr.path;
+        }
+
+        // Include DIAGONALS for smooth, natural road winding
+        const neighbors = [
+            {x:0, y:1}, {x:0, y:-1}, {x:1, y:0}, {x:-1, y:0},
+            {x:1, y:1}, {x:-1, y:-1}, {x:1, y:-1}, {x:-1, y:1}
+        ];
+
+        for (let n of neighbors) {
+            let nx = curr.x + n.x, ny = curr.y + n.y;
+            let key = `${nx}_${ny}`;
+
+            if (!closedSet.has(key) && !isStepBlocked(nx, ny, worldMatrix, roomMatrix)) {
+                closedSet.add(key);
+                // Diagonals cost slightly more (1.4) than straight (1) to keep the line taut
+                let cost = (n.x !== 0 && n.y !== 0) ? 1.4 : 1; 
+                let g = curr.g + cost;
+                let h = Math.abs(nx - endX) + Math.abs(ny - endY);
+                openSet.push({ x: nx, y: ny, g: g, f: g + h, path: [...curr.path, {x: nx, y: ny}] });
+            }
+        }
+    }
+    return null;
+}
+
+// ==========================================
+// ⭕ DYNAMIC PERIMETER ROADS
+// ==========================================
 export function drawRingRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     plannedWells.forEach(well => {
         let structures = [];
@@ -2390,7 +2508,7 @@ export function drawRingRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap
             }
         });
 
-        if (structures.length < 3) return; 
+        if (structures.length < 3) return;
 
         structures.sort((a, b) => b.dist - a.dist);
         let perimeterNodes = structures.slice(0, 12);
@@ -2399,21 +2517,189 @@ export function drawRingRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap
         perimeterNodes.sort((a, b) => a.angle - b.angle);
 
         const waypoints = perimeterNodes.map(s => {
-            const padDist = s.dist + 6; 
-            return {
-                x: Math.floor(well.x + Math.cos(s.angle) * padDist),
-                y: Math.floor(well.y + Math.sin(s.angle) * padDist)
-            };
+            let padDist = s.dist + 8; 
+            let px = Math.floor(well.x + Math.cos(s.angle) * padDist);
+            let py = Math.floor(well.y + Math.sin(s.angle) * padDist);
+
+            // 🌟 FIX: Increased safety limit to 50 to guarantee waypoint is not trapped inside a house buffer
+            let safetyLimit = 0;
+            while (isStepBlocked(px, py, worldMatrix, roomMatrix) && safetyLimit++ < 50) {
+                padDist++;
+                px = Math.floor(well.x + Math.cos(s.angle) * padDist);
+                py = Math.floor(well.y + Math.sin(s.angle) * padDist);
+            }
+            return { x: px, y: py };
         });
 
-        // 🌟 SAVE POLYGON TO THE WELL!
         well.polygon = waypoints;
 
+        // 5. Connect the Waypoints using the Wall-Hugging Pathfinder
         for (let i = 0; i < waypoints.length; i++) {
             const p1 = waypoints[i];
             const p2 = waypoints[(i + 1) % waypoints.length];
-            drawInterCellRoad(p1.x, p1.y, p2.x, p2.y, worldMatrix, roomMatrix, fertilityMatrix, worldMap, 337, 1, true);
+            
+            const path = findRingPath(p1.x, p1.y, p2.x, p2.y, worldMatrix, roomMatrix);
+            
+            if (path) {
+                // 🌟 FIX 1 KEPT: Manually paint the starting waypoint so it isn't skipped!
+                setGlobalTile(p1.x, p1.y, 337, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+
+                // Reverted to pure diagonal stamping!
+                path.forEach(node => {
+                    setGlobalTile(node.x, node.y, 337, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+                });
+            } else {
+                // 🌟 FIX 2 KEPT: avoidObstacles MUST be false, 
+                // otherwise it intentionally leaves holes when passing buildings!
+                drawInterCellRoad(p1.x, p1.y, p2.x, p2.y, worldMatrix, roomMatrix, fertilityMatrix, worldMap, 337, 1, false);
+            }
         }
     });
 }
+// ==========================================
+// ⛏️ MINING CAMP BUILDERS
+// ==========================================
 
+export function drawTent(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
+    const currentId = nextHouseId++;
+    
+    // 1. Fill the 2x2 footprint with Dirt Floor (337)
+    for (let i = 0; i < 2; i++) {
+        for (let j = -1; j <= 0; j++) {
+            setGlobalTile(gx + i, gy + j, 337, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            plants.delete(`${gx + i}_${gy + j}`);
+        }
+    }
+    
+    // 2. Draw the 2x2 Tent Sprite
+    // Top Row (46, 47)
+    setGlobalTile(gx, gy - 1, 46, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+    setGlobalTile(gx + 1, gy - 1, 47, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+    
+    // Bottom Row (54, 55 - Entrance)
+    setGlobalTile(gx, gy, 54, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+    setGlobalTile(gx + 1, gy, 55, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+
+    // 3. Place the Bedroll inside (back left)
+    registerObject(gx, gy - 1, 'BEDROLL', { houseId: currentId });
+}
+
+export function drawCampfireArea(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
+    // 3x3 Clearing of Dirt around the fire
+    for (let i = -1; i <= 1; i++) {
+        for (let j = -1; j <= 1; j++) {
+            setGlobalTile(gx + i, gy + j, 337, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            plants.delete(`${gx + i}_${gy + j}`);
+        }
+    }
+
+    // Center: Campfire (62)
+    setGlobalTile(gx, gy, 62, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+
+    // Seating: Place stools/stumps randomly around the fire (1 tile away)
+    const seats = [
+        { dx: 0, dy: -1 }, // North
+        { dx: 0, dy: 1 },  // South
+        { dx: -1, dy: 0 }, // West
+        { dx: 1, dy: 0 }   // East
+    ];
+
+    let numSeats = Math.floor(seededRandom() * 2) + 2; // 2 to 3 seats per fire
+    
+    // Shuffle the seats array so seating positions are random
+    for (let i = seats.length - 1; i > 0; i--) {
+        const j = Math.floor(seededRandom() * (i + 1));
+        [seats[i], seats[j]] = [seats[j], seats[i]];
+    }
+
+    for (let i = 0; i < numSeats; i++) {
+        const seatTile = seededRandom() > 0.5 ? 58 : 59; // 50/50 Stool vs Stump
+        setGlobalTile(gx + seats[i].dx, gy + seats[i].dy, seatTile, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+    }
+}
+
+export function drawCampDecoration(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
+    // Draw an Elk Skull (57) randomly
+    setGlobalTile(gx, gy, 57, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+    plants.delete(`${gx}_${gy}`);
+}
+
+export function drawOreDeposit(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
+    // A 2x2 cluster using Tile 29 (Ore)
+    for (let x = 0; x < 2; x++) {
+        for (let y = 0; y < 2; y++) {
+            setGlobalTile(gx + x, gy + y, 29, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            plants.delete(`${gx + x}_${gy + y}`);
+        }
+    }
+}
+
+export function drawMiningArea(gvx, gvy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
+    // Centralized Ore Cluster (3 to 5 nodes tightly packed)
+    const depositCount = Math.floor(seededRandom() * 3) + 3; 
+    for (let i = 0; i < depositCount; i++) {
+        const offsetX = Math.floor(seededRandom() * 6) - 3;
+        const offsetY = Math.floor(seededRandom() * 6) - 3;
+        drawOreDeposit(gvx + offsetX, gvy + offsetY, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+    }
+}
+
+export function planMiningCamp(gvx, gvy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
+    // 1. Center Ore Deposits (Reserve a 6x6 area dead center)
+    if (isAreaClear(gvx - 3, gvy - 3, 6, 6, worldMatrix, roomMatrix, worldMap)) {
+        reserveFootprint(gvx - 3, gvy - 3, 6, 6, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        plannedBuildings.push({ func: drawMiningArea, args: [gvx, gvy] });
+    }
+
+    // 2. Scatter Tents (3 to 5 tents) within a 20-tile radius ring
+    const numTents = Math.floor(seededRandom() * 3) + 3; 
+    let placedTents = 0, attempts = 0;
+    while (placedTents < numTents && attempts < 100) {
+        attempts++;
+        
+        // Pick a point in an outer ring (distance 6 to 12 away from center)
+        const angle = seededRandom() * Math.PI * 2;
+        const dist = 6 + (seededRandom() * 6);
+        const tx = gvx + Math.floor(Math.cos(angle) * dist);
+        const ty = gvy + Math.floor(Math.sin(angle) * dist);
+
+        // Tents are 2x2
+        if (isAreaClear(tx, ty, 2, 2, worldMatrix, roomMatrix, worldMap)) {
+            reserveFootprint(tx, ty, 2, 2, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            plannedBuildings.push({ func: drawTent, args: [tx, ty] });
+            placedTents++;
+        }
+    }
+
+    // 3. Scatter Campfires (1 to 3 fires) in the mid-ring
+    const numFires = Math.floor(seededRandom() * 3) + 1;
+    let placedFires = 0; attempts = 0;
+    while (placedFires < numFires && attempts < 50) {
+        attempts++;
+        const tx = gvx + Math.floor(seededRandom() * 16) - 8;
+        const ty = gvy + Math.floor(seededRandom() * 16) - 8;
+        
+        // Campfires need a 3x3 footprint (Fire + Seats)
+        if (isAreaClear(tx - 1, ty - 1, 3, 3, worldMatrix, roomMatrix, worldMap)) {
+            reserveFootprint(tx - 1, ty - 1, 3, 3, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            plannedBuildings.push({ func: drawCampfireArea, args: [tx, ty] });
+            placedFires++;
+        }
+    }
+
+    // 4. Scatter Elk Skulls (2 to 4 skulls)
+    const numSkulls = Math.floor(seededRandom() * 3) + 2;
+    let placedSkulls = 0; attempts = 0;
+    while (placedSkulls < numSkulls && attempts < 30) {
+        attempts++;
+        const tx = gvx + Math.floor(seededRandom() * 20) - 10;
+        const ty = gvy + Math.floor(seededRandom() * 20) - 10;
+        
+        // Skulls are 1x1
+        if (isAreaClear(tx, ty, 1, 1, worldMatrix, roomMatrix, worldMap)) {
+            reserveFootprint(tx, ty, 1, 1, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            plannedBuildings.push({ func: drawCampDecoration, args: [tx, ty] });
+            placedSkulls++;
+        }
+    }
+}

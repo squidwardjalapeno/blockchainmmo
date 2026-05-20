@@ -72,6 +72,8 @@ export function createPlant(gx, gy, fertilityMatrix, startingGrowth = 0, type = 
     const idx = (ly * 100) + lx; 
 
     const cell = fertilityMatrix[cx]?.[cy];
+
+    
     if (!cell) return;
     const soilF = cell[idx] || 0;
 

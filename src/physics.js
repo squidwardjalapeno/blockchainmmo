@@ -111,7 +111,7 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
         }
 
         // 3. ALLOW PASSAGE THROUGH OPEN DOORS & GATES
-        if ([35, 13, 23, 20].includes(target.tileID) || [35, 13, 23, 20].includes(current.tileID)) return true;
+        if ([35, 13, 23, 20, 54, 55].includes(target.tileID) || [35, 13, 23, 20, 54, 55].includes(current.tileID)) return true;
     }
 
     // ==========================================
@@ -165,7 +165,7 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
         // Since the hero is now 16x16, this is unnecessary and was breaking top-wall collision!
 
         // Added more comprehensive protection against walking through specific solid walls from the inside
-        const hardSolids = [40, 41, 43, 27]; 
+        const hardSolids = [40, 41, 43, 27, 46, 47]; 
         if (hardSolids.includes(target.tileID)) return false;
 
         if (target.roomID === current.roomID) return true;
@@ -178,7 +178,8 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     // 🆕 Added Ranch tiles & Forest Tree Tiles
     const worldSolids = [
         40, 48, 50, 52, 17, 18, 19, 21, 22, 24, 27, 1, 3,
-        406, 407 // 👈 Trees!
+        406, 407, // 👈 Trees!
+        46, 47
     ];
 
     if (worldSolids.includes(target.tileID)) return false;
