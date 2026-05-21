@@ -456,7 +456,10 @@ export function drawBarn(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, world
 
 // ... Ensure you import createPlant and spawnChicken at the top ...
 
-export function drawRanch(gx, gy, width, height, gateX, hasBarn, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
+// ==========================================
+// 🐴 DRAW RANCH
+// ==========================================
+export function drawRanch(gx, gy, width, height, gateX, barnType, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     for (let i = 0; i < width; i++) {
         for (let j = -(height - 1); j <= 0; j++) {
             const tx = gx + i, ty = gy + j;
@@ -506,12 +509,18 @@ export function drawRanch(gx, gy, width, height, gateX, hasBarn, worldMatrix, ro
         }
     }
 
-    // 👇 NEW: Only spawn if the Planner gave us permission!
-    if (hasBarn && width >= 6 && height >= 6) {
+    // 🌟 CORRECTED BARN LOGIC: Double checks width to prevent crashing bounds!
+    if (barnType === 'LARGE_BARN') {
+        const isLeft = seededRandom() > 0.5;
+        const by = gy - height + 1;
+        const bX = isLeft ? gx + 1 : gx + width - 7;
+        if (width >= 8) drawLargeBarn(bX, by, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        else if (width >= 6) drawBarn(bX, by, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+    } else if (barnType === 'BARN') {
         const isLeft = seededRandom() > 0.5;
         const by = gy - height + 1;
         const bX = isLeft ? gx + 1 : gx + width - 5;
-        drawBarn(bX, by, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        if (width >= 6) drawBarn(bX, by, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     }
 }
 // js/cellDecorator.js
@@ -574,13 +583,10 @@ export function drawStorageRoom(gx, gy, worldMatrix, roomMatrix, fertilityMatrix
 
 // js/cellDecorator.js
 
-// ==========================================
-// 🏗️ UNIFIED SETTLEMENT PLANNERS
-// ==========================================
 export function planVillage(gvx, gvy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
-    plannedWells.push({ x: gvx, y: gvy });
+    plannedWells.push({ x: gvx, y: gvy, type: 101 }); // Type 101 = Village
 
-    // Collect Main Highways for snapping
+    // Gather existing roads
     let roadTiles = [];
     for (let x = gvx - 50; x < gvx + 50; x++) {
         for (let y = gvy - 50; y < gvy + 50; y++) {
@@ -592,7 +598,9 @@ export function planVillage(gvx, gvy, worldMatrix, roomMatrix, fertilityMatrix, 
 
     // 1. Plan Uniques
     const uniques = [
-        { func: drawVillageHall, w: 11, h: 9 }, { func: drawTemple, w: 4, h: 8 }, { func: drawGeneralStore, w: 4, h: 4 }
+        { func: drawVillageHall, w: 11, h: 9 }, 
+        { func: drawTemple, w: 4, h: 8 }, 
+        { func: drawGeneralStore, w: 4, h: 4 }
     ];
     uniques.forEach(bp => {
         let placed = false, attempts = 0;
@@ -616,7 +624,6 @@ export function planVillage(gvx, gvy, worldMatrix, roomMatrix, fertilityMatrix, 
         let tx = gvx + Math.floor(seededRandom() * 90) - 45;
         let ty = gvy + Math.floor(seededRandom() * 90) - 45;
         
-        // Snap to Main Road
         if (hasRoad && houseAttempts < 80) {
             const road = roadTiles[Math.floor(seededRandom() * roadTiles.length)];
             const side = Math.floor(seededRandom() * 4);
@@ -634,31 +641,7 @@ export function planVillage(gvx, gvy, worldMatrix, roomMatrix, fertilityMatrix, 
         }
     }
 
-    // 3. Plan Ranches
-    let ranchesPlaced = 0, ranchAttempts = 0;
-    const ranchGoal = Math.floor(seededRandom() * 3) + 4; 
-    let barnsPlaced = 0;
-    const maxBarns = Math.floor(seededRandom() * 3) + 2; 
-
-    while (ranchesPlaced < ranchGoal && ranchAttempts < 50) {
-        ranchAttempts++;
-        const rw = Math.floor(seededRandom() * 16) + 5; 
-        const rh = Math.floor(seededRandom() * 16) + 5;
-        const rx = gvx + Math.floor(seededRandom() * 90) - 45;
-        const ry = gvy + Math.floor(seededRandom() * 90) - 45;
-        
-        if (isAreaClear(rx, ry, rw, rh, worldMatrix, roomMatrix, worldMap)) {
-            reserveFootprint(rx, ry, rw, rh, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-            const gateX = Math.floor(seededRandom() * (rw - 2)) + 1;
-            let hasBarn = false;
-            if (barnsPlaced < maxBarns && rw >= 6 && rh >= 6) { hasBarn = true; barnsPlaced++; }
-
-            plannedRanches.push({ gx: rx, gy: ry, w: rw, h: rh, gateX, hasBarn, wellX: gvx, wellY: gvy });
-            ranchesPlaced++;
-        }
-    }
-
-    // 4. Plan Utilities
+    // 3. Plan Utilities
     const utilities = [
         { func: drawStorageRoom, w: 5, h: 5, count: Math.floor(seededRandom() * 2) + 2 },
         { func: drawRootCellar, w: 2, h: 3, count: 2 }
@@ -676,6 +659,34 @@ export function planVillage(gvx, gvy, worldMatrix, roomMatrix, fertilityMatrix, 
             }
         }
     });
+
+    // 4. Plan Ranches
+    let ranchesPlaced = 0, ranchAttempts = 0;
+    const ranchGoal = Math.floor(seededRandom() * 3) + 4; 
+    let barnsPlaced = 0;
+    const maxBarns = Math.floor(seededRandom() * 3) + 2; 
+
+    while (ranchesPlaced < ranchGoal && ranchAttempts < 50) {
+        ranchAttempts++;
+        const rw = Math.floor(seededRandom() * 16) + 5; 
+        const rh = Math.floor(seededRandom() * 16) + 5;
+        const rx = gvx + Math.floor(seededRandom() * 90) - 45;
+        const ry = gvy + Math.floor(seededRandom() * 90) - 45;
+        
+        if (isAreaClear(rx, ry, rw, rh, worldMatrix, roomMatrix, worldMap)) {
+            reserveFootprint(rx, ry, rw, rh, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            const gateX = Math.floor(seededRandom() * (rw - 2)) + 1;
+            
+            let barnType = 'NONE';
+            if (barnsPlaced < maxBarns && rw >= 6 && rh >= 6) { 
+                barnType = 'BARN'; 
+                barnsPlaced++; 
+            }
+
+            plannedRanches.push({ gx: rx, gy: ry, w: rw, h: rh, gateX, barnType, wellX: gvx, wellY: gvy });
+            ranchesPlaced++;
+        }
+    }
 }
 
 
@@ -1088,132 +1099,99 @@ export function drawTownHall(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, w
  * Stamps a massive 200x200 Fortified Town with road-snapping logic
  * and a full residential/industrial district.
  */
-export function drawTown(gtx, gty, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
-    console.log(`🏰 Founding the Great City at [${gtx}, ${gty}]`);
+export function planTown(gtx, gty, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
+    plannedWells.push({ x: gtx, y: gty, type: 102 }); // Type 102 = Town
 
-    // 1. DIMENSIONS & WALLS (200x200)
-    const half = 100;
-    for (let x = -half; x <= half; x++) {
-        for (let y = -half; y <= half; y++) {
-            const isEdgeX = (x === -half || x === half);
-            const isEdgeY = (y === -half || y === half);
-
-            if (isEdgeX || isEdgeY) {
-                // Gates at the center of each wall (6 tiles wide)
-                const isGate = (Math.abs(x) < 4 && isEdgeY) || (Math.abs(y) < 4 && isEdgeX);
-                let tileID = isGate ? 6 : 11; // Road (6) or Fortified Wall (11)
-                setGlobalTile(gtx + x, gty + y, tileID, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-            }
-        }
-    }
-
-    // 2. CENTRAL HUB (The Well)
-    const wellId = 999;
-    setGlobalTile(gtx, gty, 30, wellId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-    setGlobalTile(gtx + 1, gty, 31, wellId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-    setGlobalTile(gtx, gty + 1, 38, wellId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-    setGlobalTile(gtx + 1, gty + 1, 39, wellId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-
-    // 3. ROAD SCANNING (For Snapping)
     let roadTiles = [];
-    for (let x = gtx - half; x < gtx + half; x++) {
-        for (let y = gty - half; y < gty + half; y++) {
-            if (getTileID(x, y, worldMatrix) === 6) {
-                roadTiles.push({x, y});
-            }
+    for (let x = gtx - 90; x < gtx + 90; x++) {
+        for (let y = gty - 90; y < gty + 90; y++) {
+            const tid = getTileData(x*16, y*16, worldMatrix, roomMatrix).tileID;
+            if (tid === 337 || tid === 208) roadTiles.push({x, y});
         }
     }
     const hasRoad = roadTiles.length > 0;
 
-    // 4. DEFINE THE BLUEPRINTS
-    // Unique Icons / Infrastructure
+    // 1. Plan Uniques
     const uniqueBuildings = [
-        { func: drawTownHall, w: 11, h: 12, count: 1 },
-        { func: drawInn, w: 8, h: 9, count: 1 },
-        { func: drawMilitaryQuarters, w: 10, h: 11, count: 1 },
-        { func: drawBarracks, w: 6, h: 6, count: 1 },
-        { func: drawGeneralStore, w: 4, h: 4, count: 1 },
-        { func: drawBlacksmith, w: 6, h: 5, count: 1 },
-        { func: drawForge, w: 4, h: 5, count: 1 },
-        { func: drawTemple, w: 4, h: 8, count: Math.floor(seededRandom() * 3) + 3 }, // 3-5
+        { func: drawTownHall, w: 11, h: 12, count: 1 }, { func: drawInn, w: 8, h: 9, count: 1 }, { func: drawMilitaryQuarters, w: 10, h: 11, count: 1 },
+        { func: drawBarracks, w: 6, h: 6, count: 1 }, { func: drawGeneralStore, w: 4, h: 4, count: 1 }, { func: drawBlacksmith, w: 6, h: 5, count: 1 },
+        { func: drawForge, w: 4, h: 5, count: 1 }, { func: drawTemple, w: 4, h: 8, count: Math.floor(seededRandom() * 3) + 3 }
     ];
-
-    // Multi-Story / Residential
+    // 2. Plan Residential
     const residential = [
-        { func: drawTwoStoryHouse, w: 4, h: 4, count: Math.floor(seededRandom() * 3) + 5 }, // 5-7
-        { func: drawLargeBarn, w: 6, h: 8, count: Math.floor(seededRandom() * 3) + 2 },     // 2-4
-        { func: drawHouse, w: 4, h: 3, count: Math.floor(seededRandom() * 17) + 40 },      // 40-56
+        { func: drawTwoStoryHouse, w: 4, h: 4, count: Math.floor(seededRandom() * 3) + 5 },
+        { func: drawHouse, w: 4, h: 3, count: Math.floor(seededRandom() * 17) + 40 },
     ];
-
-    // Utility / Outskirts
+    // 3. Plan Utilities
     const utilities = [
-        { func: drawStorageRoom, w: 5, h: 5, count: Math.floor(seededRandom() * 5) + 6 },  // 6-10
-        { func: drawBarn, w: 4, h: 4, count: Math.floor(seededRandom() * 7) + 8 },         // 8-14
-        { func: drawRootCellar, w: 2, h: 3, count: Math.floor(seededRandom() * 9) + 12 },  // 12-20
+        { func: drawStorageRoom, w: 5, h: 5, count: Math.floor(seededRandom() * 5) + 6 }, 
+        { func: drawRootCellar, w: 2, h: 3, count: Math.floor(seededRandom() * 9) + 12 },
     ];
 
-    // 5. PLACEMENT PASS 1: UNIQUE BUILDINGS (High Priority)
-    uniqueBuildings.forEach(bp => {
-        placeBuildings(bp, 300);
-    });
-
-    // 6. PLACEMENT PASS 2: RESIDENTIAL (Prefers Roads)
-    residential.forEach(bp => {
-        placeBuildings(bp, 1500);
-    });
-
-    // 7. PLACEMENT PASS 3: UTILITIES (Outer Rim)
-    utilities.forEach(bp => {
-        placeBuildings(bp, 500);
-    });
-
-    // 8. PLACEMENT PASS 4: RANCHES (Outer Districts)
-    let ranchesPlaced = 0;
-    const ranchGoal = Math.floor(seededRandom() * 7) + 12; // 12-18
-    let ranchAttempts = 0;
-    while (ranchesPlaced < ranchGoal && ranchAttempts < 500) {
-        ranchAttempts++;
-        const rw = Math.floor(seededRandom() * 12) + 6; 
-        const rh = Math.floor(seededRandom() * 12) + 6;
-        const rx = gtx + Math.floor(seededRandom() * 180) - 90;
-        const ry = gty + Math.floor(seededRandom() * 180) - 90;
-
-        if (isAreaClear(rx, ry, rw, rh, worldMatrix, roomMatrix)) {
-            drawRanch(rx, ry, rw, rh, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-            ranchesPlaced++;
-        }
-    }
-
-    /**
-     * Internal helper to handle the road-snapping vs random logic
-     */
-    function placeBuildings(bp, maxAttempts) {
-        let placed = 0;
-        let attempts = 0;
+    // Inside planTown()... replace placeBuildings and the forEach loops:
+    const placeBuildings = (bp, maxAttempts, snapToRoad) => {
+        let placed = 0, attempts = 0;
         while (placed < bp.count && attempts < maxAttempts) {
             attempts++;
-            let tx, ty;
-
-            // Attempt road snapping for the first 75% of tries
-            if (hasRoad && attempts < (maxAttempts * 0.75)) {
+            let tx = gtx + Math.floor(seededRandom() * 180) - 90;
+            let ty = gty + Math.floor(seededRandom() * 180) - 90;
+            
+            // Only snap to road if snapToRoad is TRUE
+            if (snapToRoad && hasRoad && attempts < maxAttempts * 0.75) {
                 const road = roadTiles[Math.floor(seededRandom() * roadTiles.length)];
                 const side = Math.floor(seededRandom() * 4);
                 const offset = 2;
-
                 if (side === 0) { tx = road.x; ty = road.y - offset - bp.h; }
                 else if (side === 1) { tx = road.x; ty = road.y + offset; }
                 else if (side === 2) { tx = road.x + offset; ty = road.y; }
                 else { tx = road.x - offset - bp.w; ty = road.y; }
-            } else {
-                // Random fallback within walls
-                tx = gtx + Math.floor(seededRandom() * 180) - 90;
-                ty = gty + Math.floor(seededRandom() * 180) - 90;
             }
 
-            if (isAreaClear(tx, ty, bp.w, bp.h, worldMatrix, roomMatrix)) {
-                bp.func(tx, ty, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            if (isAreaClear(tx, ty, bp.w, bp.h, worldMatrix, roomMatrix, worldMap)) {
+                reserveFootprint(tx, ty, bp.w, bp.h, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+                plannedBuildings.push({ func: bp.func, args: [tx, ty] });
                 placed++;
             }
+        }
+    };
+
+    uniqueBuildings.forEach(bp => placeBuildings(bp, 300, false)); // Scattered
+    residential.forEach(bp => placeBuildings(bp, 1500, true));     // Snapped to roads
+    utilities.forEach(bp => placeBuildings(bp, 500, false));       // Scattered
+
+    // 4. Plan Ranches (Massive 5 to 60 width/height)
+    let ranchesPlaced = 0, ranchAttempts = 0;
+    const ranchGoal = Math.floor(seededRandom() * 17) + 16; // 16 to 32 Ranches
+    
+    let barnsPlaced = 0;
+    const maxBarns = Math.floor(seededRandom() * 7) + 8; // 8 to 14 Barns
+    
+    let largeBarnsPlaced = 0;
+    const maxLargeBarns = Math.floor(seededRandom() * 3) + 4; // 4 to 6 Large Barns
+
+    while (ranchesPlaced < ranchGoal && ranchAttempts < 500) {
+        ranchAttempts++;
+        const rw = Math.floor(seededRandom() * 56) + 5; 
+        const rh = Math.floor(seededRandom() * 56) + 5;
+        const rx = gtx + Math.floor(seededRandom() * 180) - 90;
+        const ry = gty + Math.floor(seededRandom() * 180) - 90;
+
+        if (isAreaClear(rx, ry, rw, rh, worldMatrix, roomMatrix, worldMap)) {
+            reserveFootprint(rx, ry, rw, rh, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            const gateX = Math.floor(seededRandom() * (rw - 2)) + 1;
+            
+            // Allocate barns perfectly based on goals
+            let barnType = 'NONE';
+            if (rw >= 20 && rh >= 20 && largeBarnsPlaced < maxLargeBarns) {
+                barnType = 'LARGE_BARN';
+                largeBarnsPlaced++;
+            } else if (rw >= 6 && rh >= 6 && barnsPlaced < maxBarns && seededRandom() > 0.5) {
+                barnType = 'BARN';
+                barnsPlaced++;
+            }
+
+            plannedRanches.push({ gx: rx, gy: ry, w: rw, h: rh, gateX, barnType, wellX: gtx, wellY: gty });
+            ranchesPlaced++;
         }
     }
 }
@@ -1571,63 +1549,19 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
     const isLand = cellType >= CONFIG.LAND_THRESHOLD || cellType >= 100;
     const cellKey = `${cx}_${cy}`;
 
-    // 1. MEMORY ALLOCATION (Runs if roads/buildings haven't allocated it yet)
-    if (worldMatrix[cx][cy] === null) {
-        
-        // 👇 CHANGE Uint8Array to Uint16Array
-        worldMatrix[cx][cy] = new Uint16Array(10000).fill(isLand ? 63 : 17);
-        roomMatrix[cx][cy] = new Uint16Array(10000).fill(0);
-        fertilityMatrix[cx][cy] = new Uint8Array(10000).fill(isLand ? 12 : 0); 
-    }   
-
-    // 2. ECOSYSTEM GENERATION (Runs EXACTLY ONCE when the player arrives)
+    // ECOSYSTEM GENERATION (Runs EXACTLY ONCE when the player arrives at this chunk)
     if (!ecoGenerated.has(cellKey)) {
         ecoGenerated.add(cellKey);
 
-        // --- SHORELINES ---
-        if (!isLand) {
-            setWorldSeed((window.worldSeed || 1) + (cx * 1000) + cy);
-            const { score } = applyShorelineRules(cx, cy, worldMap);
-            const inb = getInbound(cx, cy);
-            const data = worldMatrix[cx][cy];
-
-            let out = { 
-                outW: inb.inWest, outE: inb.inEast, outN: inb.inNorth, outS: inb.inSouth,
-                lW: inb.lWest, lE: inb.lEast, lN: inb.lNorth, lS: inb.lSouth 
-            };
-
-            if (score & 1) out.outN = paintSide(data, inb.inNorth, "NORTH");
-            if (score & 2) out.outW = paintSide(data, inb.inWest,  "WEST");
-            if (score & 4) out.outE = paintSide(data, inb.inEast,  "EAST");
-            if (score & 8) out.outS = paintSide(data, inb.inSouth, "SOUTH");
-
-            if (score & 16)  paintCorner(data, inb.inNorth, inb.inWest, "NW");
-            if (score & 32)  paintCorner(data, out.outN, inb.inEast, "NE");
-            if (score & 64)  paintCorner(data, inb.inSouth, out.outW, "SW");
-            if (score & 128) paintCorner(data, out.outS, out.outE, "SE");
-
-            const fData = fertilityMatrix[cx][cy];
-            if (score & 1) out.lN = paintLandSide(data, fData, inb.lNorth, "NORTH");
-            if (score & 2) out.lW = paintLandSide(data, fData, inb.lWest, "WEST");
-            if (score & 4) out.lE = paintLandSide(data, fData, inb.lEast, "EAST");
-            if (score & 8) out.lS = paintLandSide(data, fData, inb.lSouth, "SOUTH");
-
-            if (score & 16)  paintLandCorner(data, fData, inb.lNorth, inb.lWest, "NW");
-            if (score & 32)  paintLandCorner(data, fData, out.lN, inb.lEast, "NE");
-            if (score & 64)  paintLandCorner(data, fData, inb.lSouth, out.lW, "SW");
-            if (score & 128) paintLandCorner(data, fData, out.lS, out.lE, "SE");
-
-            cellMemory.set(cellKey, out);
-        }
-
-
-        // --- 🌲 TREE SPAWNER (Forests, Coastlines, & Villages) ---
+        // ==========================================
+        // 🌲 TREE SPAWNER (Forests, Coastlines, & Settlements)
+        // ==========================================
         
         // 1. Determine if this cell belongs to a Forest region
         let isForestRegion = (cellType === 104 || !isLand);
 
-        // 2. If it's a settlement, check its neighbors to see what biome it sits inside!
-        if (cellType === 101 || cellType === 102 || cellType === 103) {
+        // 2. If it's a settlement or camp, check its neighbors to see what biome it sits inside!
+        if (cellType === 101 || cellType === 102 || cellType === 103 || cellType === 107) {
             for (let oy = -1; oy <= 1; oy++) {
                 for (let ox = -1; ox <= 1; ox++) {
                     const nx = cx + ox, ny = cy + oy;
@@ -1647,7 +1581,7 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
             setWorldSeed((window.worldSeed || 1) + (cx * 1000) + cy + 777);
             
             // Denser inside the forest/village, slightly sparser on deep coastlines
-            const spawnThreshold = (cellType === 104 || cellType === 101 || cellType === 102 || cellType === 103) ? 0.55 : 0.80;
+            const spawnThreshold = (cellType === 104 || cellType === 101 || cellType === 102 || cellType === 103 || cellType === 107) ? 0.55 : 0.80;
             
             for (let ly = 0; ly < 100; ly++) { 
                 for (let lx = 0; lx < 100; lx++) { 
@@ -1659,14 +1593,26 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
                             const gx = (cx * 100) + lx;
                             const gy = (cy * 100) + ly;
                             
-                            if (isInsideVillagePolygon(gx, gy)) continue;
+                            // Check if this tile is inside the protected Ring Road polygon!
+                            if (typeof isInsideVillagePolygon === 'function' && isInsideVillagePolygon(gx, gy)) continue;
                             
+                            // Allow trees to overlap each other (406, 407), but stay away from roads/buildings!
                             let isClear = true;
                             for (let ox = -1; ox <= 2; ox++) {
                                 for (let oy = 0; oy <= 3; oy++) {
-                                    const tID = getTileID(gx + ox, gy + oy, worldMatrix);
-                                    if (tID !== 63 && tID !== 406 && tID !== 407) {
-                                        isClear = false;
+                                    const tCX = Math.floor((gx + ox) / 100);
+                                    const tCY = Math.floor((gy + oy) / 100);
+                                    
+                                    if(tCX >= 0 && tCX < CONFIG.MAP_SIZE && tCY >= 0 && tCY < CONFIG.MAP_SIZE) {
+                                        if(worldMatrix[tCX] && worldMatrix[tCX][tCY]) {
+                                            const tLX = (((gx + ox) % 100) + 100) % 100;
+                                            const tLY = (((gy + oy) % 100) + 100) % 100;
+                                            const tID = worldMatrix[tCX][tCY][tLY * 100 + tLX];
+                                            
+                                            if (tID !== 63 && tID !== 406 && tID !== 407) {
+                                                isClear = false;
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1682,9 +1628,9 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
             }
         }
 
-        // --- FLORA SPAWNER ---
-        // (Your existing flora spawner code continues here...)
-        // --- FLORA SPAWNER ---
+        // ==========================================
+        // 🌻 FLORA SPAWNER
+        // ==========================================
         setWorldSeed((window.worldSeed || 1) + (cx * 1000) + cy + 999);
         
         for (let ly = 0; ly < 100; ly++) {
@@ -1734,40 +1680,35 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
 // js/worldPopulator.js
 
 export function populateWorld(worldMap) {
-    nextHouseId = 1;
-    const size = CONFIG.MAP_SIZE; // 100
+    const size = CONFIG.MAP_SIZE;
 
-    // 1. Create the skeleton (Already in your code)
-    let worldMatrix = Array.from({ length: size }, () => new Array(size).fill(null));
-    let roomMatrix = Array.from({ length: size }, () => new Array(size).fill(null));
-    let fertilityMatrix = Array.from({ length: size }, () => new Array(size).fill(null));
-
-    // 2. PRE-SCAN: Decide where Villages and Castles go
+    // 1. PRE-SCAN: Decide where Villages, Towns, and Camps go
     for (let i = 0; i < worldMap.length; i++) {
         const isLand = worldMap[i] >= CONFIG.LAND_THRESHOLD;
-
         if (isLand) {
-            // Use your seededRandom() here so the locations stay the same for the same seed!
             const roll = seededRandom(); 
-            console.log("🗺️ TEST");
-            if (roll > 0.99995177469) {
-                //worldMap[i] = 103; // Mark as CASTLE
-            }
-            else if (roll > 0.99942129629) {
-                //worldMap[i] = 102; // Mark as TOWN
-            }
-            // 👇 NEW: 1 in 111 chance (~0.9%). Exactly 3x rarer than a Village (which is 2.7%)
-            else if (roll > 0.99768518518) {
-                worldMap[i] = 107; // MINING CAMP
-            }
-            else if (roll > 0.99305555555) {
-               worldMap[i] = 101; // Mark as VILLAGE
-            }
-            
+            if (roll > 1.99995177469) worldMap[i] = 103; // Castle
+            else if (roll > 1.99942129629) worldMap[i] = 102; // Town
+            else if (roll > 0.990) worldMap[i] = 107; // MINING CAMP
+            else if (roll > 0.97305555555) worldMap[i] = 101; // Village
         }
     }
 
-    console.log("🗺️ World Blueprint planned. Villages are marked on the map!");
+    // 2. 🌟 NEW: GLOBALLY INITIALIZE ALL CHUNKS!
+    let worldMatrix = Array.from({ length: size }, () => new Array(size));
+    let roomMatrix = Array.from({ length: size }, () => new Array(size));
+    let fertilityMatrix = Array.from({ length: size }, () => new Array(size));
+
+    for (let cx = 0; cx < size; cx++) {
+        for (let cy = 0; cy < size; cy++) {
+            const isLand = worldMap[(cy * size) + cx] >= CONFIG.LAND_THRESHOLD || worldMap[(cy * size) + cx] >= 100;
+            worldMatrix[cx][cy] = new Uint16Array(10000).fill(isLand ? 63 : 17);
+            roomMatrix[cx][cy] = new Uint16Array(10000).fill(0);
+            fertilityMatrix[cx][cy] = new Uint8Array(10000).fill(isLand ? 12 : 0);
+        }
+    }
+
+    console.log("🗺️ World Blueprint and Chunks Initialized!");
     return { worldMatrix, roomMatrix, fertilityMatrix, worldMap };
 }
 
@@ -1887,7 +1828,7 @@ export function linkVillages(worldMap, worldMatrix, roomMatrix, fertilityMatrix)
         hubs.forEach(end => {
             if (start.id === end.id) return;
             if (start.type === 102 || end.type === 102) {
-                promotePath(start, end, adjacencyList, 7, 4, 900, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+                promotePath(start, end, adjacencyList, 208, 2, 900, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
             }
         });
     });
@@ -1985,6 +1926,12 @@ export function ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix,
                 decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
                 decoratedCells.add(cellKey);
             }
+
+            // 🌟 LAZY-LOAD THE SAND HERE!
+            autoTileSandChunk(cx, cy, worldMatrix);
+            autoTileRoadsChunk(cx, cy, worldMatrix);
+
+
         }
     }
 }
@@ -2072,14 +2019,14 @@ export function autoTileRoads(worldMatrix) {
 
     // Helper: ONLY treat actual roads (337) and sand (0) as dirt. 
     // REMOVED 42, 12, 13, 49 so houses do not get auto-tiled!
+    // Helper: ONLY treat actual roads (337) as dirt! 
     const isDirt = (gx, gy) => {
         const cx = Math.floor(gx / 100), cy = Math.floor(gy / 100);
         if (cx < 0 || cx >= CONFIG.MAP_SIZE || cy < 0 || cy >= CONFIG.MAP_SIZE) return false;
-        if (!worldMatrix[cx] || !worldMatrix[cx][cy]) return false;
+        if (!worldMatrix[cx]?.[cy]) return false;
         const lx = ((gx % 100) + 100) % 100, ly = ((gy % 100) + 100) % 100;
-        const tID = worldMatrix[cx][cy][ly * 100 + lx];
         
-        return tID === 337 || tID === 0; 
+        return worldMatrix[cx][cy][ly * 100 + lx] === 337; 
     };
 
     const newTiles = [];
@@ -2162,6 +2109,205 @@ export function autoTileRoads(worldMatrix) {
     }
 }
 
+// ==========================================
+// 🏖️ LAZY-LOAD SAND AUTO-TILING
+// ==========================================
+// 🏖️ LAZY-LOAD SAND AUTO-TILING
+// ==========================================
+const sandTiledCells = new Set();
+
+export function autoTileSandChunk(cx, cy, worldMatrix) {
+    if (cx < 0 || cx >= CONFIG.MAP_SIZE || cy < 0 || cy >= CONFIG.MAP_SIZE) return;
+    
+    const key = `${cx}_${cy}`;
+    if (sandTiledCells.has(key)) return;
+    sandTiledCells.add(key);
+
+    const isSand = (gx, gy) => {
+        const tCX = Math.floor(gx / 100), tCY = Math.floor(gy / 100);
+        if (tCX < 0 || tCX >= CONFIG.MAP_SIZE || tCY < 0 || tCY >= CONFIG.MAP_SIZE) return false;
+        if (!worldMatrix[tCX]?.[tCY]) return false;
+        const lx = ((gx % 100) + 100) % 100, ly = ((gy % 100) + 100) % 100;
+        const tID = worldMatrix[tCX][tCY][ly * 100 + lx];
+        
+        // Treat Sand (0) and Water (10, 11, 17) as Sand so borders wrap the shorelines!
+        return tID === 0 || tID === 10 || tID === 11 || tID === 17;
+    };
+
+    const newTiles = [];
+    if (!worldMatrix[cx]?.[cy]) return;
+
+    for (let ly = 0; ly < 100; ly++) {
+        for (let lx = 0; lx < 100; lx++) {
+            const gx = cx * 100 + lx;
+            const gy = cy * 100 + ly;
+
+            // Running on GRASS tiles that are NEXT to sand
+            // (We ensure it only overwrites 63 so it doesn't destroy buildings/bridges)
+            if (worldMatrix[cx][cy][ly * 100 + lx] === 63 && !isSand(gx, gy)) {
+                
+                const n = isSand(gx, gy - 1) ? 1 : 0;
+                const s = isSand(gx, gy + 1) ? 8 : 0;
+                const e = isSand(gx + 1, gy) ? 4 : 0;
+                const w = isSand(gx - 1, gy) ? 2 : 0;
+
+                const nw = isSand(gx - 1, gy - 1);
+                const ne = isSand(gx + 1, gy - 1);
+                const sw = isSand(gx - 1, gy + 1);
+                const se = isSand(gx + 1, gy + 1);
+
+                const mask = n | w | e | s;
+                let borderTile = null;
+
+                // EXACT USER MAPPING FOR CORNERS
+                if (mask === 3) borderTile = 302; 
+                else if (mask === 5) borderTile = 304; 
+                else if (mask === 10) borderTile = 350; 
+                else if (mask === 12) borderTile = 354; 
+                
+                // EXACT USER MAPPING FOR SIDES
+                else if (mask === 1) borderTile = 303; 
+                else if (mask === 2) borderTile = 331; 
+                else if (mask === 4) borderTile = 335; 
+                else if (mask === 8) borderTile = 367; 
+                
+                // EXACT USER MAPPING FOR SQUEEZED GAPS -> Fill with Sand (0)
+                else if (mask === 6) borderTile = 0;  // East + West
+                else if (mask === 9) borderTile = 0;  // North + South
+                else if (mask === 7) borderTile = 0;  // 3 Neighbors
+                else if (mask === 11) borderTile = 0; // 3 Neighbors
+                else if (mask === 13) borderTile = 0; // 3 Neighbors
+                else if (mask === 14) borderTile = 0; // 3 Neighbors
+                else if (mask === 15) borderTile = 0; // 4 Neighbors
+                
+                // EXACT USER MAPPING FOR INNER ELBOWS
+                else if (mask === 0) {
+                    if (nw) borderTile = 313;      
+                    else if (ne) borderTile = 315; 
+                    else if (sw) borderTile = 351; 
+                    else if (se) borderTile = 353; 
+                }
+
+                if (borderTile !== null) {
+                    newTiles.push({ idx: ly * 100 + lx, tile: borderTile });
+                }
+            }
+        }
+    }
+
+    // Apply all changes at once!
+    for (const update of newTiles) {
+        worldMatrix[cx][cy][update.idx] = update.tile;
+        
+        // 🌿 Clear plants if the auto-tiler overwrote them
+        const globalX = (cx * 100) + (update.idx % 100);
+        const globalY = (cy * 100) + Math.floor(update.idx / 100);
+        plants.delete(`${globalX}_${globalY}`);
+    }
+}
+
+// ==========================================
+// 🛣️ LAZY-LOAD ROAD AUTO-TILING
+// ==========================================
+const roadTiledCells = new Set();
+
+export function autoTileRoadsChunk(cx, cy, worldMatrix) {
+    if (cx < 0 || cx >= CONFIG.MAP_SIZE || cy < 0 || cy >= CONFIG.MAP_SIZE) return;
+    
+    const key = `${cx}_${cy}`;
+    if (roadTiledCells.has(key)) return;
+    roadTiledCells.add(key);
+
+    const isDirt = (gx, gy) => {
+        const tCX = Math.floor(gx / 100), tCY = Math.floor(gy / 100);
+        if (tCX < 0 || tCX >= CONFIG.MAP_SIZE || tCY < 0 || tCY >= CONFIG.MAP_SIZE) return false;
+        if (!worldMatrix[tCX]?.[tCY]) return false;
+        const lx = ((gx % 100) + 100) % 100, ly = ((gy % 100) + 100) % 100;
+        const tID = worldMatrix[tCX][tCY][ly * 100 + lx];
+        
+        return tID === 337 || tID === 208; // 337 = Village Dirt, 208 = Town Stone
+    };
+
+    // Helper to figure out if we should fill a squeezed gap with Dirt or Stone
+    const getAdjacentDirtType = (gx, gy) => {
+        const neighbors = [{x:0, y:-1}, {x:0, y:1}, {x:-1, y:0}, {x:1, y:0}];
+        for (let n of neighbors) {
+            const tCX = Math.floor((gx + n.x) / 100), tCY = Math.floor((gy + n.y) / 100);
+            if (tCX >= 0 && tCX < CONFIG.MAP_SIZE && tCY >= 0 && tCY < CONFIG.MAP_SIZE && worldMatrix[tCX]?.[tCY]) {
+                const lx = (((gx + n.x) % 100) + 100) % 100, ly = (((gy + n.y) % 100) + 100) % 100;
+                const tID = worldMatrix[tCX][tCY][ly * 100 + lx];
+                if (tID === 337 || tID === 208) return tID;
+            }
+        }
+        return 337; 
+    };
+
+    const newTiles = [];
+    if (!worldMatrix[cx]?.[cy]) return;
+
+    for (let ly = 0; ly < 100; ly++) {
+        for (let lx = 0; lx < 100; lx++) {
+            const gx = cx * 100 + lx;
+            const gy = cy * 100 + ly;
+
+            // Running on GRASS tiles that are NEXT to dirt
+            if (worldMatrix[cx][cy][ly * 100 + lx] === 63 && !isDirt(gx, gy)) {
+                
+                const n = isDirt(gx, gy - 1) ? 1 : 0;
+                const s = isDirt(gx, gy + 1) ? 8 : 0;
+                const e = isDirt(gx + 1, gy) ? 4 : 0;
+                const w = isDirt(gx - 1, gy) ? 2 : 0;
+
+                const nw = isDirt(gx - 1, gy - 1);
+                const ne = isDirt(gx + 1, gy - 1);
+                const sw = isDirt(gx - 1, gy + 1);
+                const se = isDirt(gx + 1, gy + 1);
+
+                const mask = n | w | e | s;
+                let borderTile = null;
+
+                // EXACT USER MAPPING FOR CORNERS
+                if (mask === 3) borderTile = 302; 
+                else if (mask === 5) borderTile = 304; 
+                else if (mask === 10) borderTile = 350; 
+                else if (mask === 12) borderTile = 354; 
+                
+                // EXACT USER MAPPING FOR SIDES
+                else if (mask === 1) borderTile = 303; 
+                else if (mask === 2) borderTile = 331; 
+                else if (mask === 4) borderTile = 335; 
+                else if (mask === 8) borderTile = 367; 
+                
+                // SQUEEZED GAPS -> Fill with adjacent road type (337 or 208)
+                else if (mask === 6 || mask === 9 || mask === 7 || mask === 11 || mask === 13 || mask === 14 || mask === 15) {
+                    borderTile = getAdjacentDirtType(gx, gy); 
+                }
+                
+                // EXACT USER MAPPING FOR INNER ELBOWS
+                else if (mask === 0) {
+                    if (nw) borderTile = 313;      
+                    else if (ne) borderTile = 315; 
+                    else if (sw) borderTile = 351; 
+                    else if (se) borderTile = 353; 
+                }
+
+                if (borderTile !== null) {
+                    newTiles.push({ idx: ly * 100 + lx, tile: borderTile });
+                }
+            }
+        }
+    }
+
+    // Apply all changes at once!
+    for (const update of newTiles) {
+        worldMatrix[cx][cy][update.idx] = update.tile;
+        
+        // 🌿 Clear plants if the auto-tiler filled the gap with solid dirt!
+        if (update.tile === 337 || update.tile === 208) {
+            import('./plants.js').then(m => m.plants.delete(`${cx * 100 + (update.idx % 100)}_${cy * 100 + Math.floor(update.idx / 100)}`));
+        }
+    }
+}
 
 
 // ==========================================
@@ -2180,8 +2326,8 @@ export function planAllSettlements(worldMap, worldMatrix, roomMatrix, fertilityM
 
     for (let i = 0; i < worldMap.length; i++) {
         const type = worldMap[i];
+        
         if (type === 101 || type === 102 || type === 103 || type === 107) {
-
             const cx = i % size, cy = Math.floor(i / size);
             let tx, ty;
             
@@ -2199,12 +2345,8 @@ export function planAllSettlements(worldMap, worldMatrix, roomMatrix, fertilityM
                 reserveFootprint(tx - 100, ty - 100, 200, 200, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
                 plannedBuildings.push({ func: drawCastle, args: [tx, ty] });
             }
-            // 👇 ADD THIS EXACTLY HERE:
             else if (type === 107) {
-                // If your function uses the "phase" argument, uncomment this wrapper:
-                // if (phase === 'BUILDINGS') {
-                    planMiningCamp(tx, ty, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-                // }
+                planMiningCamp(tx, ty, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
             }
         }
     }
@@ -2225,9 +2367,13 @@ export function planAllSettlements(worldMap, worldMatrix, roomMatrix, fertilityM
 // ==========================================
 // 🚜 PLANNED RANCH ROADS (No Driveway, 1-Tile Buffer)
 // ==========================================
+// 🛤️ INTERNAL SETTLEMENT ROADS
+// ==========================================
+// 🚜 PLANNED RANCH ROADS
+// ==========================================
 export function drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     
-    // 🚀 Helper: 2x2 Road + 1-Tile Buffer = 4x4 Check
+    // 🚀 Helper: 1x1 Road + 1-Tile Buffer = 3x3 Check
     function isRanchStepBlocked(tx, ty) {
         for (let ox = -1; ox <= 1; ox++) {
             for (let oy = -1; oy <= 1; oy++) {
@@ -2248,10 +2394,15 @@ export function drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, 
     }
 
     plannedRanches.forEach(r => {
+        // 🌟 DYNAMIC TILE FIX: Check if the well belongs to a Town (102) to use paved road (208)
+        const well = plannedWells.find(w => w.x === r.wellX && w.y === r.wellY);
+        const roadTileID = 337; // Always use organic dirt for ranch driveways
+
+
         let targetX = r.wellX, targetY = r.wellY;
         let minDist = Math.abs(r.gx + r.gateX - r.wellX) + Math.abs(r.gy - r.wellY);
 
-        // 1. Scan for nearest highway (337) or old road (6) to merge into
+        // 1. Scan for nearest highway (337), paved road (208), or old road (6) to merge into
         for (let ox = -30; ox <= 30; ox++) {
             for (let oy = -30; oy <= 30; oy++) {
                 const checkX = r.gx + r.gateX + ox, checkY = r.gy + oy;
@@ -2261,7 +2412,7 @@ export function drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, 
                     if (worldMatrix[cx]?.[cy]) {
                         const lx = ((checkX % 100) + 100) % 100, ly = ((checkY % 100) + 100) % 100;
                         const tID = worldMatrix[cx][cy][ly * 100 + lx];
-                        if (tID === 337 || tID === 6) {
+                        if (tID === 337 || tID === 208 || tID === 6) {
                             const d = Math.abs(ox) + Math.abs(oy);
                             if (d < minDist) { 
                                 minDist = d; 
@@ -2277,11 +2428,12 @@ export function drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, 
         const gateX = r.gx + r.gateX;
         const gateY = r.gy;
 
-        // 🌟 THE FIX: No more manual driveway stamps!
-        // We start the road EXACTLY 2 tiles below the gate (gateY + 2).
-        // Because the obstacle buffer checks -1 (gateY + 1), it leaves a perfect 1-tile grass gap!
+        // Start EXACTLY 2 tiles below the gate.
         let startX = gateX;
         let startY = gateY + 2; 
+
+        // If the start tile itself is somehow blocked by another building's buffer, abort to prevent a crash
+        if (isRanchStepBlocked(startX, startY)) return;
 
         let openSet = [{ x: startX, y: startY, g: 0, f: 0, path: [] }];
         let closedSet = new Set([`${startX}_${startY}`]);
@@ -2298,6 +2450,8 @@ export function drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, 
 
             if (Math.abs(curr.x - targetX) <= 1 && Math.abs(curr.y - targetY) <= 1) {
                 finalPath = curr.path;
+                // 🌟 FIX 1: Push the final target so the road touches the highway seamlessly!
+                finalPath.push({ x: targetX, y: targetY }); 
                 break;
             }
 
@@ -2322,26 +2476,20 @@ export function drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, 
 
         // 3. DRAW THE ROAD
         if (finalPath) {
-            finalPath.unshift({ x: startX, y: startY });
+            // 🌟 FIX 2: Manually paint the starting tile so it doesn't leave a gap at the gate!
+            setGlobalTile(startX, startY, roadTileID, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
 
             let prevX = startX, prevY = startY;
 
             finalPath.forEach(node => {
                 // If we moved diagonally, fill the corner (L-Shape) to prevent 1-tile fractures
                 if (Math.abs(node.x - prevX) > 0 && Math.abs(node.y - prevY) > 0) {
-                    for (let ox = 0; ox < 1; ox++) {
-                        for (let oy = 0; oy < 1; oy++) {
-                            setGlobalTile(prevX + ox, node.y + oy, 337, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-                        }
-                    }
+                    setGlobalTile(prevX, node.y, roadTileID, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
                 }
 
-                // Stamp the actual 2x2 road
-                for (let ox = 0; ox < 1; ox++) {
-                    for (let oy = 0; oy < 1; oy++) {
-                        setGlobalTile(node.x + ox, node.y + oy, 337, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-                    }
-                }
+                // Stamp the actual 1x1 road node (Removed the redundant ox < 1 loops!)
+                setGlobalTile(node.x, node.y, roadTileID, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+                
                 prevX = node.x;
                 prevY = node.y;
             });
@@ -2354,8 +2502,7 @@ export function buildPlannedStructures(worldMatrix, roomMatrix, fertilityMatrix,
         b.func(b.args[0], b.args[1], worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     });
     plannedRanches.forEach(r => {
-        // 👇 Passes r.hasBarn
-        drawRanch(r.gx, r.gy, r.w, r.h, r.gateX, r.hasBarn, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        drawRanch(r.gx, r.gy, r.w, r.h, r.gateX, r.barnType, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     });
 }
 export function buildPlannedWells(worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
@@ -2421,8 +2568,11 @@ function isInsideVillagePolygon(gx, gy) {
 // ==========================================
 // 🚀 1-TILE BUFFER OBSTACLE CHECK
 // ==========================================
+// 🚀 1-TILE BUFFER OBSTACLE CHECK
+
+
+// 🚀 1-TILE BUFFER OBSTACLE CHECK
 function isStepBlocked(tx, ty, worldMatrix, roomMatrix) {
-    // 3x3 Check ensures a strict 1-tile gap between the road and buildings/fences
     for (let ox = -1; ox <= 1; ox++) {
         for (let oy = -1; oy <= 1; oy++) {
             const x = tx + ox, y = ty + oy;
@@ -2434,77 +2584,63 @@ function isStepBlocked(tx, ty, worldMatrix, roomMatrix) {
             const tID = worldMatrix[cx][cy][ly * 100 + lx];
             const rID = roomMatrix[cx][cy][ly * 100 + lx];
 
-            // 🛑 Block on Blueprints (9998), Water (17), or Fences (18, 21, 24)
             if (rID === 9998 || [17, 18, 21, 24].includes(tID)) return true;
         }
     }
     return false;
 }
 
-// ==========================================
-// 🧠 DIAGONAL PATHFINDER (Wall Hugger)
-// ==========================================
-function findRingPath(startX, startY, endX, endY, worldMatrix, roomMatrix) {
+// ⚡ LIGHTNING FAST A* PATHFINDER (Prevents 3-second lag)
+function findFastPath(startX, startY, endX, endY, worldMatrix, roomMatrix) {
     let openSet = [{ x: startX, y: startY, g: 0, f: 0, path: [] }];
-    let closedSet = new Set([`${startX}_${startY}`]);
+    let closedSet = new Set();
+    closedSet.add(startX * 10000 + startY); // Integer math is faster than strings!
+    
     let steps = 0;
-
-    // High maxSteps ensures it doesn't give up on wrapping around large buildings
-    while (openSet.length > 0 && steps++ < 3000) {
+    while (openSet.length > 0 && steps++ < 1000) {
         let lowestIdx = 0;
         for (let i = 1; i < openSet.length; i++) {
             if (openSet[i].f < openSet[lowestIdx].f) lowestIdx = i;
         }
         let curr = openSet.splice(lowestIdx, 1)[0];
-
-        // Flexible arrival: If we are adjacent to the target, call it good!
-        if (Math.abs(curr.x - endX) <= 1 && Math.abs(curr.y - endY) <= 1) {
-            return curr.path;
-        }
-
-        // Include DIAGONALS for smooth, natural road winding
+        
+        if (Math.abs(curr.x - endX) <= 1 && Math.abs(curr.y - endY) <= 1) return curr.path;
+        
         const neighbors = [
             {x:0, y:1}, {x:0, y:-1}, {x:1, y:0}, {x:-1, y:0},
             {x:1, y:1}, {x:-1, y:-1}, {x:1, y:-1}, {x:-1, y:1}
         ];
-
+        
         for (let n of neighbors) {
             let nx = curr.x + n.x, ny = curr.y + n.y;
-            let key = `${nx}_${ny}`;
-
+            let key = nx * 10000 + ny;
             if (!closedSet.has(key) && !isStepBlocked(nx, ny, worldMatrix, roomMatrix)) {
                 closedSet.add(key);
-                // Diagonals cost slightly more (1.4) than straight (1) to keep the line taut
-                let cost = (n.x !== 0 && n.y !== 0) ? 1.4 : 1; 
-                let g = curr.g + cost;
-                let h = Math.abs(nx - endX) + Math.abs(ny - endY);
+                let g = curr.g + ((n.x !== 0 && n.y !== 0) ? 1.4 : 1);
+                let h = Math.abs(nx - endX) + Math.abs(ny - endY); 
                 openSet.push({ x: nx, y: ny, g: g, f: g + h, path: [...curr.path, {x: nx, y: ny}] });
             }
         }
     }
     return null;
 }
-
 // ==========================================
-// ⭕ DYNAMIC PERIMETER ROADS
-// ==========================================
+// ⭕ DYNAMIC PERIMETER ROADS (Reverted to 337)
 export function drawRingRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     plannedWells.forEach(well => {
         let structures = [];
 
         plannedBuildings.forEach(b => {
             const tx = b.args[0], ty = b.args[1];
-            const dx = tx - well.x, dy = ty - well.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < 100) structures.push({ x: tx, y: ty, dist, dx, dy });
+            const dist = Math.sqrt(Math.pow(tx - well.x, 2) + Math.pow(ty - well.y, 2));
+            if (dist < 100) structures.push({ x: tx, y: ty, dist, dx: tx - well.x, dy: ty - well.y });
         });
 
         plannedRanches.forEach(r => {
             if (r.wellX === well.x && r.wellY === well.y) {
                 const tx = r.gx + Math.floor(r.w / 2), ty = r.gy - Math.floor(r.h / 2);
-                const dx = tx - well.x, dy = ty - well.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                structures.push({ x: tx, y: ty, dist, dx, dy });
+                const dist = Math.sqrt(Math.pow(tx - well.x, 2) + Math.pow(ty - well.y, 2));
+                structures.push({ x: tx, y: ty, dist, dx: tx - well.x, dy: ty - well.y });
             }
         });
 
@@ -2517,13 +2653,12 @@ export function drawRingRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap
         perimeterNodes.sort((a, b) => a.angle - b.angle);
 
         const waypoints = perimeterNodes.map(s => {
-            let padDist = s.dist + 8; 
+            let padDist = s.dist + 6; // Push road further outside fences
             let px = Math.floor(well.x + Math.cos(s.angle) * padDist);
             let py = Math.floor(well.y + Math.sin(s.angle) * padDist);
 
-            // 🌟 FIX: Increased safety limit to 50 to guarantee waypoint is not trapped inside a house buffer
             let safetyLimit = 0;
-            while (isStepBlocked(px, py, worldMatrix, roomMatrix) && safetyLimit++ < 50) {
+            while (isStepBlocked(px, py, worldMatrix, roomMatrix) && safetyLimit++ < 15) {
                 padDist++;
                 px = Math.floor(well.x + Math.cos(s.angle) * padDist);
                 py = Math.floor(well.y + Math.sin(s.angle) * padDist);
@@ -2531,31 +2666,35 @@ export function drawRingRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap
             return { x: px, y: py };
         });
 
-        well.polygon = waypoints;
+        well.polygon = waypoints; // 👈 CRITICAL: Saves polygon for the classic Wall later!
 
-        // 5. Connect the Waypoints using the Wall-Hugging Pathfinder
         for (let i = 0; i < waypoints.length; i++) {
             const p1 = waypoints[i];
             const p2 = waypoints[(i + 1) % waypoints.length];
             
-            const path = findRingPath(p1.x, p1.y, p2.x, p2.y, worldMatrix, roomMatrix);
+            const path = findFastPath(p1.x, p1.y, p2.x, p2.y, worldMatrix, roomMatrix);
             
             if (path) {
-                // 🌟 FIX 1 KEPT: Manually paint the starting waypoint so it isn't skipped!
                 setGlobalTile(p1.x, p1.y, 337, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+                let prevX = p1.x, prevY = p1.y;
 
-                // Reverted to pure diagonal stamping!
                 path.forEach(node => {
+                    if (Math.abs(node.x - prevX) > 0 && Math.abs(node.y - prevY) > 0) {
+                        setGlobalTile(prevX, node.y, 337, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+                    }
                     setGlobalTile(node.x, node.y, 337, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+                    prevX = node.x; prevY = node.y;
                 });
             } else {
-                // 🌟 FIX 2 KEPT: avoidObstacles MUST be false, 
-                // otherwise it intentionally leaves holes when passing buildings!
                 drawInterCellRoad(p1.x, p1.y, p2.x, p2.y, worldMatrix, roomMatrix, fertilityMatrix, worldMap, 337, 1, false);
             }
         }
     });
 }
+
+// ==========================================
+// 🚜 PLANNED RANCH ROADS (Reverted to 337)
+
 // ==========================================
 // ⛏️ MINING CAMP BUILDERS
 // ==========================================
@@ -2635,35 +2774,28 @@ export function drawOreDeposit(gx, gy, worldMatrix, roomMatrix, fertilityMatrix,
 }
 
 export function drawMiningArea(gvx, gvy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
-    // Centralized Ore Cluster (3 to 5 nodes tightly packed)
-    const depositCount = Math.floor(seededRandom() * 3) + 3; 
-    for (let i = 0; i < depositCount; i++) {
-        const offsetX = Math.floor(seededRandom() * 6) - 3;
-        const offsetY = Math.floor(seededRandom() * 6) - 3;
-        drawOreDeposit(gvx + offsetX, gvy + offsetY, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-    }
+    // 🌟 THE FIX: A single 1x1 Ore Deposit dead center
+    setGlobalTile(gvx, gvy, 29, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+    plants.delete(`${gvx}_${gvy}`);
 }
 
 export function planMiningCamp(gvx, gvy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
-    // 1. Center Ore Deposits (Reserve a 6x6 area dead center)
-    if (isAreaClear(gvx - 3, gvy - 3, 6, 6, worldMatrix, roomMatrix, worldMap)) {
-        reserveFootprint(gvx - 3, gvy - 3, 6, 6, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+    // 1. Center Ore Deposit (Reserve a 1x1 area dead center)
+    if (isAreaClear(gvx, gvy, 1, 1, worldMatrix, roomMatrix, worldMap)) {
+        reserveFootprint(gvx, gvy, 1, 1, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
         plannedBuildings.push({ func: drawMiningArea, args: [gvx, gvy] });
     }
 
-    // 2. Scatter Tents (3 to 5 tents) within a 20-tile radius ring
+    // 2. Scatter Tents (3 to 5 tents)
     const numTents = Math.floor(seededRandom() * 3) + 3; 
     let placedTents = 0, attempts = 0;
     while (placedTents < numTents && attempts < 100) {
         attempts++;
-        
-        // Pick a point in an outer ring (distance 6 to 12 away from center)
         const angle = seededRandom() * Math.PI * 2;
         const dist = 6 + (seededRandom() * 6);
         const tx = gvx + Math.floor(Math.cos(angle) * dist);
         const ty = gvy + Math.floor(Math.sin(angle) * dist);
 
-        // Tents are 2x2
         if (isAreaClear(tx, ty, 2, 2, worldMatrix, roomMatrix, worldMap)) {
             reserveFootprint(tx, ty, 2, 2, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
             plannedBuildings.push({ func: drawTent, args: [tx, ty] });
@@ -2671,15 +2803,13 @@ export function planMiningCamp(gvx, gvy, worldMatrix, roomMatrix, fertilityMatri
         }
     }
 
-    // 3. Scatter Campfires (1 to 3 fires) in the mid-ring
+    // 3. Scatter Campfires (1 to 3 fires)
     const numFires = Math.floor(seededRandom() * 3) + 1;
     let placedFires = 0; attempts = 0;
     while (placedFires < numFires && attempts < 50) {
         attempts++;
         const tx = gvx + Math.floor(seededRandom() * 16) - 8;
         const ty = gvy + Math.floor(seededRandom() * 16) - 8;
-        
-        // Campfires need a 3x3 footprint (Fire + Seats)
         if (isAreaClear(tx - 1, ty - 1, 3, 3, worldMatrix, roomMatrix, worldMap)) {
             reserveFootprint(tx - 1, ty - 1, 3, 3, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
             plannedBuildings.push({ func: drawCampfireArea, args: [tx, ty] });
@@ -2694,12 +2824,142 @@ export function planMiningCamp(gvx, gvy, worldMatrix, roomMatrix, fertilityMatri
         attempts++;
         const tx = gvx + Math.floor(seededRandom() * 20) - 10;
         const ty = gvy + Math.floor(seededRandom() * 20) - 10;
-        
-        // Skulls are 1x1
         if (isAreaClear(tx, ty, 1, 1, worldMatrix, roomMatrix, worldMap)) {
             reserveFootprint(tx, ty, 1, 1, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
             plannedBuildings.push({ func: drawCampDecoration, args: [tx, ty] });
             placedSkulls++;
+        }
+    }
+}
+
+// ==========================================
+// 🧹 BLUEPRINT CLEANUP
+// ==========================================
+export function clearBlueprints(roomMatrix) {
+    for (let cx = 0; cx < CONFIG.MAP_SIZE; cx++) {
+        for (let cy = 0; cy < CONFIG.MAP_SIZE; cy++) {
+            if (!roomMatrix[cx]?.[cy]) continue;
+            for (let idx = 0; idx < 10000; idx++) {
+                // If it is still 9998, reset it back to Wilderness (0)
+                if (roomMatrix[cx][cy][idx] === 9998) {
+                    roomMatrix[cx][cy][idx] = 0;
+                }
+            }
+        }
+    }
+}
+
+// ==========================================
+// 🧱 TOWN FORTIFICATIONS (L-Shape Walls)
+export function drawTownWalls(worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
+    plannedWells.forEach(well => {
+        // 🌟 ONLY draw walls around Towns (102)
+        if (well.type !== 102 || !well.polygon) return; 
+
+        // 1. Generate Wall Waypoints by expanding the Ring Road polygon outward
+        const wallWaypoints = well.polygon.map(p => {
+            const dx = p.x - well.x;
+            const dy = p.y - well.y;
+            const dist = Math.hypot(dx, dy) || 1;
+            const pad = dist + 4; // Push 4 tiles outside the Ring Road
+            return {
+                x: Math.floor(well.x + (dx/dist) * pad),
+                y: Math.floor(well.y + (dy/dist) * pad)
+            };
+        });
+
+        // 2. The Orthogonal Wall Painter
+        const paintWall = (tx, ty) => {
+            const cx = Math.floor(tx / 100), cy = Math.floor(ty / 100);
+            if (cx < 0 || cx >= CONFIG.MAP_SIZE || cy < 0 || cy >= CONFIG.MAP_SIZE) return;
+            if (!worldMatrix[cx]?.[cy]) return;
+
+            const lx = ((tx % 100) + 100) % 100, ly = ((ty % 100) + 100) % 100;
+            const rID = roomMatrix[cx][cy][ly * 100 + lx];
+
+            if (rID === 9998) return; // Never crush houses
+
+            // 🛑 GAP FIX: Check a 3x3 area. If a road is near, don't draw wall to leave a gate opening.
+            for(let ox = -1; ox <= 1; ox++) {
+                for(let oy = -1; oy <= 1; oy++) {
+                    const nCX = Math.floor((tx+ox) / 100), nCY = Math.floor((ty+oy) / 100);
+                    if(worldMatrix[nCX]?.[nCY]) {
+                        const nLX = (((tx+ox) % 100) + 100) % 100, nLY = (((ty+oy) % 100) + 100) % 100;
+                        const nTID = worldMatrix[nCX][nCY][nLY * 100 + nLX];
+                        if (nTID === 337 || nTID === 208 || nTID === 12 || nTID === 13) return; // Gap found!
+                    }
+                }
+            }
+            setGlobalTile(tx, ty, 11, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        };
+
+        // 3. Connect the dots using ONLY classic L-Shapes!
+        for (let i = 0; i < wallWaypoints.length; i++) {
+            const p1 = wallWaypoints[i];
+            const p2 = wallWaypoints[(i + 1) % wallWaypoints.length];
+            
+            let cx = p1.x, cy = p1.y;
+            while (cx !== p2.x) { paintWall(cx, cy); cx += Math.sign(p2.x - cx); }
+            while (cy !== p2.y) { paintWall(cx, cy); cy += Math.sign(p2.y - cy); }
+            paintWall(p2.x, p2.y);
+        }
+    });
+}
+
+// ==========================================
+// 🏖️ AUTO-TILING SAND SHORELINES
+// ==========================================
+// 🏖️ AUTO-TILING SAND SHORELINES
+
+
+
+
+// ==========================================
+// 🌊 GLOBAL SHORELINE GENERATOR
+// ==========================================
+export function generateGlobalShorelines(worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
+    console.log("🌊 Generating Global Shorelines...");
+    
+    for (let cx = 0; cx < CONFIG.MAP_SIZE; cx++) {
+        for (let cy = 0; cy < CONFIG.MAP_SIZE; cy++) {
+            const blueprintIdx = (cy * CONFIG.MAP_SIZE) + cx;
+            const cellType = worldMap[blueprintIdx];
+            const isLand = cellType >= CONFIG.LAND_THRESHOLD || cellType >= 100;
+
+            if (!isLand) {
+                setWorldSeed((window.worldSeed || 1) + (cx * 1000) + cy);
+                const { score } = applyShorelineRules(cx, cy, worldMap);
+                const inb = getInbound(cx, cy);
+                const data = worldMatrix[cx][cy];
+                const fData = fertilityMatrix[cx][cy];
+
+                let out = { 
+                    outW: inb.inWest, outE: inb.inEast, outN: inb.inNorth, outS: inb.inSouth,
+                    lW: inb.lWest, lE: inb.lEast, lN: inb.lNorth, lS: inb.lSouth 
+                };
+
+                if (score & 1) out.outN = paintSide(data, inb.inNorth, "NORTH");
+                if (score & 2) out.outW = paintSide(data, inb.inWest,  "WEST");
+                if (score & 4) out.outE = paintSide(data, inb.inEast,  "EAST");
+                if (score & 8) out.outS = paintSide(data, inb.inSouth, "SOUTH");
+
+                if (score & 16)  paintCorner(data, inb.inNorth, inb.inWest, "NW");
+                if (score & 32)  paintCorner(data, out.outN, inb.inEast, "NE");
+                if (score & 64)  paintCorner(data, inb.inSouth, out.outW, "SW");
+                if (score & 128) paintCorner(data, out.outS, out.outE, "SE");
+
+                if (score & 1) out.lN = paintLandSide(data, fData, inb.lNorth, "NORTH");
+                if (score & 2) out.lW = paintLandSide(data, fData, inb.lWest, "WEST");
+                if (score & 4) out.lE = paintLandSide(data, fData, inb.lEast, "EAST");
+                if (score & 8) out.lS = paintLandSide(data, fData, inb.lSouth, "SOUTH");
+
+                if (score & 16)  paintLandCorner(data, fData, inb.lNorth, inb.lWest, "NW");
+                if (score & 32)  paintLandCorner(data, fData, out.lN, inb.lEast, "NE");
+                if (score & 64)  paintLandCorner(data, fData, inb.lSouth, out.lW, "SW");
+                if (score & 128) paintLandCorner(data, fData, out.lS, out.lE, "SE");
+
+                cellMemory.set(`${cx}_${cy}`, out);
+            }
         }
     }
 }

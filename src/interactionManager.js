@@ -241,12 +241,11 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
         }
 
         if (target.tileID === 29) {
-            if (hero.inventory.length < hero.maxSlots) {
-                giveItemToHero(createItem(ITEM_TYPES.GOLD_ORE));
-                inputState.interact = false;
-                inputState.action = false;
-                return;
-            }
+            // Tell the server we want to look at this specific ore vein
+            if (socket) socket.emit('requestOre', `ore_${tx}_${ty}`);
+            inputState.interact = false;
+            inputState.action = false;
+            return;
         }
     }
 
@@ -399,16 +398,54 @@ function consumeFood() {
         hero.energy = Math.min(hero.maxEnergy, hero.energy + restoreAmount);
         console.log(`🍗 Consumed ${item.name}! +${restoreAmount} Energy.`);
 
-        /*
-        // 👇 DEBUG TOOL: SONIC TOMATO
+        // 👇 🌟 DEBUG TOOL: TOMATO TELEPORT TO MINING CAMP
         if (item.seedType === "tomato_item") {
-            if (!hero.buffs) hero.buffs = {};
-            // Toggle it! Eat one to go fast, eat another to go back to normal.
-            hero.buffs.tomatoDebug = !hero.buffs.tomatoDebug; 
-            recalculateStats();
-            console.log(`🍅 DEBUG: Super Speed ${hero.buffs.tomatoDebug ? 'ACTIVATED (+900)' : 'DEACTIVATED'}!`);
+            import('./cellDecorator.js').then(module => {
+                const currentCX = Math.floor(hero.x / 1600);
+                const currentCY = Math.floor(hero.y / 1600);
+                let closestDist = Infinity;
+                let targetX = 0, targetY = 0;
+
+                // 1. Scan the macro map for Mining Camps (107)
+                for (let i = 0; i < window.worldMap.length; i++) {
+                    if (window.worldMap[i] === 107) {
+                        const cx = i % CONFIG.MAP_SIZE;
+                        const cy = Math.floor(i / CONFIG.MAP_SIZE);
+                        
+                        const dist = Math.abs(cx - currentCX) + Math.abs(cy - currentCY);
+                        
+                        // We use > 0 to make sure we don't teleport to the camp we are currently standing in!
+                        if (dist > 0 && dist < closestDist) {
+                            closestDist = dist;
+                            
+                            // Calculate the EXACT mathematical center (just like planMiningCamp does!)
+                            const seed = window.worldSeed || 1;
+                            const hash = Math.abs(Math.sin((cx + seed) * 12.9898 + (cy + seed) * 78.233) * 43758.5453);
+                            targetX = cx * 100 + (Math.floor(hash * 60) % 60 + 20);
+                            targetY = cy * 100 + (Math.floor((hash * 10) * 60) % 60 + 20);
+                        }
+                    }
+                }
+
+                // 2. Perform the Warp!
+                if (closestDist !== Infinity) {
+                    console.log(`🍅 TOMATO WARP! Jumping to Camp at [${targetX}, ${targetY}]`);
+                    hero.x = targetX * 16;
+                    hero.y = targetY * 16;
+                    
+                    // Tell the server we moved so it doesn't rubberband us
+                    if (socket) {
+                        socket.emit('movement', {
+                            x: hero.x, y: hero.y, dir: hero.dir, animFrame: hero.frame,
+                            isMoving: false, isWindingUp: false, currentTileID: 63
+                        });
+                    }
+                } else {
+                    console.log(`🍅 TOMATO WARP FAILED: No other mining camps exist on this map!`);
+                }
+            });
         }
-        */
+        // 👆 END DEBUG TOOL
 
         // 🎒 Subtract from stack
         item.count--;
@@ -753,10 +790,11 @@ export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remoteP
     if (inputState.moveX !== 0 || inputState.moveY !== 0) isManualMove = true;
 
     // 2. HOLD-TO-SCAN & LOCK (Triggered by holding the Attack Button)
+    // 2. HOLD-TO-SCAN & LOCK (Triggered by holding the Attack Button)
     if (inputState.mainBtn) {
         import('./combat.js').then(c => {
-            // Constantly scan while holding the button to find the nearest target
-            c.scanForTarget(hero, 150);
+            // 🌟 FIX: Pass world and room matrix so it can see Ores!
+            c.scanForTarget(hero, 150, worldMatrix, roomMatrix);
             
             if (c.currentTarget) {
                 // Keep updating the hover target
@@ -832,8 +870,23 @@ export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remoteP
                     }
                 }
 
-                if (hero.target.isAnimal) hero.target.hp -= finalDamage;
-                else applyPlayerDamage(hero.target, finalDamage);
+                // ... (flux shield math is here)
+
+                // 🌟 NEW: Handle Ore Mining vs Creature Damage
+                if (hero.target.isOre) {
+                    if (hero.equipment.mainHand && hero.equipment.mainHand.seedType === 'tool_pickaxe') {
+                        if (socket) socket.emit('mineOreStrike', { oreId: hero.target.id });
+                        console.log("⛏️ Chink! You struck the ore.");
+                    } else {
+                        console.log("❌ You need a Pickaxe to mine this ore!");
+                    }
+                } 
+                else if (hero.target.isAnimal) { 
+                    hero.target.hp -= finalDamage; 
+                } 
+                else { 
+                    applyPlayerDamage(hero.target, finalDamage); 
+                }
                 
                 if (fluxShieldToGain > 0) {
                     hero.shield += fluxShieldToGain;

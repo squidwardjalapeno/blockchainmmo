@@ -237,11 +237,37 @@ export function drawMap(worldMatrix, roomMatrix) {
                     const woodsImg = images.woodsTileset2;
                     if (woodsImg && woodsImg.complete) {
                         
-                        // ROAD BORDERS (Now includes ALL 12 borders)
+                        // 🌟 DYNAMIC BACKGROUNDS FOR BORDERS
                         const roadBorders = [302, 303, 304, 313, 315, 331, 335, 350, 351, 353, 354, 367];
                         if (roadBorders.includes(tID)) {
-                            const dirtIdx = 337 - 300; 
-                            ctx2.drawImage(woodsImg, (dirtIdx % 12) * 16, Math.floor(dirtIdx / 12) * 16, 16, 16, sX, sY, 16, 16);
+                            
+                            // PURE LOGIC FIX: Look 1 tile around us. Are we at the beach?
+                            let isBeach = false;
+                            for (let ox = -1; ox <= 1; ox++) {
+                                for (let oy = -1; oy <= 1; oy++) {
+                                    const nCX = Math.floor((k + ox) / 100);
+                                    const nCY = Math.floor((l + oy) / 100);
+                                    if (worldMatrix[nCX]?.[nCY]) {
+                                        const nLX = (((k + ox) % 100) + 100) % 100;
+                                        const nLY = (((l + oy) % 100) + 100) % 100;
+                                        const neighborID = worldMatrix[nCX][nCY][nLY * 100 + nLX];
+                                        
+                                        // If touching Sand (0) or Water (10, 11, 17)
+                                        if (neighborID === 0 || neighborID === 10 || neighborID === 11 || neighborID === 17) {
+                                            isBeach = true;
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (isBeach) {
+                                // Draw SAND (Tile 0 from worldTilesColor) underneath!
+                                ctx2.drawImage(tileImg, 0, 0, 16, 16, sX, sY, 16, 16);
+                            } else {
+                                // Draw DIRT (Tile 337 from woodsTileset2) underneath!
+                                const dirtIdx = 337 - 300; 
+                                ctx2.drawImage(woodsImg, (dirtIdx % 12) * 16, Math.floor(dirtIdx / 12) * 16, 16, 16, sX, sY, 16, 16);
+                            }
                         }
 
                         // 🌲 THE SCATTERED TREE FIX (Trunks Only)
@@ -825,9 +851,9 @@ export function drawHero() {
             }
             
             // 6. Dynamic Hilt Pivot
-            // Hold weapons by the handle, hold other items by their visual center
-            const hiltX = wpn.isWeapon ? DAGGER_HILT.x : 8;
-            const hiltY = wpn.isWeapon ? DAGGER_HILT.y : 8;
+            // Uses the custom hilt from items.js, or falls back to the center (8, 8)
+            const hiltX = wpn.hilt ? wpn.hilt.x : (wpn.isWeapon ? 5 : 8);
+            const hiltY = wpn.hilt ? wpn.hilt.y : (wpn.isWeapon ? 10 : 8);
 
             // 7. Draw the item
             ctx2.drawImage(
@@ -1200,25 +1226,24 @@ export function drawEnergyBar(ctx, entity, color = "#FFD700") {
 }
 
 export function drawTargetCircle(ctx, target) {
-    if (!target || target.hp <= 0) return; // Don't draw on dead players
+    if (!target || target.hp <= 0) return; 
 
     const screenX = viewport.offset[0] + target.x + 8;
-    const screenY = viewport.offset[1] + target.y + 8; // 👈 Changed from +12 to +8
+    const screenY = viewport.offset[1] + target.y + 8; 
 
-    // 2. Animated Pulse Effect
     const pulse = Math.sin(Date.now() / 150) * 2;
     const radius = 12 + pulse;
 
-    // 3. Draw the "Lock-On" Ring
     ctx.strokeStyle = "rgba(255, 0, 0, 0.8)"; 
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
     ctx.stroke();
     
-    // 4. Draw the enemy's health bar
-    // Since 'target' is a remote player, this will now show their PvP HP
-    drawHealthBar(ctx, target, "#FF4444"); 
+    // 🌟 FIX: Don't draw the HP bar if we are targeting a rock!
+    if (!target.isOre) {
+        drawHealthBar(ctx, target, "#FF4444"); 
+    }
 }
 
 // --- Add this to src/renderer.js ---

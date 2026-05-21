@@ -354,6 +354,9 @@ export function initUI() {
             if (socket) socket.emit('identifyWallet', guestID);
         };
     }
+
+    // 👇 ADD THIS LINE TO ACTIVATE THE MINING BUTTONS!
+    initMiningListeners();
 }
 
 // ==========================================
@@ -1211,6 +1214,95 @@ export function openSmelterMenu() {
 
     const closeBtn = document.getElementById('close-smelter-btn');
     if (closeBtn) closeBtn.onclick = () => smelterUI.classList.add('hidden');
+}
+
+// ==========================================
+// ⛏️ MINING UI LOGIC
+// ==========================================
+export let activeOreId = null;
+export let activeOreData = null;
+let confirmingSpeedUp = false;
+
+export function openMiningMenu(oreId, data) {
+    activeOreId = oreId;
+    activeOreData = data;
+    confirmingSpeedUp = false; // Reset the state
+    document.getElementById('mining-menu').classList.remove('hidden');
+    renderMiningUI();
+}
+
+export function handleRemoteOreUpdate(oreId, data) {
+    if (activeOreId === oreId) {
+        activeOreData = data;
+        renderMiningUI();
+    }
+}
+
+function renderMiningUI() {
+    if (!activeOreData) return;
+    
+    const bar = document.getElementById('mining-progress-bar');
+    const text = document.getElementById('mining-progress-text');
+    const costText = document.getElementById('mining-cost-text'); // 👈 Grab the new element
+    const actionBtn = document.getElementById('mining-action-btn');
+
+    // Always keep the fraction visible in the bar now!
+    const pct = ((activeOreData.maxWork - activeOreData.workLeft) / activeOreData.maxWork) * 100;
+    bar.style.width = `${pct}%`;
+    text.innerText = `${activeOreData.workLeft} / ${activeOreData.maxWork}`;
+
+    if (activeOreData.claimed) {
+        actionBtn.innerText = "DEPLETED";
+        actionBtn.className = "pixel-btn";
+        actionBtn.disabled = true;
+        text.innerText = "0 / 3600";
+        costText.innerText = "";
+    } else if (activeOreData.workLeft <= 0) {
+        actionBtn.innerText = "COLLECT NOW!";
+        actionBtn.className = "pixel-btn safe";
+        actionBtn.disabled = false;
+        text.innerText = "JOB COMPLETE";
+        costText.innerText = "";
+        confirmingSpeedUp = false;
+    } else {
+        actionBtn.disabled = false;
+        
+        // The dynamic Speed Up flip logic!
+        if (confirmingSpeedUp) {
+            actionBtn.innerText = "SPEED - UP NOW!";
+            actionBtn.className = "pixel-btn safe";
+            costText.innerText = "COST: 50 UNI"; // 👈 Put the cost underneath the bar
+        } else {
+            actionBtn.innerText = "SPEED - UP";
+            actionBtn.className = "pixel-btn";
+            costText.innerText = ""; // 👈 Clear it when not confirming
+        }
+    }
+}
+
+export function initMiningListeners() {
+    document.getElementById('close-mining-btn').addEventListener('click', () => {
+        document.getElementById('mining-menu').classList.add('hidden');
+        activeOreId = null;
+        confirmingSpeedUp = false;
+    });
+
+    document.getElementById('mining-action-btn').addEventListener('click', () => {
+        if (activeOreData.claimed) return;
+
+        if (activeOreData.workLeft <= 0) {
+            if (socket) socket.emit('collectOre', { oreId: activeOreId });
+        } else {
+            if (!confirmingSpeedUp) {
+                confirmingSpeedUp = true;
+                renderMiningUI(); // Flip to confirm screen
+            } else {
+                if (socket) socket.emit('speedUpOre', { oreId: activeOreId });
+                confirmingSpeedUp = false; 
+                renderMiningUI(); // Re-render to catch server sync
+            }
+        }
+    });
 }
 
 // ==========================================

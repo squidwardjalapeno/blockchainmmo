@@ -181,6 +181,27 @@
             </div>
         </div>
 
+        <!-- MINING MENU -->
+        <div id="mining-menu" class="hidden menu-modal" style="z-index: 3000;">
+            <div class="pixel-panel" style="width: 350px; text-align: center;">
+                <h2 style="margin-top:0;">⛏️ IRON VEIN</h2>
+                <p style="font-size: 8px; margin-bottom: 20px; color:#555;">Equip a pickaxe and attack the rock to mine it manually.</p>
+                
+                <div style="background: #fff; padding: 15px; border: 4px solid var(--bg-dark); margin-bottom: 20px;">
+                    <div style="font-size: 10px; margin-bottom: 10px;">WORK REMAINING</div>
+                    <div style="width: 100%; background: #ccc; height: 16px; border: 2px solid #000; position: relative; margin-bottom: 8px;">
+                        <div id="mining-progress-bar" style="width: 0%; height: 100%; background: var(--highlight);"></div>
+                        <div id="mining-progress-text" style="position: absolute; width: 100%; top: 2px; font-size: 8px; text-align: center; color: #000;">3600 / 3600</div>
+                    </div>
+                    <!-- 👇 NEW: Dedicated space for the Speed-Up Cost! -->
+                    <div id="mining-cost-text" style="font-size: 8px; color: var(--banana-dark); height: 10px;"></div>
+                </div>
+
+                <button id="mining-action-btn" class="pixel-btn" style="width: 100%; margin-bottom: 10px;">SPEED - UP</button>
+                <button id="close-mining-btn" class="pixel-btn cancel" style="width: 100%;">STEP AWAY</button>
+            </div>
+        </div>
+
         <!-- GENERAL STORE MENU -->
         <div id="store-menu" class="hidden menu-modal">
             <div class="pixel-panel chest-modal">

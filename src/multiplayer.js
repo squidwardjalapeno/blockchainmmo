@@ -155,6 +155,24 @@ export function initMultiplayer() {
                 chatBox.removeChild(chatBox.firstChild);
             }
         });
+
+        socket.on('oreData', (data) => { import('./uiManager.js').then(m => m.openMiningMenu(data.oreId, data.data)); });
+        socket.on('oreUpdated', (data) => { import('./uiManager.js').then(m => m.handleRemoteOreUpdate(data.oreId, data.data)); });
+        socket.on('oreMessage', (msg) => { alert(msg); });
+        
+        socket.on('receiveOreLoot', () => {
+            import('./items.js').then(items => {
+                import('./interactionManager.js').then(m => {
+                    const ore = items.createItem(items.ITEM_TYPES.IRON_ORE);
+                    if (m.giveItemToHero(ore)) {
+                        alert("You collected the Iron Ore!");
+                        import('./uiManager.js').then(ui => ui.renderTabContent()); // Refresh inventory UI
+                    } else {
+                        alert("Your backpack is full! Make room first.");
+                    }
+                });
+            });
+        });
         
         // 1. Handle Knockbacks
         socket.on('forcedMovement', (data) => {

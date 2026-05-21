@@ -93,6 +93,10 @@ let chestDb = {}; // 🆕 Database for all chests in the world
 let storeDb = {}; // 🆕 Database for General Stores
 let cellarDb = {}; // ✅ This was the missing line
 let hayDb = {}; // 🆕 Database for Hay Storage
+let oreDb = {}; // ⛏️ NEW: Database for mining jobs!
+if (fs.existsSync('ores.json')) {
+    try { oreDb = JSON.parse(fs.readFileSync('ores.json', 'utf8')); } catch(err){}
+}
 
 // In server.js
 let authDb = {}; 
@@ -250,22 +254,21 @@ io.on('connection', (socket) => {
         if (!chestDb[chestId]) {
             chestDb[chestId] = [
                 {
-                    name: "Rusty Dagger",
-                    seedType: "weapon_dagger",
-                    spriteID: 0,
-                    tileset: "weaponTileset",
+                    name: "Miner's Pickaxe",
+                    seedType: "tool_pickaxe",
+                    spriteID: 69,
+                    tileset: "transparentTileset",
                     isWeapon: true,
-                    ad: 5,
+                    ad: 3,
                     health: 100,
                     virulence: 0,
                     fertility: 0,
                     count: 1,      
-                    maxStack: 1,  
-                    drawSize: 8,   // 👈 ADD THIS LINE HERE!
- 
+                    maxStack: 1,   
+                    drawSize: 8,
                     timestamp: Date.now()
                 }
-                /*
+                
                 ,
                 // 👇 DEBUG: THE SONIC TOMATO
                 {
@@ -280,10 +283,10 @@ io.on('connection', (socket) => {
                     maxStack: 8,
                     typeLabel: "Food", 
                     energy: 35, 
-                    description: "A hearty fruit. (DEBUG: +900 Speed!)",
+                    description: "A hearty fruit. (DEBUG: +TP!)",
                     timestamp: Date.now()
                 }
-                    */
+                    
             ];
         }
         // Send the data back ONLY to the player who asked
@@ -786,6 +789,85 @@ socket.on('syncTile', (data) => {
             console.log(`📜 Temple Voucher issued: ${points} pts to ${data.playerWalletAddress}`);
         } catch (err) {
             console.error("Voucher generation failed:", err);
+        }
+    });
+
+    // ==========================================
+    // ⛏️ MINING JOB SYSTEM
+    // ==========================================
+    socket.on('requestOre', (oreId) => {
+        if (!oreDb[oreId]) {
+            oreDb[oreId] = {
+                workLeft: 3600, // 1 hour of manual striking
+                maxWork: 3600,
+                lastSpeedUp: 0,
+                claimed: false
+            };
+        }
+        socket.emit('oreData', { oreId, data: oreDb[oreId] });
+    });
+
+    // 🌟 NEW: Processes manual strikes from pickaxes!
+    socket.on('mineOreStrike', (data) => {
+        const { oreId } = data;
+        
+        // If someone hits it before opening the menu, initialize it!
+        if (!oreDb[oreId]) {
+            oreDb[oreId] = { workLeft: 3600, maxWork: 3600, lastSpeedUp: 0, claimed: false };
+        }
+
+        const ore = oreDb[oreId];
+        if (ore.workLeft > 0) {
+            ore.workLeft--;
+            
+            // Broadcast every 5 ticks so the server doesn't lag
+            if (ore.workLeft % 5 === 0 || ore.workLeft === 0) {
+                io.emit('oreUpdated', { oreId, data: ore });
+                fs.writeFileSync('ores.json', JSON.stringify(oreDb, null, 2));
+            }
+        }
+    });
+
+    socket.on('speedUpOre', (data) => {
+        const { oreId } = data;
+        const player = players[socket.id];
+        const ore = oreDb[oreId];
+        if (!ore || !player) return;
+
+        const SPEEDUP_COST = 50; // UNI Cost to speed up
+        const COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
+        const now = Date.now();
+
+        if (now - ore.lastSpeedUp < COOLDOWN_MS) {
+            socket.emit('oreMessage', "The blast charges are still cooling down. Try again tomorrow!");
+            return;
+        }
+
+        if (player.inGameUni >= SPEEDUP_COST) {
+            player.inGameUni -= SPEEDUP_COST; 
+            ore.workLeft = 0;                 
+            ore.lastSpeedUp = now;            
+            
+            fs.writeFileSync('ores.json', JSON.stringify(oreDb, null, 2));
+            io.emit('oreUpdated', { oreId, data: ore });
+            socket.emit('balanceUpdated', { inGameUni: player.inGameUni });
+            console.log(`🧨 ${socket.wallet} paid ${SPEEDUP_COST} UNI to blast open ${oreId}!`);
+        } else {
+            socket.emit('oreMessage', `You need ${SPEEDUP_COST} UNI to buy blast charges!`);
+        }
+    });
+
+    socket.on('collectOre', (data) => {
+        const { oreId } = data;
+        const ore = oreDb[oreId];
+        
+        if (ore && ore.workLeft === 0 && !ore.claimed) {
+            ore.claimed = true;
+            fs.writeFileSync('ores.json', JSON.stringify(oreDb, null, 2));
+            io.emit('oreUpdated', { oreId, data: ore });
+            
+            socket.emit('receiveOreLoot');
+            console.log(`⛏️ ${socket.wallet} claimed ore from ${oreId}!`);
         }
     });
 

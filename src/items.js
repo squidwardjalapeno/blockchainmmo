@@ -311,6 +311,44 @@ export const ITEM_TYPES = {
         drawSize: 8 // 👈 ADD THIS
 
     },
+
+    // Add to ITEM_TYPES in src/items.js
+    DAGGER: {
+        name: "Rusty Dagger",
+        seedType: "weapon_dagger",
+        spriteID: 0,
+        tileset: "weaponTileset",
+        isWeapon: true,
+        ad: 5,
+        baseHealth: 100,
+        baseVirulence: 0,
+        baseFertility: 0,
+        drawSize: 8,
+        hilt: { x: 5, y: 10 } // 👈 NEW: Defined hilt coordinates
+    },
+    PICKAXE: {
+        name: "Miner's Pickaxe",
+        seedType: "tool_pickaxe",
+        spriteID: 69,
+        tileset: "transparentTileset",
+        isWeapon: true,
+        ad: 3,
+        baseHealth: 100,
+        baseVirulence: 0,
+        baseFertility: 0,
+        drawSize: 8,
+        hilt: { x: 4, y: 11 }
+    },
+    IRON_ORE: {
+        name: "Iron Ore",
+        seedType: "iron_ore",
+        spriteID: 32,
+        tileset: "craftingTileset", // Width 16
+        baseHealth: 100,
+        baseVirulence: 0,
+        baseFertility: 0,
+        drawSize: 8
+    },
 };
 
 /**

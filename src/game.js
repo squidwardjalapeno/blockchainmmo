@@ -5,7 +5,7 @@ if (typeof window !== 'undefined') logStep("Modules Loaded & Parsed");
 // js/game.js
 import { images, loadAllImages } from './assetLoader.js';
 import { generateWorld, seededRandom } from './mapGenerator.js'; 
-import { drawHouse, drawTemple, drawGeneralStore, drawVillageHall, drawRootCellar, drawBarn, drawRanch, drawStorageRoom, planVillage, drawBarracks, drawTwoStoryHouse, drawInn, drawMilitaryQuarters, drawBlacksmith, drawForge, drawLargeBarn, drawTownHall,  populateWorld, drawMiningArea, drawTown, drawCastle, decorateCell, linkVillages, ensureLocalCells, linkLakes, drawOreDeposit, planAllSettlements, drawPlannedRanchRoads, drawRingRoads, buildPlannedStructures, buildPlannedWells, autoTileRoads } from './cellDecorator.js';
+import { drawHouse, drawTemple, drawGeneralStore, drawVillageHall, drawRootCellar, drawBarn, drawRanch, drawStorageRoom, planVillage, drawBarracks, drawTwoStoryHouse, drawInn, drawMilitaryQuarters, drawBlacksmith, drawForge, drawLargeBarn, drawTownHall,  populateWorld, drawMiningArea, planTown, drawCastle, decorateCell, linkVillages, ensureLocalCells, linkLakes, drawOreDeposit, planAllSettlements, drawPlannedRanchRoads, drawRingRoads, buildPlannedStructures, buildPlannedWells, clearBlueprints, generateGlobalShorelines, drawTownWalls } from './cellDecorator.js';
 import { applyShorelineRules } from './terrainRules.js';
 import { inputState, initInput, handleHeroUpdate } from './input.js';
 import { viewport } from './viewport.js';
@@ -256,6 +256,8 @@ var render = function () {
     ctx3.fillText(`PVP MODE | X: ${tileX}, Y: ${tileY}`, 4, 64);
 
 
+
+
     /*
     // ==========================================
     // 🚨 FERTILITY X-RAY DEBUGGER 🚨
@@ -350,6 +352,8 @@ async function mainInit() {
         logStep("5. Generating World...");
         const rawShape = generateWorld(CONFIG.MAP_SIZE, CONFIG.MAP_SIZE, 800);
         worldMap = rawShape;
+        window.worldMap = worldMap; // 👈 Add this line here!
+
         const worldData = populateWorld(worldMap); 
         worldMatrix = worldData.worldMatrix;
         roomMatrix = worldData.roomMatrix;
@@ -367,41 +371,77 @@ async function mainInit() {
         // 👑 THE ULTIMATE GENERATION PIPELINE
         // ==========================================
 
-        logStep("Steps 1/2/3: Continents, Shorelines, & Forests");
+        // ==========================================
+        // 👑 THE ULTIMATE GENERATION PIPELINE
+        // ==========================================
 
-        
-        logStep("Step 4/5: Drawing Rivers & Main Village Roads...");
-        linkLakes(worldMap, worldMatrix, roomMatrix, fertilityMatrix);
-        linkVillages(worldMap, worldMatrix, roomMatrix, fertilityMatrix); 
+        // ==========================================
+        // ⏱️ PROFILING HELPER
+        // ==========================================
+        // ==========================================
+        // ⏱️ PROFILING HELPER (With DOM Yielding)
+        // ==========================================
+        const measureStep = async (name, fn) => {
+            // 1. Print the starting message
+            logStep(name + "..."); 
+            
+            // 2. Force the browser to pause for 20ms to actually draw the text to the screen!
+            await new Promise(resolve => setTimeout(resolve, 20)); 
+            
+            // 3. Run the heavy math
+            const t0 = performance.now();
+            await fn(); 
+            const t1 = performance.now();
+            
+            // 4. Print the completion time
+            logStep(`--> DONE [${((t1 - t0) / 1000).toFixed(2)}s]`); 
+            
+            // Scroll the terminal to the bottom so we always see the newest text
+            const term = document.getElementById('debug-terminal');
+            if (term) term.scrollTop = term.scrollHeight;
+        };
 
-        
-        logStep("Step 6: Planning Houses, Ranches, and Storage...");
-        // Plans ALL structures in one pass. They safely avoid the Highways.
-        planAllSettlements(worldMap, worldMatrix, roomMatrix, fertilityMatrix);
+        // ==========================================
+        // 👑 THE ULTIMATE GENERATION PIPELINE
+        // ==========================================
 
-        
-        logStep("Step 7: Drawing the Village Ring Roads...");
-        // Uses the furthest bounding boxes of all planned buildings to draw the circle.
-        drawRingRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        logStep("Step 1: Continents & Biomes (Handled in populateWorld)");
 
-        
-        logStep("Step 8: Connecting Ranch Roads...");
-        // Merges gates into the nearest dirt (Highway or Ring Road)
-        drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        await measureStep("Step 2: Drawing Global Shorelines", () => {
+            generateGlobalShorelines(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        });
+
+        await measureStep("Step 3: Drawing Rivers & Main Village Roads", () => {
+            linkLakes(worldMap, worldMatrix, roomMatrix, fertilityMatrix);
+            linkVillages(worldMap, worldMatrix, roomMatrix, fertilityMatrix);
+        });
+
+        await measureStep("Step 4: Planning Houses, Ranches, and Storage", () => {
+            planAllSettlements(worldMap, worldMatrix, roomMatrix, fertilityMatrix);
+        });
+
+        await measureStep("Step 5: Drawing the Village Ring Roads", () => {
+            drawRingRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        });
+
+        await measureStep("Step 6: Connecting Ranch Roads", () => {
+            drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        });
+
+        await measureStep("Step 6.2: Drawing Town Fortifications", () => {
+            drawTownWalls(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        });
 
 
-        
-        logStep("Step 8.5: Auto-Tiling Roads...");
-        // Borders applied to all dirt BEFORE buildings are drawn
-        autoTileRoads(worldMatrix);
+        await measureStep("Step 8: Constructing Buildings and Wells", () => {
+            buildPlannedStructures(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            buildPlannedWells(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        });
 
-        
-        logStep("Step 9: Constructing Buildings and Wells...");
-        // Stamped last so they sit perfectly clean on top of the auto-tiled roads.
-        buildPlannedStructures(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-        buildPlannedWells(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-        /*
-        */
+        await measureStep("Step 9: Cleaning up Blueprints", () => {
+            clearBlueprints(roomMatrix);
+        });
+        // ==========================================
 
         // ==========================================
 
@@ -425,6 +465,8 @@ async function mainInit() {
         hero.x = gridX * 16;
         hero.y = (gridY + 10) * 16; // Start slightly south of the center
         // 👆 ------------------------------------------- 👆
+
+
 
         logStep("9. Init UI...");
         initUI(); 
