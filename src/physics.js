@@ -3,6 +3,8 @@
 import { CONFIG } from './config.js';
 import { getObjectAt } from './staticObjects.js';
 import { roomMetadata } from './cellDecorator.js';
+import { hero } from './entities.js';
+
 
 if (typeof window !== 'undefined') {
     if (window.logStep) logStep("physics.js loaded");
@@ -105,7 +107,7 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     if (objAtTarget && objAtTarget.type === 'INT_WALL') return false;
 
     // 2. INSIDE BUILDING LOGIC
-    // 👇 THE FIX: Ignore 9999, it is an outdoor zone!
+    // 2. INSIDE BUILDING LOGIC
     if (current.roomID !== 0 && current.roomID !== 9999) {
         const meta = roomMetadata[current.roomID];
         
@@ -113,13 +115,14 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
             const offsetY = target.gy - meta.frontY;
             const top = meta.maxOffset;
 
+            // 👈 THE FIX: Use 'entity.floor' instead of 'hero.floor'
             // Floor 1 Mask
-            if (hero.floor === 1) {
+            if (entity.floor === 1) {
                 if (offsetY === top) return false;      // Black Row
                 if (offsetY === top + 1) return false;  // Back Wall Row
             }
             // Floor 2 Mask
-            if (hero.floor === 2) {
+            if (entity.floor === 2) {
                 if (offsetY === 0) return false;        // Front door row
                 if (offsetY === top) return false;      // Back Wall Row
             }
@@ -132,7 +135,8 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
             const oy = target.gy - meta.frontY;
             const isMidCol = (ox === 2 || ox === 3);
 
-            if (hero.floor === 1) {
+            // 👈 THE FIX: Use 'entity.floor' instead of 'hero.floor'
+            if (entity.floor === 1) {
                 if (oy <= -6) return false; // Block top slab
             } else {
                 if (!isMidCol) return false; // Block sides
@@ -141,6 +145,8 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
             
             if (target.roomID === current.roomID) return true;
         }
+        
+        // ... (rest of function unchanged)
                 
         // 🛠️ BUG FIX: Removed the `y - 16` dataAbove check! 
         // This was an artificial invisible boundary to prevent a 72px tall character from overlapping the top wall.
