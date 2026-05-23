@@ -31,30 +31,34 @@ const io = new Server(http, {
 // server.js
 let currentTVL = 0.0;
 
+// server.js
 async function syncTVLWithBlockchain() {
-    const tvl = await getContractTVL();
+    const rawTvl = await getContractTVL();
     
-    // Safety check for RPC glitches
-    if (tvl === null || (tvl === 0 && currentTVL > 0)) {
-        console.log("⚠️ TGV query skipped (RPC busy or returning 0)");
+    // 1. If the RPC failed, don't overwrite our current data with 0
+    if (rawTvl === null) {
+        console.log("⚠️ RPC Query failed. Keeping last known TGV.");
         return;
     }
     
-    currentTVL = tvl;
+    // 2. FORCE numeric types (prevents NaN bugs)
+    currentTVL = parseFloat(rawTvl) || 0;
+    const debt = parseFloat(globalDebt) || 0;
+
+    // 3. Calculate Effective TGV
+    const effectiveTGV = Math.max(0, currentTVL - debt);
     
-    // 👈 KEEPING YOUR DEBT LOGIC:
-    const effectiveTGV = Math.max(0, currentTVL - globalDebt);
-    
-    // Sync positions and TGV in the main loop
+    // 4. Update Game State for all players
     io.emit('position', { 
         playerbase: players, 
         projectiles: projectiles,
         tgvOverride: effectiveTGV 
     });
 
-    // Sync the HUD specifically
     broadcastEffectiveTGV();
-    console.log(`💰 TGV Synced: ${effectiveTGV.toFixed(8)} (Raw: ${currentTVL.toFixed(4)}, Debt: ${globalDebt.toFixed(4)})`);
+
+    // 5. Detailed Logging (Check your Render dashboard for this!)
+    console.log(`📊 ECONOMY SYNC | Raw: ${currentTVL.toFixed(8)} | Debt: ${debt.toFixed(8)} | Final TGV: ${effectiveTGV.toFixed(8)}`);
 }
 
 // 👈 Run immediately
@@ -128,13 +132,14 @@ function logActivity(type, wallet, description) {
 
 
 
-// 🏦 DEBT SYSTEM INITIALIZATION
+// server.js (near top)
 let globalDebt = 0.0;
 if (fs.existsSync('debt.json')) {
     try { 
         const savedDebt = JSON.parse(fs.readFileSync('debt.json', 'utf8'));
-        globalDebt = savedDebt.amount || 0;
-    } catch(err) { console.error("Debt load error:", err); }
+        // 👈 THE FIX: Force it to be a Number immediately
+        globalDebt = parseFloat(savedDebt.amount) || 0.0;
+    } catch(err) { globalDebt = 0.0; }
 }
 
 function saveDebt() {
