@@ -44,18 +44,17 @@ export async function connectWallet() {
 
 // Add this back into src/blockchainManager.js
 
+// src/blockchainManager.js
 export async function getMasterBalance() {
     const UNI_TOKEN_ADDRESS = "0x8f187aA05619a017077f5308904739877ce9eA21";
     if (!bankUNI_ADDRESS) return 0;
     try {
         const ethers = await getEthers(); 
-        // 👈 MATCHING STABLE LINK
-        const provider = new ethers.JsonRpcProvider('https://unichain.drpc.org');
+        // 👈 THE FIX: Pass 130 as the second argument here too
+        const provider = new ethers.JsonRpcProvider('https://unichain.drpc.org', 130);
         
-        // Use the ERC20 balanceOf function instead of provider.getBalance
         const tokenAbi = ["function balanceOf(address) view returns (uint256)"];
         const tokenContract = new ethers.Contract(UNI_TOKEN_ADDRESS, tokenAbi, provider);
-        
         const balance = await tokenContract.balanceOf(bankUNI_ADDRESS);
         return parseFloat(ethers.formatEther(balance));
     } catch (err) {

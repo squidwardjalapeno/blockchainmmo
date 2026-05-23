@@ -14,13 +14,9 @@ dotenv.config();
 // src/voucherSystem.js
 const rpcUrl = process.env.UNICHAIN_MAINNET_RPC || "https://unichain.drpc.org";
 
-// 👈 THE STABLE FIX: Explicitly set the network 130
-const provider = new ethers.JsonRpcProvider(rpcUrl, {
-    chainId: 130,
-    name: 'unichain'
-}, { 
-    staticNetwork: true 
-});
+// 👈 THE FIX: In Ethers v6, providing the network as the 2nd argument 
+// automatically makes it a static provider and prevents the probing crash.
+const provider = new ethers.JsonRpcProvider(rpcUrl, 130);
 
 const adminPrivateKey = process.env.ADMIN_PRIVATE_KEY;
 
