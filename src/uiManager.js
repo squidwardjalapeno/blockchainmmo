@@ -1577,8 +1577,10 @@ export function updateHUD() {
         fishDisplay.style.color = globalFishCount < 2000 ? "#FF4444" : "#00FFFF";
     }
 
+    // Inside updateHUD() in src/uiManager.js
     if (tgvDisplay) {
-        tgvDisplay.innerText = `TGV: ${(gameState.tvl || 0).toFixed(8)}`;
+        // 👈 THE TWEAK: Added " UNI" to the string template
+        tgvDisplay.innerText = `TGV: ${(gameState.tvl || 0).toFixed(8)} UNI`;
     }
 }
 
