@@ -1,4 +1,14 @@
-node_modules/
+# Secrets
 .env
-Demo.json
-WellBank.json
+
+# Local Databases (State)
+*.json
+!package.json
+!package-lock.json
+
+# Dependencies
+node_modules/
+
+# Logs and OS files
+npm-debug.log*
+.DS_Store

@@ -28,7 +28,7 @@ const domain = {
     name: "bankUNI",
     version: "1",
     chainId: 130, // Unichain Mainnet
-    verifyingContract: "0x74AA9c511daDEdDbC05Ff7B777aA778594C40D7e" 
+    verifyingContract: "0xb762c3B3f544B04D0eAD51Fa1883Ee0f0Ec87cE4" 
 };
 
 const types = {
