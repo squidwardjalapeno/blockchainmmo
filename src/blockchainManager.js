@@ -49,7 +49,8 @@ export async function getMasterBalance() {
     if (!bankUNI_ADDRESS) return 0;
     try {
         const ethers = await getEthers(); 
-        const provider = new ethers.JsonRpcProvider('https://130.rpc.thirdweb.com');
+        // 👈 MATCHING STABLE LINK
+        const provider = new ethers.JsonRpcProvider('https://unichain.drpc.org');
         
         // Use the ERC20 balanceOf function instead of provider.getBalance
         const tokenAbi = ["function balanceOf(address) view returns (uint256)"];

@@ -11,8 +11,17 @@ dotenv.config();
 
 // 2. Setup Provider and Wallet for UNICHAIN SEPOLIA
 // 2. Setup Provider and Wallet for UNICHAIN SEPOLIA
-const rpcUrl = "https://130.rpc.thirdweb.com"; // 👈 Hardcode this for a stable server link
-const provider = new ethers.JsonRpcProvider(rpcUrl);
+// src/voucherSystem.js
+const rpcUrl = process.env.UNICHAIN_MAINNET_RPC || "https://unichain.drpc.org";
+
+// 👈 THE STABLE FIX: Explicitly set the network 130
+const provider = new ethers.JsonRpcProvider(rpcUrl, {
+    chainId: 130,
+    name: 'unichain'
+}, { 
+    staticNetwork: true 
+});
+
 const adminPrivateKey = process.env.ADMIN_PRIVATE_KEY;
 
 if (!adminPrivateKey) {
