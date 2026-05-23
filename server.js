@@ -28,36 +28,40 @@ const io = new Server(http, {
 });
 
 
-// 🌟 DYNAMIC TVL TRACKER
-let currentTVL = 0.0; // Default to 0 to prevent "ghost" rewards
+// server.js
+let currentTVL = 0.0;
 
-// Function to pull truth from the blockchain
 async function syncTVLWithBlockchain() {
     const tvl = await getContractTVL();
-    if (tvl === null || tvl === 0) {
-        setTimeout(syncTVLWithBlockchain, 5000);
+    
+    // Safety check for RPC glitches
+    if (tvl === null || (tvl === 0 && currentTVL > 0)) {
+        console.log("⚠️ TGV query skipped (RPC busy or returning 0)");
         return;
     }
     
-    // 👇 The TGV shown to players is the Contract Balance minus what is already owed
     currentTVL = tvl;
+    
+    // 👈 KEEPING YOUR DEBT LOGIC:
     const effectiveTGV = Math.max(0, currentTVL - globalDebt);
     
-    // We send the "Effective" value to the clients
+    // Sync positions and TGV in the main loop
     io.emit('position', { 
         playerbase: players, 
         projectiles: projectiles,
-        tgvOverride: effectiveTGV // We can send this to trigger a HUD update
+        tgvOverride: effectiveTGV 
     });
 
-    broadcastEffectiveTGV()
+    // Sync the HUD specifically
+    broadcastEffectiveTGV();
+    console.log(`💰 TGV Synced: ${effectiveTGV.toFixed(8)} (Raw: ${currentTVL.toFixed(4)}, Debt: ${globalDebt.toFixed(4)})`);
 }
 
-// 👈 THE FIX: Run immediately on startup...
+// 👈 Run immediately
 syncTVLWithBlockchain();
 
-// ...and then every 30 seconds thereafter
-setInterval(syncTVLWithBlockchain, 30000);
+// 👈 Increased frequency: 10 seconds
+setInterval(syncTVLWithBlockchain, 10000);
 
 // Only seeds are allowed! We use '1' as a multiplier flag.
 const POINT_VALUES = {

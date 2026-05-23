@@ -88,15 +88,19 @@ export async function createVoucher(playerAddress, amount, nonce) {
 }
 
 // Add this to the bottom of src/voucherSystem.js
+// Inside src/voucherSystem.js -> getContractTVL()
 export async function getContractTVL() {
     const UNI_TOKEN_ADDRESS = "0x8f187aA05619a017077f5308904739877ce9eA21";
     try {
         const tokenAbi = ["function balanceOf(address) view returns (uint256)"];
         const tokenContract = new ethers.Contract(UNI_TOKEN_ADDRESS, tokenAbi, provider);
         
-        const balance = await tokenContract.balanceOf(domain.verifyingContract);
+        // 👈 THE FIX: Adding { blockTag: 'latest' } forces the RPC to be snappy
+        const balance = await tokenContract.balanceOf(domain.verifyingContract, { blockTag: 'latest' });
+        
         return parseFloat(ethers.formatEther(balance));
     } catch (err) {
-        return 0;
+        console.error("Server TVL fetch error:", err.message);
+        return null;
     }
 }
