@@ -10,27 +10,26 @@ import { CONFIG } from './config.js'; // 👈 Import config
 
 if (typeof window !== 'undefined') logStep("input.js loaded");
 
+const keysDown = {};
+
 export const inputState = {
-        
-    inputType: 'keyboard', // 👈 'keyboard' or 'touch'
+    inputType: 'keyboard', 
+    uiMode: 'combat', // 👈 NEW: Default to combat mode
 
     moveX: 0, moveY: 0,
     action: false, interact: false, drop: false, keyB: false, keyP: false, keyC: false, keyV: false, keyF: false,
     mainBtn: false, skill1: false, skill2: false, skill3: false, skill4: false,
     leftJoystick: { active: false, startX: 0, startY: 0, currX: 0, currY: 0 },
     aim: { active: false, index: -1, dx: 0, dy: 0, cancel: false, startX: 0, startY: 0 },
-    fireAim: false, fireAimIndex: -1 // 👈 NEW: Defers touch-aim execution to the physics loop
+    fireAim: false, fireAimIndex: -1 
 };
-
-const keysDown = {};
-
-// src/input.js
 
 export function getUIButtons() {
     const W = Math.floor(window.innerWidth / CONFIG.ZOOM);
     const H = Math.floor(window.innerHeight / CONFIG.ZOOM);
     
     return {
+        // Combat UI
         MAIN:   { x: W - 28,  y: H - 28,  r: 20 },
         SKILL1: { x: W - 75,  y: H - 22,  r: 14, index: 0 },
         SKILL2: { x: W - 68,  y: H - 55,  r: 14, index: 1 },
@@ -38,15 +37,16 @@ export function getUIButtons() {
         SKILL4: { x: W - 18,  y: H - 85,  r: 16, index: 3 },
         CANCEL: { x: W - 28,  y: H - 120, r: 16 },
         
-        // 👇 NEW: Left-side Touch Buttons
-        INTERACT: { x: 25, y: H - 75, r: 14 },
-        DROP:     { x: 25, y: H - 110, r: 14 },
-        PLANT:    { x: 25, y: H - 145, r: 14 },
-        EAT:      { x: 25, y: H - 180, r: 14 }, // 👈 ADD THIS LINE
+        // 🔄 SWAP Toggle Button (Left of S1)
+        SWAP:   { x: W - 115, y: H - 22,  r: 14 }, 
 
-
-        // 👇 NEW: Inventory Button (Top-Left, below the XP bar)
-        INV:      { x: 25, y: 50, r: 16 }
+        // 🎒 Normal Mode UI (2x3 Grid on the Right)
+        INV:      { x: W - 80, y: H - 120, r: 14 }, // Top Left
+        WORK:     { x: W - 30, y: H - 120, r: 14 }, // Top Right
+        DROP:     { x: W - 80, y: H - 75,  r: 14 }, // Mid Left
+        EAT:      { x: W - 30, y: H - 75,  r: 14 }, // Mid Right
+        PLANT:    { x: W - 80, y: H - 30,  r: 14 }, // Bot Left
+        INTERACT: { x: W - 30, y: H - 30,  r: 14 }  // Bot Right
     };
 }
 
@@ -159,38 +159,19 @@ export function initInput(canvas) {
 
     const handleTouch = (e) => {
         e.preventDefault();
-        inputState.inputType = 'touch'; // 👈 Switch to Touch Mode
+        inputState.inputType = 'touch'; 
 
         let leftSideActive = false;
         const btns = getUIButtons();
-
-        // 👈 Calculate Half-Screen Boundary
         const middleScreenX = Math.floor(window.innerWidth / CONFIG.ZOOM) / 2;
 
         for (let i = 0; i < e.touches.length; i++) {
-            // 👈 Divide actual touch pixels by our ZOOM factor!
             const tx = e.touches[i].clientX / CONFIG.ZOOM;
             const ty = e.touches[i].clientY / CONFIG.ZOOM;
-
-            // Touch Button Hit-Tester Helper
             const hit = (btn) => Math.hypot(tx - btn.x, ty - btn.y) < btn.r + 5;
 
-            // 👈 Check New Left-Side Buttons FIRST
-            if (e.type === 'touchstart') {
-                if (hit(btns.INTERACT)) { inputState.interact = true; inputState.action = true; }
-                if (hit(btns.DROP)) inputState.drop = true;
-                if (hit(btns.PLANT)) inputState.keyV = true;
-                if (hit(btns.EAT)) inputState.keyC = true; // 👈 ADD THIS LINE
-
-                
-                // 👇 NEW: Toggle the menu if they tap the backpack!
-                if (hit(btns.INV)) {
-                    import('./uiManager.js').then(m => m.toggleMenu());
-                }
-            }
-
-// 👇 Make sure the joystick ignores the INV button too
-            if (tx < middleScreenX && !hit(btns.INTERACT) && !hit(btns.DROP) && !hit(btns.PLANT) && !hit(btns.INV)) {
+            // --- LEFT SIDE: PURE JOYSTICK ---
+            if (tx < middleScreenX) {
                 leftSideActive = true;
                 if (!inputState.leftJoystick.active) {
                     inputState.leftJoystick.active = true;
@@ -201,10 +182,8 @@ export function initInput(canvas) {
                 const dy = ty - inputState.leftJoystick.startY;
                 const dist = Math.sqrt(dx * dx + dy * dy);
                 
-                // 👈 Shrunk joystick deadzones
                 if (dist > 6) {
-                    inputState.moveX = dx / dist;
-                    inputState.moveY = dy / dist;
+                    inputState.moveX = dx / dist; inputState.moveY = dy / dist;
                 } else {
                     inputState.moveX = 0; inputState.moveY = 0;
                 }
@@ -212,40 +191,60 @@ export function initInput(canvas) {
                     inputState.leftJoystick.currX = inputState.leftJoystick.startX + (dx / dist) * 25;
                     inputState.leftJoystick.currY = inputState.leftJoystick.startY + (dy / dist) * 25;
                 } else {
-                    inputState.leftJoystick.currX = tx;
-                    inputState.leftJoystick.currY = ty;
+                    inputState.leftJoystick.currX = tx; inputState.leftJoystick.currY = ty;
                 }
-            } else {
-                // ... (Keep the right-side button logic exactly the same, the math will naturally work!)
-                if (Math.hypot(tx - btns.MAIN.x, ty - btns.MAIN.y) < btns.MAIN.r) {
-                    if (!inputState.mainBtn) { inputState.mainBtn = true; inputState.action = true; }
+            } 
+            // --- RIGHT SIDE: MODE SWAPPING & BUTTONS ---
+            else {
+                // 1. Check SWAP Button
+                if (e.type === 'touchstart' && hit(btns.SWAP)) {
+                    inputState.uiMode = inputState.uiMode === 'combat' ? 'normal' : 'combat';
+                    if (navigator.vibrate) navigator.vibrate(20);
                 }
 
-                if (e.type === 'touchstart' && !inputState.aim.active) {
-                    for (let key of ['SKILL1', 'SKILL2', 'SKILL3', 'SKILL4']) {
-                        if (Math.hypot(tx - btns[key].x, ty - btns[key].y) < btns[key].r) {
-                            inputState.aim.active = true;
-                            inputState.aim.index = btns[key].index;
-                            inputState.aim.startX = btns[key].x;
-                            inputState.aim.startY = btns[key].y;
-                            inputState.aim.dx = 0; inputState.aim.dy = 0;
-                            inputState.aim.cancel = false;
+                // 2. NORMAL MODE BUTTONS
+                if (inputState.uiMode === 'normal') {
+                    if (e.type === 'touchstart') {
+                        if (hit(btns.INTERACT)) { inputState.interact = true; inputState.action = true; }
+                        if (hit(btns.DROP)) inputState.drop = true;
+                        if (hit(btns.PLANT)) inputState.keyV = true;
+                        if (hit(btns.EAT)) inputState.keyC = true;
+                        if (hit(btns.WORK)) inputState.keyF = true;
+                        if (hit(btns.INV)) import('./uiManager.js').then(m => m.toggleMenu());
+                    }
+                } 
+                // 3. COMBAT MODE BUTTONS
+                else {
+                    if (Math.hypot(tx - btns.MAIN.x, ty - btns.MAIN.y) < btns.MAIN.r) {
+                        if (!inputState.mainBtn) { inputState.mainBtn = true; inputState.action = true; }
+                    }
+
+                    if (e.type === 'touchstart' && !inputState.aim.active) {
+                        for (let key of ['SKILL1', 'SKILL2', 'SKILL3', 'SKILL4']) {
+                            if (Math.hypot(tx - btns[key].x, ty - btns[key].y) < btns[key].r) {
+                                inputState.aim.active = true;
+                                inputState.aim.index = btns[key].index;
+                                inputState.aim.startX = btns[key].x;
+                                inputState.aim.startY = btns[key].y;
+                                inputState.aim.dx = 0; inputState.aim.dy = 0;
+                                inputState.aim.cancel = false;
+                            }
                         }
                     }
-                }
 
-                if (inputState.aim.active) {
-                    if (Math.hypot(tx - btns.CANCEL.x, ty - btns.CANCEL.y) < btns.CANCEL.r + 10) {
-                        inputState.aim.cancel = true;
-                    } else {
-                        inputState.aim.cancel = false;
-                        const adx = tx - inputState.aim.startX;
-                        const ady = ty - inputState.aim.startY;
-                        const adist = Math.sqrt(adx * adx + ady * ady);
-                        if (adist > 15) { 
-                            inputState.aim.dx = adx / adist;
-                            inputState.aim.dy = ady / adist;
-                            inputState.aim.mag = Math.min(adist / 25, 1.0); // 👈 Shrunk aim deadzone
+                    if (inputState.aim.active) {
+                        if (Math.hypot(tx - btns.CANCEL.x, ty - btns.CANCEL.y) < btns.CANCEL.r + 10) {
+                            inputState.aim.cancel = true;
+                        } else {
+                            inputState.aim.cancel = false;
+                            const adx = tx - inputState.aim.startX;
+                            const ady = ty - inputState.aim.startY;
+                            const adist = Math.sqrt(adx * adx + ady * ady);
+                            if (adist > 15) { 
+                                inputState.aim.dx = adx / adist;
+                                inputState.aim.dy = ady / adist;
+                                inputState.aim.mag = Math.min(adist / 25, 1.0); 
+                            }
                         }
                     }
                 }

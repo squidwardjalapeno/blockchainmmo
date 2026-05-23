@@ -90,7 +90,9 @@
                 </div>
                 
                 <button id="hud-withdraw-btn" class="pixel-btn" style="padding: 8px 12px; font-size: 8px;">WITHDRAW</button>
+                <button id="hud-activity-btn" class="pixel-btn" style="padding: 8px 12px; font-size: 10px;">📖</button>
                 <button id="hud-help-btn" class="pixel-btn safe" style="padding: 8px 12px; font-size: 8px;">?</button>
+                
             </div>
 
             <!-- 🌍 WORLD INDICATORS (Top Right) -->
@@ -162,6 +164,20 @@
                     <button id="confirm-withdraw-btn" class="pixel-btn safe" style="flex: 1;">WITHDRAW</button>
                     <button id="close-withdraw-btn" class="pixel-btn cancel" style="flex: 1;">CANCEL</button>
                 </div>
+            </div>
+        </div>
+
+        <!-- DAILY ACTIVITY MENU -->
+        <div id="activity-menu" class="hidden menu-modal" style="z-index: 4000;">
+            <div class="pixel-panel" style="width: 450px; max-width: 95vw; text-align: center;">
+                <h2 style="margin-top:0; color: var(--banana-dark);">📖 DAILY LEDGER</h2>
+                <p style="font-size: 8px; color: #555; margin-bottom: 15px;">Last 24 Hours of Server Activity</p>
+                
+                <div id="activity-list" style="background: rgba(0,0,0,0.8); border: 4px solid var(--bg-dark); height: 250px; overflow-y: auto; padding: 10px; text-align: left; font-size: 8px; color: white; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px;">
+                    <!-- Activity data injected here -->
+                </div>
+
+                <button id="close-activity-btn" class="pixel-btn cancel" style="width: 100%;">CLOSE LEDGER</button>
             </div>
         </div>
 

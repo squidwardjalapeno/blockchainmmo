@@ -17,7 +17,15 @@ const __dirname = path.dirname(__filename);
 // 3. Initialize App & Socket
 const app = express();
 const http = createServer(app);
-const io = new Server(http);
+const io = new Server(http, {
+    cors: {
+        origin: [
+            "http://localhost:10000",                  // Local testing
+            "https://seedsandbones.onrender.com"       // 👈 FIXED: Added the 's' in https!
+        ],
+        methods: ["GET", "POST"]
+    }
+});
 
 
 // 🌟 DYNAMIC TVL TRACKER
@@ -90,6 +98,31 @@ let hayDb = {}; // 🆕 Database for Hay Storage
 let oreDb = {}; // ⛏️ NEW: Database for mining jobs!
 let smelterDb = {};
 let anvilDb = {};
+
+// 📖 DAILY ACTIVITY LEDGER
+let activityLog = [];
+if (fs.existsSync('activityLog.json')) {
+    try { 
+        activityLog = JSON.parse(fs.readFileSync('activityLog.json', 'utf8')); 
+    } catch(err) { console.error("Activity load error:", err); }
+}
+
+function logActivity(type, wallet, description) {
+    const now = Date.now();
+    
+    // Add new event to the top of the list
+    activityLog.unshift({ type, wallet, description, timestamp: now });
+    
+    // Filter out anything older than 24 hours (86,400,000 milliseconds)
+    activityLog = activityLog.filter(a => now - a.timestamp < 86400000);
+    
+    // Hard cap at 100 recent events so the file doesn't get massive on busy days
+    if (activityLog.length > 100) activityLog.pop();
+    
+    fs.writeFileSync('activityLog.json', JSON.stringify(activityLog, null, 2));
+}
+
+
 
 // 🏦 DEBT SYSTEM INITIALIZATION
 let globalDebt = 0.0;
@@ -264,9 +297,29 @@ socket.on('requestSmelter', (jobId) => {
     socket.emit('smelterData', { jobId, data: smelterDb[jobId] });
 });
 
+// ==========================================
+// 🔥 SECURE SMELTER JOB
+// ==========================================
+// 🔥 SECURE SMELTER JOB
+// ==========================================
 socket.on('startSmelterJob', (data) => {
-    smelterDb[data.jobId] = { workLeft: 200, maxWork: 200, active: true, ready: false };
-    io.emit('smelterUpdated', { jobId: data.jobId, data: smelterDb[data.jobId] });
+    const player = players[socket.id];
+    if (!player) return;
+
+    // 🛡️ RATE LIMITER: 1 request per second
+    const now = Date.now();
+    if (player.lastSmelt && now - player.lastSmelt < 1000) return;
+    player.lastSmelt = now;
+
+    const job = smelterDb[data.jobId];
+    if (!job || job.active || job.ready) return;
+
+    // Start the job
+    job.active = true;
+    job.workLeft = 200;
+    job.ready = false;
+    
+    io.emit('smelterUpdated', { jobId: data.jobId, data: job });
 });
 
 socket.on('workSmelterStrike', (data) => {
@@ -306,6 +359,7 @@ socket.on('workSmelterStrike', (data) => {
             player.inGameUni -= SPEEDUP_COST;
             globalDebt = Math.max(0, globalDebt - SPEEDUP_COST); // 👈 REDUCE DEBT (Debt is cancelled/burned)
             saveDebt();
+            logActivity('SPEEDUP', socket.wallet || socket.id, `Paid ${SPEEDUP_COST} UNI to blast an Iron Vein`);
             
             // Save & Sync
             fs.writeFileSync('ores.json', JSON.stringify(oreDb, null, 2));
@@ -339,6 +393,7 @@ socket.on('workSmelterStrike', (data) => {
                 player.inGameUni -= SPEEDUP_COST;
                 globalDebt = Math.max(0, globalDebt - SPEEDUP_COST); // 👈 REDUCE DEBT (Debt is cancelled/burned)
                 saveDebt();
+                logActivity('SPEEDUP', socket.wallet || socket.id, `Paid ${SPEEDUP_COST} UNI to speed up the Smelter`);
                 
                 // Sync
                 io.emit('smelterUpdated', { jobId: data.jobId, data: job });
@@ -373,6 +428,7 @@ socket.on('workSmelterStrike', (data) => {
                 player.inGameUni -= SPEEDUP_COST;
                 globalDebt = Math.max(0, globalDebt - SPEEDUP_COST); // 👈 REDUCE DEBT (Debt is cancelled/burned)
                 saveDebt();
+                logActivity('SPEEDUP', socket.wallet || socket.id, `Paid ${SPEEDUP_COST} UNI to speed up the Anvil`);
                 
                 // Sync
                 io.emit('anvilUpdated', { jobId: data.jobId, data: job });
@@ -405,9 +461,29 @@ socket.on('requestAnvil', (jobId) => {
     socket.emit('anvilData', { jobId, data: anvilDb[jobId] });
 });
 
+// ==========================================
+// 🔨 SECURE ANVIL JOB
+// ==========================================
+// 🔨 SECURE ANVIL JOB
+// ==========================================
 socket.on('startAnvilJob', (data) => {
-    anvilDb[data.jobId] = { workLeft: 300, maxWork: 300, active: true, ready: false };
-    io.emit('anvilUpdated', { jobId: data.jobId, data: anvilDb[data.jobId] });
+    const player = players[socket.id];
+    if (!player) return;
+
+    // 🛡️ RATE LIMITER: 1 request per second
+    const now = Date.now();
+    if (player.lastAnvil && now - player.lastAnvil < 1000) return;
+    player.lastAnvil = now;
+
+    const job = anvilDb[data.jobId];
+    if (!job || job.active || job.ready) return;
+
+    // Start the job
+    job.active = true;
+    job.workLeft = 300;
+    job.ready = false;
+    
+    io.emit('anvilUpdated', { jobId: data.jobId, data: job });
 });
 
 socket.on('workAnvilStrike', (data) => {
@@ -653,46 +729,54 @@ socket.on('updateStats', (data) => {
     }
 });
 
-    // 🆕 NEW: THE WITHDRAWAL REQUEST
-    socket.on('requestWithdrawal', async (amount) => {
+    // ==========================================
+    // 🏦 WITHDRAWAL LOGIC
+    // ==========================================
+    socket.on('requestWithdrawal', async (reqData) => {
         const player = players[socket.id];
         
-        console.log(`🏦 Withdrawal Request from ${socket.wallet}`);
-        console.log(`Current Player Balance: ${player.inGameUni}`);
-        console.log(`Requested Amount: ${amount}`);
+        // Unpack the new object payload
+        const amount = typeof reqData === 'object' ? reqData.amount : reqData;
+        const targetAddress = (typeof reqData === 'object' && reqData.targetAddress) ? reqData.targetAddress : socket.wallet;
+        
+        console.log(`🏦 Withdrawal Request from ${socket.wallet} to Web3 Address ${targetAddress}`);
 
         if (!player || player.inGameUni < amount || !socket.wallet) {
-            console.error("❌ Invalid Withdrawal Request: Insufficient balance or no wallet.");
+            console.error("❌ Invalid Withdrawal Request.");
             return;
         }
 
-        // 2. Subtract it from their in-game account IMMEDIATELY
-        // Inside requestWithdrawal...
+        // Subtract and create voucher
         player.inGameUni -= amount;
-        globalDebt = Math.max(0, globalDebt - amount); // 👈 SETTLE DEBT
+        globalDebt = Math.max(0, globalDebt - amount);
         saveDebt();
-
+        syncPlayerAndSave(socket.id);
+        
         socket.emit('balanceUpdated', { inGameUni: player.inGameUni });
+        broadcastEffectiveTGV(); // 👈 ADDED: Updates the HUD for everyone instantly!
 
-        // 3. Create the cryptographic voucher
         const nonce = Math.floor(Math.random() * 1000000000);
         try {
-            const voucher = await createVoucher(socket.wallet, amount, nonce);
+            const voucher = await createVoucher(targetAddress, amount, nonce);
             
-            // 4. Send the voucher to the client so MetaMask can pop up!
             socket.emit('receiveWithdrawalVoucher', voucher);
-            console.log(`📜 Withdrawal Voucher generated for ${socket.wallet}`);
+            console.log(`📜 Withdrawal Voucher generated for ${targetAddress}`);
         } catch (err) {
             console.error("Voucher failed!", err);
-            // Refund them if the crypto math fails
+            // Refund on failure
             player.inGameUni += amount;
+            globalDebt += amount;
+            saveDebt();
+            syncPlayerAndSave(socket.id);
             socket.emit('balanceUpdated', { inGameUni: player.inGameUni });
+            broadcastEffectiveTGV(); // 👈 ADDED: Revert the TGV if the voucher fails!
         }
-
-        broadcastEffectiveTGV()
-        syncPlayerAndSave(socket.id)
-
     });
+
+    // 👈 Add this inside your io.on('connection') block:
+socket.on('requestActivityLog', () => {
+    socket.emit('activityData', activityLog);
+});
 
 
 // --- ⚔️ UPDATED: LOGARITHMIC ARMOR SCALING ---
@@ -947,34 +1031,52 @@ socket.on('syncTile', (data) => {
     // ==========================================
     // 💎 DYNAMIC LIQUIDITY-BASED SACRIFICE
     // ==========================================
+    // ==========================================
+    // 💎 SECURE DYNAMIC SACRIFICE LOGIC
+    // ==========================================
+    // 💎 SECURE DYNAMIC SACRIFICE LOGIC
+    // ==========================================
+    // 💎 SECURE DYNAMIC SACRIFICE LOGIC
+    // ==========================================
     socket.on('sacrificeItem', (data) => {
+        const player = players[socket.id];
+        if (!player) return;
+
+        // 🛡️ RATE LIMITER: Only allow 1 sacrifice per second
+        const now = Date.now();
+        if (player.lastSacrifice && now - player.lastSacrifice < 1000) {
+            console.log(`🚨 SPAM BLOCKED: ${socket.wallet} is sending packets too fast.`);
+            return;
+        }
+        player.lastSacrifice = now;
+
         const isValidSeed = POINT_VALUES[data.itemType];
         if (!isValidSeed) return;
 
-        const count = data.count || 1; 
+        // 🛡️ HARD CAP: Hackers cannot spoof millions. Max 64 (1 stack).
+        const requestedCount = Math.min(64, Math.max(1, data.count || 1)); 
 
-        // 1. Calculate Effective TGV (Liquidity available after all unspent points)
-        // We ensure it never drops below 0.00000001 to prevent division-by-zero
+        // Calculate Payout
         const effectiveTGV = Math.max(0.00000001, currentTVL - globalDebt);
-
-        // 2. 1 Seed = 1 / 640,000 of the AVAILABLE liquidity
         const pointsPerSeed = effectiveTGV / 640000;
-        const totalPoints = pointsPerSeed * count; 
+        const totalPoints = pointsPerSeed * requestedCount; 
 
-        // 3. Update Player & Global Debt
-        players[socket.id].inGameUni += totalPoints;
-        globalDebt += totalPoints; // 👈 INCUR DEBT
+        // Apply Points
+        player.inGameUni = (parseFloat(player.inGameUni) || 0.0) + totalPoints;
+        globalDebt = (parseFloat(globalDebt) || 0.0) + totalPoints;
         
-        saveDebt(); // Persist to disk
+        saveDebt();
+        syncPlayerAndSave(socket.id); 
         
-        socket.emit('balanceUpdated', { inGameUni: players[socket.id].inGameUni });
-        console.log(`💎 ${count}x ${data.itemType} sacrificed. New Debt: ${globalDebt.toFixed(8)} UNI`);
+        socket.emit('balanceUpdated', { inGameUni: player.inGameUni });
+        
+        if (typeof broadcastEffectiveTGV === 'function') broadcastEffectiveTGV();
+        if (typeof logActivity === 'function') {
+            logActivity('SACRIFICE', socket.wallet || socket.id, `Sacrificed ${requestedCount}x ${data.itemType} for ${totalPoints.toFixed(8)} UNI`);
+        }
 
-        broadcastEffectiveTGV()
-        syncPlayerAndSave(socket.id)
-
+        console.log(`💎 ${socket.wallet || socket.id} sacrificed ${requestedCount}x ${data.itemType}`);
     });
-
     // ==========================================
     // ⛏️ MINING JOB SYSTEM
     // ==========================================

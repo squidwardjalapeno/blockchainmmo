@@ -177,6 +177,20 @@ export function initUI() {
     document.getElementById('close-menu').addEventListener('click', toggleMenu);
 
     // In src/uiManager.js -> inside initUI()
+
+    // --- ACTIVITY LEDGER ---
+    const activityBtn = document.getElementById('hud-activity-btn');
+    if (activityBtn) {
+        activityBtn.onclick = () => { if (socket) socket.emit('requestActivityLog'); };
+    }
+    const closeActivityBtn = document.getElementById('close-activity-btn');
+    if (closeActivityBtn) {
+        closeActivityBtn.onclick = () => document.getElementById('activity-menu').classList.add('hidden');
+    }
+
+    if (socket) {
+        socket.on('activityData', (logData) => renderActivityLog(logData));
+    }
     
     // --- HELP MENU ---
     const helpBtn = document.getElementById('hud-help-btn');
@@ -379,20 +393,32 @@ export function initUI() {
         document.getElementById('withdraw-menu').classList.add('hidden');
     };
 
+
     // Inside initUI() for the withdraw button:
-    document.getElementById('confirm-withdraw-btn').onclick = () => {
+    document.getElementById('confirm-withdraw-btn').onclick = async () => {
         const amount = parseFloat(document.getElementById('withdraw-input').value);
 
-        if (isNaN(amount) || amount <= 0) {
-            alert("Please enter a valid amount.");
-            return;
-        }
-        if (amount > hero.inGameUni) {
-            alert(`Insufficient balance! You only have ${hero.inGameUni.toFixed(4)} UNI.`);
-            return;
+        if (isNaN(amount) || amount <= 0) { alert("Please enter a valid amount."); return; }
+        if (amount > hero.inGameUni) { alert(`Insufficient balance! You only have ${hero.inGameUni.toFixed(8)} UNI.`); return; }
+        if (amount < 0.00000001) { alert("Minimum withdrawal is 0.00000001 UNI."); return; }
+
+        let targetAddress = playerWallet;
+
+        // 👈 THE FIX: If they are a Web2 User/Guest, force MetaMask to connect!
+        if (!targetAddress.startsWith('0x')) {
+            alert("You are logged in via Username/Password. MetaMask will now open to link your withdrawal address.");
+            const web3Address = await connectWallet();
+            if (!web3Address) {
+                alert("MetaMask connection failed. Cannot withdraw.");
+                return;
+            }
+            targetAddress = web3Address; // Send the voucher to this real Web3 wallet instead!
         }
 
-        if (socket) socket.emit('requestWithdrawal', amount);
+        if (socket) {
+            // Send the targetAddress along with the amount!
+            socket.emit('requestWithdrawal', { amount: amount, targetAddress: targetAddress });
+        }
         document.getElementById('withdraw-menu').classList.add('hidden');
     };
 
@@ -509,6 +535,7 @@ export function initUI() {
         confirmingSmelterSpeedUp = false;
     });
 
+    // --- SMELTER BUTTON CLICK ---
     document.getElementById('smelter-start-btn').addEventListener('click', () => {
         if (!activeSmelterData) return;
         
@@ -516,10 +543,18 @@ export function initUI() {
             if (socket) socket.emit('collectSmelter', { jobId: activeSmelterId });
         } else if (!activeSmelterData.active) {
             const oreIdx = hero.inventory.findIndex(item => item.seedType === 'iron_ore');
-            if (oreIdx === -1) { alert("You need Iron Ore to start smelting!"); return; }
+            if (oreIdx === -1) {
+                alert("You need Iron Ore to start smelting!");
+                return;
+            }
+            
+            // 1. Tell the server to start the job (The server will securely deduct the item)
+            if (socket) socket.emit('startSmelterJob', { jobId: activeSmelterId });
+            
+            // 2. We must manually remove it from the client's RAM so the UI updates instantly without waiting for a server sync
             hero.inventory.splice(oreIdx, 1);
             renderTabContent();
-            if (socket) socket.emit('startSmelterJob', { jobId: activeSmelterId });
+            
         } else {
             if (!confirmingSmelterSpeedUp) {
                 confirmingSmelterSpeedUp = true;
@@ -537,6 +572,7 @@ export function initUI() {
         confirmingAnvilSpeedUp = false;
     });
 
+    // --- ANVIL BUTTON CLICK ---
     document.getElementById('anvil-start-btn').addEventListener('click', () => {
         if (!activeAnvilData) return;
         
@@ -544,10 +580,18 @@ export function initUI() {
             if (socket) socket.emit('collectAnvil', { jobId: activeAnvilId });
         } else if (!activeAnvilData.active) {
             const ingotIdx = hero.inventory.findIndex(item => item.seedType === 'iron_ingot');
-            if (ingotIdx === -1) { alert("You need an Iron Ingot to start forging!"); return; }
+            if (ingotIdx === -1) {
+                alert("You need an Iron Ingot to start forging!");
+                return;
+            }
+            
+            // 1. Tell the server to start the job (The server will securely deduct the item)
+            if (socket) socket.emit('startAnvilJob', { jobId: activeAnvilId });
+
+            // 2. We must manually remove it from the client's RAM so the UI updates instantly without waiting for a server sync
             hero.inventory.splice(ingotIdx, 1);
             renderTabContent();
-            if (socket) socket.emit('startAnvilJob', { jobId: activeAnvilId });
+            
         } else {
             if (!confirmingAnvilSpeedUp) {
                 confirmingAnvilSpeedUp = true;
@@ -1802,6 +1846,42 @@ document.body.addEventListener('touchend', (e) => {
     }
     dragData = null;
 });
+
+// ==========================================
+// 📖 ACTIVITY LEDGER RENDERER
+// ==========================================
+function renderActivityLog(logData) {
+    const list = document.getElementById('activity-list');
+    document.getElementById('activity-menu').classList.remove('hidden');
+
+    if (!logData || logData.length === 0) {
+        list.innerHTML = `<div style="text-align: center; color: #888; margin-top: 100px;">No activity in the last 24 hours.</div>`;
+        return;
+    }
+
+    list.innerHTML = logData.map(entry => {
+        // Calculate "Time Ago"
+        const mins = Math.floor((Date.now() - entry.timestamp) / 60000);
+        let timeStr = mins < 1 ? "Just now" : (mins < 60 ? `${mins}m ago` : `${Math.floor(mins/60)}h ago`);
+        
+        // Format the Wallet string (Shorten it if it's a long hex address)
+        let shortWallet = entry.wallet;
+        if (shortWallet.startsWith('0x') && shortWallet.length > 10) {
+            shortWallet = shortWallet.substring(0, 6) + "..." + shortWallet.substring(shortWallet.length - 4);
+        }
+
+        // Color coding based on action type
+        const color = entry.type === 'SACRIFICE' ? '#00FFFF' : '#FFD700';
+
+        return `
+            <div style="border-bottom: 2px dashed #444; padding-bottom: 6px;">
+                <span style="color: #aaa;">[${timeStr}]</span> 
+                <strong style="color: ${color};">${shortWallet}</strong>: 
+                ${entry.description}
+            </div>
+        `;
+    }).join('');
+}
 
 
 // ==========================================
