@@ -9,7 +9,7 @@ import { drawHouse, drawTemple, drawGeneralStore, drawVillageHall, drawRootCella
 import { applyShorelineRules } from './terrainRules.js';
 import { inputState, initInput, handleHeroUpdate } from './input.js';
 import { viewport } from './viewport.js';
-import { ctx, ctx2, ctx3, canvas, canvas2, canvas3, drawMap, drawJoystick, drawProjectiles, drawTargetCircle, drawHeroRange, drawHealthBar, drawEnergyBar, drawAbilityButtons, drawXPStatus, drawAimIndicator, initRenderer, clearAll, drawAnimals, drawPlants, drawHero, drawRemotePlayers, drawBobber, preRenderMinimap, drawDroppedItems, drawCanopy } from './renderer.js';
+import { ctx, ctx2, ctx3, canvas, canvas2, canvas3, drawMap, drawJoystick, drawProjectiles, drawTargetCircle, drawWorkingIndicator, drawHeroRange, drawHealthBar, drawEnergyBar, drawAbilityButtons, drawXPStatus, drawAimIndicator, initRenderer, clearAll, drawAnimals, drawPlants, drawHero, drawRemotePlayers, drawBobber, preRenderMinimap, drawDroppedItems, drawCanopy } from './renderer.js';
 import { hero, resetEntities, gameState } from './entities.js';
 import { CONFIG } from './config.js'
 import { checkCollision, getTileData } from './physics.js'; 
@@ -191,19 +191,21 @@ var update = function (modifier) {
     }
 };
 
-// 👇 Make sure this is directly underneath update() !
 async function syncTVL() {
+    /*
     if (isSyncingTVL) return;
     isSyncingTVL = true;
     
     try {
-        // Placeholder for future Web3 calls
-        gameState.tvl = 0; 
+        // Fetch the real TVL from the blockchain!
+        const balance = await getMasterBalance();
+        gameState.tvl = balance; 
     } catch (e) {
-        // Silent catch
+        console.warn("TVL Sync Error:", e);
     } finally {
         isSyncingTVL = false;
     }
+        */
 }
 
 
@@ -225,6 +227,9 @@ var render = function () {
 
     // 👇 MOBA FIX: Only draw the red circle when we are locked onto an enemy!
     if (hero.target) drawTargetCircle(ctx2, hero.target);
+
+    // 👇 NEW: Draw the pulsing red circle over an anvil/smelter if we are working it!
+    drawWorkingIndicator(ctx2, hero.workingObj);
     
     // 👇 NEW: Draw Hero's Attack Range underneath the hero
     drawHeroRange(ctx2, hero);
@@ -251,10 +256,18 @@ var render = function () {
 
     ctx3.fillStyle = CONFIG.UI_COLOR;
     ctx3.font = CONFIG.FONT_STYLE;
+    
+    // 👈 Align right, underneath the Fish and TGV boxes
+    ctx3.textAlign = "right"; 
+    
     const tileX = Math.floor((hero.x + 8) / 16);
     const tileY = Math.floor((hero.y + 8) / 16);
-    ctx3.fillText(`PVP MODE | X: ${tileX}, Y: ${tileY}`, 4, 64);
-
+    
+    // 👇 Nudged Y down to 65 so it sits right beneath the new HTML UI!
+    ctx3.fillText(`PVP MODE | X: ${tileX}, Y: ${tileY}`, canvas3.width - 10, 65);
+    
+    // Reset text alignment so we don't mess up other UI elements
+    ctx3.textAlign = "left";
 
 
 
@@ -428,6 +441,7 @@ async function mainInit() {
             drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
         });
 
+        
         await measureStep("Step 6.2: Drawing Town Fortifications", () => {
             drawTownWalls(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
         });
@@ -441,6 +455,8 @@ async function mainInit() {
         await measureStep("Step 9: Cleaning up Blueprints", () => {
             clearBlueprints(roomMatrix);
         });
+        /*
+        */
         // ==========================================
 
         // ==========================================
@@ -529,8 +545,11 @@ function main() {
 
     ctx3.fillStyle = "white";
     ctx3.font = "12px 'Press Start 2P'";
-    ctx3.textAlign = "left";
-    ctx3.fillText("FPS: " + currentFps, 10, 30);
+    
+    // 👈 Top Middle Alignment
+    ctx3.textAlign = "center";
+    ctx3.fillText("FPS: " + currentFps, canvas3.width / 2, 20);
+    ctx3.textAlign = "left"; // Reset 
     
     window.requestAnimationFrame(main);
 }

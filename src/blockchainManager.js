@@ -5,13 +5,16 @@ if (typeof window !== 'undefined') {
     if (window.logStep) logStep("blockchainManager.js loaded");
 }
 
-let bankUNI_ADDRESS = "0x2F7ec34A04faBBb8bC0AB138DD297511F846D936";
+let bankUNI_ADDRESS = "0x74AA9c511daDEdDbC05Ff7B777aA778594C40D7e";
+
 const bankUNI_ABI = [
-    "function cashOut(uint256 amountToCashOut, uint256 nonce, bytes signature) external"
+    "function cashOut(uint256 amount, uint256 nonce, bytes signature) external"
 ];
 
-// UNICHAIN SEPOLIA INFO
-const UNICHAIN_CHAIN_ID = '0x515'; // Hex for 1301
+// UNICHAIN INFO
+// Ensure the hex ID is exactly this for Mainnet
+const UNICHAIN_CHAIN_ID = '0x82';
+
 
 export function setContractAddress(address) {
     bankUNI_ADDRESS = address;
@@ -42,14 +45,19 @@ export async function connectWallet() {
 // Add this back into src/blockchainManager.js
 
 export async function getMasterBalance() {
-    if (!window.ethereum || !bankUNI_ADDRESS) return 0;
+    const UNI_TOKEN_ADDRESS = "0x8f187aA05619a017077f5308904739877ce9eA21";
+    if (!bankUNI_ADDRESS) return 0;
     try {
         const ethers = await getEthers(); 
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const balance = await provider.getBalance(bankUNI_ADDRESS);
+        const provider = new ethers.JsonRpcProvider('https://130.rpc.thirdweb.com');
+        
+        // Use the ERC20 balanceOf function instead of provider.getBalance
+        const tokenAbi = ["function balanceOf(address) view returns (uint256)"];
+        const tokenContract = new ethers.Contract(UNI_TOKEN_ADDRESS, tokenAbi, provider);
+        
+        const balance = await tokenContract.balanceOf(bankUNI_ADDRESS);
         return parseFloat(ethers.formatEther(balance));
     } catch (err) {
-        console.warn("Failed to get TVL:", err);
         return 0;
     }
 }
@@ -61,43 +69,40 @@ export async function submitVoucherToChain(voucher) {
         return;
     }
 
+    // Inside submitVoucherToChain(voucher)... replace the try block:
     try {
         const ethers = await getEthers();
-
-        // Force MetaMask to Unichain Sepolia
-        await window.ethereum.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: UNICHAIN_CHAIN_ID }],
-        }).catch(async (err) => {
-            if (err.code === 4902) {
-                await window.ethereum.request({
-                    method: 'wallet_addEthereumChain',
-                    params: [{
-                        chainId: UNICHAIN_CHAIN_ID,
-                        chainName: 'Unichain Sepolia',
-                        nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
-                        rpcUrls: ['https://sepolia.unichain.org'],
-                        blockExplorerUrls: ['https://sepolia.uniscan.xyz']
-                    }]
-                });
-            }
-        });
-
         const provider = new ethers.BrowserProvider(window.ethereum);
         const signer = await provider.getSigner();
         const contract = new ethers.Contract(bankUNI_ADDRESS, bankUNI_ABI, signer);
 
-        console.log("⏳ Processing withdrawal to Unichain...");
+        console.log("--- 🛰️ SENDING TO BLOCKCHAIN ---");
+        console.log("Target Contract:", bankUNI_ADDRESS);
+        console.log("Arg 1 (Amount):", voucher.amount);
+        console.log("Arg 2 (Nonce):", voucher.nonce);
+        console.log("Arg 3 (Sig):", voucher.signature);
+
+        const tx = await contract.cashOut(
+            BigInt(voucher.amount), 
+            BigInt(voucher.nonce), 
+            voucher.signature,
+            { gasLimit: 250000 }
+        );
         
-        // Call the cashOut function on the smart contract
-        const tx = await contract.cashOut(voucher.amount, voucher.nonce, voucher.signature);
-        
+        console.log("Transaction Hash:", tx.hash);
         await tx.wait();
-        console.log("💰 Withdrawal Successful!");
-        alert(`Successfully cashed out ${voucher.amount} UNI to your wallet!`);
+        console.log("✅ CONFIRMED ON-CHAIN");
 
     } catch (err) {
         console.error("Withdrawal failed on-chain:", err);
-        alert("Transaction failed. You rejected the transaction, or the RPC is busy.");
+        
+        // 👈 THE FIX: Ensure the refund is sent as a flat string, not "1e-7"
+        const refundAmountString = parseFloat(voucher.humanAmount).toFixed(18);
+        
+        alert("Transaction failed or was rejected. Refunding your points!");
+        
+        import('./multiplayer.js').then(m => {
+            if (m.socket) m.socket.emit('refundWithdrawal', refundAmountString);
+        });
     }
 }

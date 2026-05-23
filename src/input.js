@@ -15,7 +15,7 @@ export const inputState = {
     inputType: 'keyboard', // 👈 'keyboard' or 'touch'
 
     moveX: 0, moveY: 0,
-    action: false, interact: false, drop: false, keyB: false, keyP: false, keyC: false, keyV: false,
+    action: false, interact: false, drop: false, keyB: false, keyP: false, keyC: false, keyV: false, keyF: false,
     mainBtn: false, skill1: false, skill2: false, skill3: false, skill4: false,
     leftJoystick: { active: false, startX: 0, startY: 0, currX: 0, currY: 0 },
     aim: { active: false, index: -1, dx: 0, dy: 0, cancel: false, startX: 0, startY: 0 },
@@ -109,6 +109,8 @@ export function initInput(canvas) {
         // Inside keydown:
         if (e.code === 'KeyG') inputState.drop = true;
         if (e.code === 'KeyV') inputState.keyV = true;
+        if (e.code === 'KeyF') inputState.keyF = true;
+
 
 
         // PC QUICK-CAST (Flag for the physics loop)
@@ -134,6 +136,8 @@ export function initInput(canvas) {
         // Inside keyup:
         if (e.code === 'KeyG') inputState.drop = false;
         if (e.code === 'KeyV') inputState.keyV = false;
+        if (e.code === 'KeyF') inputState.keyF = false;
+
 
         if (e.code === 'KeyQ') inputState.skill1 = false;
         if (e.code === 'KeyW') inputState.skill2 = false;

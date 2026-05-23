@@ -34,24 +34,6 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
 
     if (target.tileID === undefined) return false;
 
-    // ☁️ CLOUD WALL / FOG OF WAR CHECK
-    // Determine which 100x100 "System" the target tile is inside
-    const targetSysX = Math.floor(target.cx / 100);
-    const targetSysY = Math.floor(target.cy / 100);
-    const sysKey = `${targetSysX}_${targetSysY}`;
-
-    // Read the sync'd list from multiplayer.js
-    let isUnlocked = true;
-    import('./multiplayer.js').then(m => {
-        if (!m.globalUnlockedSystems.includes(sysKey)) isUnlocked = false;
-    });
-
-    // Javascript is synchronous enough here that the import cache will evaluate immediately
-    // For absolute safety in a sync function, we can check a globally exposed variable
-    if (window.unlockedSystemsCache && !window.unlockedSystemsCache.includes(sysKey)) {
-        return false; // Acts like a solid wall!
-    }
-
     // ==========================================
     // 🚪 DOOR & GATE LOGIC
     // ==========================================

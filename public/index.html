@@ -76,16 +76,38 @@
 
 
             <div class="hud-panel" style="position: absolute; left: 20px; top: 20px; display: flex; align-items: center; gap: 15px;">
-                <div style="display: flex; flex-direction: column;">
-                    <span style="font-size: 8px; color: #555; margin-bottom: 4px;">IN-GAME BALANCE</span>
-                    <span id="uni-display" style="color: var(--banana-dark); font-size: 14px;">0.00 UNI</span>
+                
+                <!-- 📦 IN-GAME BALANCE BOX -->
+                <div style="background: rgba(0, 0, 0, 0.6); border: 2px solid var(--bg-dark); padding: 8px 12px; display: flex; flex-direction: column; text-shadow: 2px 2px 0 #000;">
+                    <span style="font-size: 8px; color: #aaa; margin-bottom: 4px;">IN-GAME BALANCE</span>
+                    <span id="uni-display" style="color: #FF007A; font-size: 12px;">0.00000000 UNI</span>
                 </div>
-                <div style="display: flex; flex-direction: column; border-left: 2px solid #555; padding-left: 15px;">
-                    <span style="font-size: 8px; color: #555; margin-bottom: 4px;">NETWORK</span>
-                    <span id="player-count" style="color: var(--highlight); font-size: 14px;">PLAYERS: 1</span>
+                
+                <!-- 📦 NETWORK PLAYER COUNT BOX -->
+                <div style="background: rgba(0, 0, 0, 0.6); border: 2px solid var(--bg-dark); padding: 8px 12px; display: flex; flex-direction: column; text-shadow: 2px 2px 0 #000;">
+                    <span style="font-size: 8px; color: #aaa; margin-bottom: 4px;">NETWORK</span>
+                    <span id="player-count" style="color: var(--highlight); font-size: 12px;">PLAYERS: 1</span>
                 </div>
+                
                 <button id="hud-withdraw-btn" class="pixel-btn" style="padding: 8px 12px; font-size: 8px;">WITHDRAW</button>
                 <button id="hud-help-btn" class="pixel-btn safe" style="padding: 8px 12px; font-size: 8px;">?</button>
+            </div>
+
+            <!-- 🌍 WORLD INDICATORS (Top Right) -->
+            <div class="hud-panel" style="position: absolute; right: 20px; top: 20px; display: flex; align-items: center; gap: 15px;">
+                
+                <!-- 🐟 FISH BOX -->
+                <div style="background: rgba(0, 0, 0, 0.6); border: 2px solid var(--bg-dark); padding: 8px 12px; display: flex; flex-direction: column; text-align: right; text-shadow: 2px 2px 0 #000;">
+                    <span style="font-size: 8px; color: #aaa; margin-bottom: 4px;">GLOBAL POPULATION</span>
+                    <span id="fish-display" style="color: #00FFFF; font-size: 12px;">FISH: 100</span>
+                </div>
+                
+                <!-- 🏛️ TGV BOX -->
+                <div style="background: rgba(0, 0, 0, 0.6); border: 2px solid var(--bg-dark); padding: 8px 12px; display: flex; flex-direction: column; text-align: right; text-shadow: 2px 2px 0 #000;">
+                    <span style="font-size: 8px; color: #aaa; margin-bottom: 4px;">TOTAL GAME VALUE</span>
+                    <span id="tgv-display" style="color: #FF007A; font-size: 12px;">TGV: 0.00000000</span>
+                </div>
+
             </div>
             
             <div id="debug-log" style="position: absolute; top: 80px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.7); padding: 8px 12px; border: 4px solid var(--bg-dark); color: var(--safe); font-size: 10px; text-align: center; pointer-events: none; text-shadow: 2px 2px 0 var(--bg-dark); max-width: 80%; word-wrap: break-word; z-index: 1000;">
@@ -143,17 +165,49 @@
             </div>
         </div>
 
-        <!-- SMELTER MENU -->
-        <div id="smelter-menu" class="hidden menu-modal">
+        <!-- WORKSHOP MENU -->
+        <div id="workshop-menu" class="hidden menu-modal">
             <div class="pixel-panel" style="text-align: center; width: 350px;">
-                <h2 style="color: var(--text-dark); margin-top:0;">🔥 ROYAL SMELTER</h2>
-                <p style="font-size: 10px; margin-bottom: 20px;">Refine Gold Ore into Coins.</p>
-                <div id="smelter-requirements" style="background: #fff; padding: 15px; border: 4px solid var(--bg-dark); margin-bottom: 20px; font-size: 10px; text-align: left;">
-                    <p style="margin: 5px 0;">REQ: 1x Gold Ore</p>
-                    <p style="margin: 5px 0;">COST: 1.0 POL</p>
+                <h2 style="margin-top:0;">🛠️ CRAFTING TABLE</h2>
+                <p style="font-size: 10px; margin-bottom: 20px;">Combine items into tools.</p>
+                <div style="font-size: 8px; color: #555;">(Recipes coming soon...)</div>
+                <button onclick="document.getElementById('workshop-menu').classList.add('hidden')" class="pixel-btn cancel" style="width: 100%; margin-top: 20px;">LEAVE</button>
+            </div>
+        </div>
+
+        <!-- REVISED SMELTER MENU -->
+        <div id="smelter-menu" class="hidden menu-modal" style="z-index: 3000;">
+            <div class="pixel-panel" style="width: 350px; text-align: center;">
+                <h2 style="margin-top:0;">🔥 SMELTER</h2>
+                <p style="font-size: 8px; margin-bottom: 20px; color:#555;">Stand in front and hold 'F' to smelt ore.</p>
+                <div style="background: #fff; padding: 15px; border: 4px solid var(--bg-dark); margin-bottom: 20px;">
+                    <div style="font-size: 10px; margin-bottom: 10px;">WORK REMAINING</div>
+                    <div style="width: 100%; background: #ccc; height: 16px; border: 2px solid #000; position: relative; margin-bottom: 8px;">
+                        <div id="smelter-progress-bar" style="width: 0%; height: 100%; background: var(--highlight);"></div>
+                        <div id="smelter-progress-text" style="position: absolute; width: 100%; top: 2px; font-size: 8px; text-align: center; color: #000;">200 / 200</div>
+                    </div>
+                    <div id="smelter-cost-text" style="font-size: 8px; color: var(--banana-dark); height: 10px;"></div>
                 </div>
-                <button id="mint-coin-btn" class="pixel-btn" style="width: 100%; margin-bottom: 10px;">MINT COIN</button>
-                <button id="close-smelter-btn" class="pixel-btn cancel" style="width: 100%;">CANCEL</button>
+                <button id="smelter-start-btn" class="pixel-btn" style="width: 100%; margin-bottom: 10px;">START (1x Iron Ore)</button>
+                <button id="close-smelter-btn" class="pixel-btn cancel" style="width: 100%;">LEAVE</button>
+            </div>
+        </div>
+
+        <!-- REVISED ANVIL MENU -->
+        <div id="anvil-menu" class="hidden menu-modal" style="z-index: 3000;">
+            <div class="pixel-panel" style="width: 350px; text-align: center;">
+                <h2 style="margin-top:0;">🔨 ANVIL</h2>
+                <p style="font-size: 8px; margin-bottom: 20px; color:#555;">Stand in front and hold 'F' to hammer metal.</p>
+                <div style="background: #fff; padding: 15px; border: 4px solid var(--bg-dark); margin-bottom: 20px;">
+                    <div style="font-size: 10px; margin-bottom: 10px;">WORK REMAINING</div>
+                    <div style="width: 100%; background: #ccc; height: 16px; border: 2px solid #000; position: relative; margin-bottom: 8px;">
+                        <div id="anvil-progress-bar" style="width: 0%; height: 100%; background: var(--highlight);"></div>
+                        <div id="anvil-progress-text" style="position: absolute; width: 100%; top: 2px; font-size: 8px; text-align: center; color: #000;">300 / 300</div>
+                    </div>
+                    <div id="anvil-cost-text" style="font-size: 8px; color: var(--banana-dark); height: 10px;"></div>
+                </div>
+                <button id="anvil-start-btn" class="pixel-btn" style="width: 100%; margin-bottom: 10px;">FORGE DAGGER (1x Iron Ingot)</button>
+                <button id="close-anvil-btn" class="pixel-btn cancel" style="width: 100%;">LEAVE</button>
             </div>
         </div>
 

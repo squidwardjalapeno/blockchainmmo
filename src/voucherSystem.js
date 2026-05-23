@@ -10,7 +10,9 @@ if (typeof window !== 'undefined') {
 dotenv.config();
 
 // 2. Setup Provider and Wallet for UNICHAIN SEPOLIA
-const provider = new ethers.JsonRpcProvider(process.env.UNICHAIN_SEPOLIA_RPC);
+// 2. Setup Provider and Wallet for UNICHAIN SEPOLIA
+const rpcUrl = "https://130.rpc.thirdweb.com"; // 👈 Hardcode this for a stable server link
+const provider = new ethers.JsonRpcProvider(rpcUrl);
 const adminPrivateKey = process.env.ADMIN_PRIVATE_KEY;
 
 if (!adminPrivateKey) {
@@ -21,12 +23,12 @@ if (!adminPrivateKey) {
 
 const adminWallet = new ethers.Wallet(adminPrivateKey, provider);
 
-// 3. EIP-712 Domain & Types
+// src/voucherSystem.js
 const domain = {
     name: "bankUNI",
     version: "1",
-    chainId: 1301,
-    verifyingContract: "0x2F7ec34A04faBBb8bC0AB138DD297511F846D936"
+    chainId: 130, // Unichain Mainnet
+    verifyingContract: "0x74AA9c511daDEdDbC05Ff7B777aA778594C40D7e" 
 };
 
 const types = {
@@ -37,18 +39,64 @@ const types = {
     ]
 };
 
-/**
- * Creates a signed voucher for a player
- * Now using 'export' so server.js can import it!
- */
 export async function createVoucher(playerAddress, amount, nonce) {
-    const voucher = { player: playerAddress, amount: amount, nonce: nonce };
-    
-    // Create the EIP-712 Signature
-    const signature = await adminWallet.signTypedData(domain, types, voucher);
+    try {
+        console.log("--- 📝 GENERATING VOUCHER ---");
+        
+        // 1. Log Raw Inputs
+        console.log("Raw Player:", playerAddress);
+        console.log("Raw Amount (float):", amount);
+        console.log("Raw Nonce:", nonce);
 
-    return {
-        ...voucher,
-        signature
-    };
+        // 2. Normalize and Log
+        const cleanPlayer = ethers.getAddress(playerAddress);
+        const amountStr = amount.toFixed(18);
+        const weiAmount = ethers.parseEther(amountStr);
+        const bigNonce = BigInt(nonce);
+
+        console.log("Checksummed Player:", cleanPlayer);
+        console.log("Wei String:", weiAmount.toString());
+        console.log("Nonce BigInt:", bigNonce.toString());
+
+        const voucher = { player: cleanPlayer, amount: weiAmount, nonce: bigNonce };
+
+        // 3. Log Domain and Types
+        console.log("Domain Target:", domain.verifyingContract);
+        console.log("Domain ChainID:", domain.chainId);
+
+        // 4. Generate Signature
+        const signature = await adminWallet.signTypedData(domain, types, voucher);
+        console.log("Signature Generated:", signature.substring(0, 20) + "...");
+
+        // 5. Local Verification Check
+        const recovered = ethers.verifyTypedData(domain, types, voucher, signature);
+        console.log("Local Recovered Signer:", recovered);
+        console.log("Match Admin Wallet?", recovered.toLowerCase() === adminWallet.address.toLowerCase());
+        console.log("----------------------------");
+
+        return {
+            player: cleanPlayer,
+            amount: weiAmount.toString(),
+            nonce: bigNonce.toString(),
+            signature,
+            humanAmount: amountStr
+        };
+    } catch (err) {
+        console.error("❌ SIGNING FAILED:", err);
+        throw err;
+    }
+}
+
+// Add this to the bottom of src/voucherSystem.js
+export async function getContractTVL() {
+    const UNI_TOKEN_ADDRESS = "0x8f187aA05619a017077f5308904739877ce9eA21";
+    try {
+        const tokenAbi = ["function balanceOf(address) view returns (uint256)"];
+        const tokenContract = new ethers.Contract(UNI_TOKEN_ADDRESS, tokenAbi, provider);
+        
+        const balance = await tokenContract.balanceOf(domain.verifyingContract);
+        return parseFloat(ethers.formatEther(balance));
+    } catch (err) {
+        return 0;
+    }
 }

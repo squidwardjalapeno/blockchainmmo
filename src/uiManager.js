@@ -1,8 +1,9 @@
 
-import { hero, getLevelInfo } from './entities.js';
+import { hero, getLevelInfo, gameState } from './entities.js';
 import { socket, remotePlayers, playerWallet, setPlayerWallet } from './multiplayer.js';
 import { CONFIG } from './config.js';
 import { ITEM_TYPES, createItem } from './items.js';
+import { getWaitModifier, getRandomFish, globalFishCount } from './fish.js';
 import { submitVoucherToChain, connectWallet } from './blockchainManager.js';
 import { mapCanvas } from './renderer.js';
 import { recalculateStats } from './interactionManager.js';
@@ -32,6 +33,100 @@ export let activeCellarItems = [];
 
 export let activeHayStorageId = null;
 export let activeHayStorageItems = [];
+
+// ==========================================
+// 🛠️ CRAFTING RENDERERS (Smelter & Anvil)
+// ==========================================
+// 🛠️ CRAFTING RENDERERS (Smelter & Anvil)
+// ==========================================
+export let activeSmelterId = null;
+export let activeSmelterData = null;
+export let activeAnvilId = null;
+export let activeAnvilData = null;
+
+let confirmingSmelterSpeedUp = false;
+let confirmingAnvilSpeedUp = false;
+
+export function openCraftingTableMenu() {
+    document.getElementById('workshop-menu').classList.remove('hidden');
+}
+
+function renderSmelterUI() {
+    if (!activeSmelterData) return;
+    const bar = document.getElementById('smelter-progress-bar');
+    const text = document.getElementById('smelter-progress-text');
+    const costText = document.getElementById('smelter-cost-text');
+    const btn = document.getElementById('smelter-start-btn');
+
+    const pct = ((activeSmelterData.maxWork - activeSmelterData.workLeft) / activeSmelterData.maxWork) * 100;
+    bar.style.width = `${pct}%`;
+    text.innerText = `${activeSmelterData.workLeft} / ${activeSmelterData.maxWork}`;
+
+    if (activeSmelterData.ready) {
+        btn.innerText = "COLLECT INGOT";
+        btn.className = "pixel-btn safe";
+        text.innerText = "JOB COMPLETE";
+        costText.innerText = "";
+        confirmingSmelterSpeedUp = false;
+    } else if (activeSmelterData.active) {
+        if (confirmingSmelterSpeedUp) {
+            btn.innerText = "SPEED - UP NOW!";
+            btn.className = "pixel-btn safe";
+            costText.innerText = "COST: 50 UNI";
+        } else {
+            btn.innerText = "SPEED - UP";
+            btn.className = "pixel-btn";
+            costText.innerText = "";
+        }
+    } else {
+        btn.innerText = "START (1x Iron Ore)";
+        btn.className = "pixel-btn";
+        costText.innerText = "";
+        confirmingSmelterSpeedUp = false;
+    }
+}
+
+function renderAnvilUI() {
+    if (!activeAnvilData) return;
+    const bar = document.getElementById('anvil-progress-bar');
+    const text = document.getElementById('anvil-progress-text');
+    const costText = document.getElementById('anvil-cost-text');
+    const btn = document.getElementById('anvil-start-btn');
+
+    const pct = ((activeAnvilData.maxWork - activeAnvilData.workLeft) / activeAnvilData.maxWork) * 100;
+    bar.style.width = `${pct}%`;
+    text.innerText = `${activeAnvilData.workLeft} / ${activeAnvilData.maxWork}`;
+
+    if (activeAnvilData.ready) {
+        btn.innerText = "COLLECT DAGGER";
+        btn.className = "pixel-btn safe";
+        text.innerText = "JOB COMPLETE";
+        costText.innerText = "";
+        confirmingAnvilSpeedUp = false;
+    } else if (activeAnvilData.active) {
+        if (confirmingAnvilSpeedUp) {
+            btn.innerText = "SPEED - UP NOW!";
+            btn.className = "pixel-btn safe";
+            costText.innerText = "COST: 50 UNI";
+        } else {
+            btn.innerText = "SPEED - UP";
+            btn.className = "pixel-btn";
+            costText.innerText = "";
+        }
+    } else {
+        btn.innerText = "FORGE DAGGER (1x Iron Ingot)";
+        btn.className = "pixel-btn";
+        costText.innerText = "";
+        confirmingAnvilSpeedUp = false;
+    }
+}
+
+export function handleRemoteSmelterUpdate(jobId, data) {
+    if (activeSmelterId === jobId) { activeSmelterData = data; renderSmelterUI(); }
+}
+export function handleRemoteAnvilUpdate(jobId, data) {
+    if (activeAnvilId === jobId) { activeAnvilData = data; renderAnvilUI(); }
+}
 
 const VALID_FOOD_TYPES = ["fish", "cooked_fish", "grass_item"];
 const VALID_HAY_TYPES = ["hay"]; 
@@ -139,12 +234,13 @@ export function initUI() {
         if (socket) {
             socket.emit('sacrificeItem', {
                 itemType: altarItem.seedType,
+                count: altarItem.count, // 👈 THE FIX: Send the stack count!
                 playerWalletAddress: playerWallet
             });
         }
         
-        console.log(`💎 Sacrificed ${altarItem.name} to the Gods.`);
-        alert("The Gods are pleased! A voucher has been sent to your Bank.");
+        console.log(`💎 Sacrificed ${altarItem.count}x ${altarItem.name} to the Gods.`);
+        alert("The Gods are pleased! Points have been added to your balance.");
         
         altarItem = null;
         renderTempleUI();
@@ -283,6 +379,7 @@ export function initUI() {
         document.getElementById('withdraw-menu').classList.add('hidden');
     };
 
+    // Inside initUI() for the withdraw button:
     document.getElementById('confirm-withdraw-btn').onclick = () => {
         const amount = parseFloat(document.getElementById('withdraw-input').value);
 
@@ -291,11 +388,7 @@ export function initUI() {
             return;
         }
         if (amount > hero.inGameUni) {
-            alert(`Insufficient balance! You only have ${hero.inGameUni} UNI.`);
-            return;
-        }
-        if (amount < 1000) {
-            alert("Minimum withdrawal is 1000 UNI.");
+            alert(`Insufficient balance! You only have ${hero.inGameUni.toFixed(4)} UNI.`);
             return;
         }
 
@@ -354,6 +447,117 @@ export function initUI() {
             if (socket) socket.emit('identifyWallet', guestID);
         };
     }
+
+    // ==========================================
+    // 🛠️ SMELTER & ANVIL LISTENERS
+    // ==========================================
+    if (socket) {
+        socket.on('smelterData', (data) => { 
+            activeSmelterId = data.jobId; 
+            activeSmelterData = data.data; 
+            document.getElementById('smelter-menu').classList.remove('hidden');
+            renderSmelterUI(); 
+        });
+        
+        socket.on('smelterUpdated', (data) => { 
+            if (activeSmelterId === data.jobId) { 
+                activeSmelterData = data.data; 
+                renderSmelterUI(); 
+            } 
+        });
+        
+        socket.on('receiveSmelterLoot', () => { 
+            import('./interactionManager.js').then(m => {
+                if (m.giveItemToHero(createItem(ITEM_TYPES.IRON_INGOT))) {
+                    alert("🔥 Collected 1x Iron Ingot!");
+                    renderTabContent();
+                } else {
+                    alert("Backpack full! Make space first.");
+                }
+            });
+        });
+
+        socket.on('anvilData', (data) => { 
+            activeAnvilId = data.jobId; 
+            activeAnvilData = data.data; 
+            document.getElementById('anvil-menu').classList.remove('hidden');
+            renderAnvilUI(); 
+        });
+        
+        socket.on('anvilUpdated', (data) => { 
+            if (activeAnvilId === data.jobId) { 
+                activeAnvilData = data.data; 
+                renderAnvilUI(); 
+            } 
+        });
+        
+        socket.on('receiveAnvilLoot', () => { 
+            import('./interactionManager.js').then(m => {
+                if (m.giveItemToHero(createItem(ITEM_TYPES.DAGGER))) {
+                    alert("🗡️ Crafted a Rusty Dagger!");
+                    renderTabContent();
+                } else {
+                    alert("Backpack full! Make space first.");
+                }
+            });
+        });
+    }
+
+    // --- SMELTER BUTTON CLICKS ---
+    document.getElementById('close-smelter-btn').addEventListener('click', () => {
+        document.getElementById('smelter-menu').classList.add('hidden');
+        confirmingSmelterSpeedUp = false;
+    });
+
+    document.getElementById('smelter-start-btn').addEventListener('click', () => {
+        if (!activeSmelterData) return;
+        
+        if (activeSmelterData.ready) {
+            if (socket) socket.emit('collectSmelter', { jobId: activeSmelterId });
+        } else if (!activeSmelterData.active) {
+            const oreIdx = hero.inventory.findIndex(item => item.seedType === 'iron_ore');
+            if (oreIdx === -1) { alert("You need Iron Ore to start smelting!"); return; }
+            hero.inventory.splice(oreIdx, 1);
+            renderTabContent();
+            if (socket) socket.emit('startSmelterJob', { jobId: activeSmelterId });
+        } else {
+            if (!confirmingSmelterSpeedUp) {
+                confirmingSmelterSpeedUp = true;
+                renderSmelterUI();
+            } else {
+                if (socket) socket.emit('speedUpSmelter', { jobId: activeSmelterId });
+                confirmingSmelterSpeedUp = false;
+            }
+        }
+    });
+
+    // --- ANVIL BUTTON CLICKS ---
+    document.getElementById('close-anvil-btn').addEventListener('click', () => {
+        document.getElementById('anvil-menu').classList.add('hidden');
+        confirmingAnvilSpeedUp = false;
+    });
+
+    document.getElementById('anvil-start-btn').addEventListener('click', () => {
+        if (!activeAnvilData) return;
+        
+        if (activeAnvilData.ready) {
+            if (socket) socket.emit('collectAnvil', { jobId: activeAnvilId });
+        } else if (!activeAnvilData.active) {
+            const ingotIdx = hero.inventory.findIndex(item => item.seedType === 'iron_ingot');
+            if (ingotIdx === -1) { alert("You need an Iron Ingot to start forging!"); return; }
+            hero.inventory.splice(ingotIdx, 1);
+            renderTabContent();
+            if (socket) socket.emit('startAnvilJob', { jobId: activeAnvilId });
+        } else {
+            if (!confirmingAnvilSpeedUp) {
+                confirmingAnvilSpeedUp = true;
+                renderAnvilUI();
+            } else {
+                if (socket) socket.emit('speedUpAnvil', { jobId: activeAnvilId });
+                confirmingAnvilSpeedUp = false;
+            }
+        }
+    });
 
     // 👇 ADD THIS LINE TO ACTIVATE THE MINING BUTTONS!
     initMiningListeners();
@@ -529,33 +733,10 @@ export function renderTabContent() {
             break;
 
         case 'map':
-            // 🌍 THE 9x9 MACRO MAP
-            const currentSysX = Math.floor(Math.floor(hero.x / 1600) / 100);
-            const currentSysY = Math.floor(Math.floor(hero.y / 1600) / 100);
-
-            let mapHTML = `<h3 style="margin-top:0; text-align:center;">WORLD MAP</h3>
-                           <div style="display: grid; grid-template-columns: repeat(9, 30px); gap: 2px; justify-content: center; margin-top: 10px;">`;
-
-            // Draw the 9x9 Grid
-            for (let y = 0; y < 9; y++) {
-                for (let x = 0; x < 9; x++) {
-                    const sysKey = `${x}_${y}`;
-                    const isUnlocked = window.unlockedSystemsCache && window.unlockedSystemsCache.includes(sysKey);
-                    const isHere = (x === currentSysX && y === currentSysY);
-                    
-                    let color = isUnlocked ? "rgba(0, 255, 0, 0.4)" : "rgba(100, 100, 100, 0.8)"; // Green or Clouded
-                    let text = isHere ? "📍" : (isUnlocked ? "" : "☁️");
-
-                    mapHTML += `<div onclick="window.checkSystemUnlock(${x}, ${y})" 
-                                     style="width: 30px; height: 30px; background: ${color}; border: 2px solid var(--bg-dark); 
-                                     display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 14px;">
-                                     ${text}
-                                </div>`;
-                }
-            }
-            mapHTML += `</div><p style="font-size: 8px; text-align:center; margin-top:15px; color:#555;">Click a cloud to view expansion costs.</p>`;
-            
-            container.innerHTML = mapHTML;
+            container.innerHTML = `
+                <h3 style="margin-top:0; text-align:center;">WORLD MAP</h3>
+                <p style="font-size: 8px; text-align:center; margin-top:15px; color:#555;">(Find a Map Table in town for detailed navigation.)</p>
+            `;
             break;
 
         // Update the 'equipment' tab case in renderTabContent() to show the mainHand
@@ -943,6 +1124,7 @@ function renderTempleUI() {
         <div class="inv-item draggable-item" draggable="true" data-index="${i}" data-source="hero-temple">
             <div class="item-icon" style="font-size: 24px;">${getItemIcon(item)}</div>
             <strong>${item.name}</strong>
+            ${item.count > 1 ? `<span style="color:var(--banana-dark); font-size:8px;">(x${item.count})</span>` : ''}
         </div>
     `).join('');
 
@@ -951,10 +1133,11 @@ function renderTempleUI() {
             <div class="inv-item draggable-item" draggable="true" data-index="0" data-source="altar" style="border: none; background: transparent;">
                 <div class="item-icon" style="font-size: 32px;">${getItemIcon(altarItem)}</div>
                 <strong>${altarItem.name}</strong>
+                ${altarItem.count > 1 ? `<span style="color:var(--banana-dark); font-size:10px;">(x${altarItem.count})</span>` : ''}
             </div>
         `;
     } else {
-        altarSlot.innerHTML = `<div style="color:#666; font-size: 12px; text-align: center;">Drag Fish<br>Here</div>`;
+        altarSlot.innerHTML = `<div style="color:#666; font-size: 12px; text-align: center;">Drag Seed<br>Here</div>`;
     }
 
     const items = document.querySelectorAll('#temple-menu .draggable-item');
@@ -978,10 +1161,10 @@ function transferTempleItem(index, source) {
     if (source === 'hero-temple') {
         const item = hero.inventory[index];
         
-        // 👇 UPDATED: Accepts ALL seeds!
+        // 🛑 STRICT CHECK: Only accepts items with "_seed" in their type
         const isSeed = item.seedType.includes("_seed");
-        if (item.seedType !== "fish" && item.seedType !== "cooked_fish" && !isSeed) {
-            alert("The Gods reject this offering! They hunger for fish and seeds.");
+        if (!isSeed) {
+            alert("The Gods reject this offering! They only accept Seeds.");
             return;
         }
         
@@ -1309,11 +1492,8 @@ export function initMiningListeners() {
 // 🏦 WITHDRAWAL UI LOGIC
 // ==========================================
 export function openWithdrawMenu() {
-    if (!playerWallet) {
-        alert("Connect your wallet first!");
-        return;
-    }
-    document.getElementById('withdraw-balance-max').innerText = hero.inGameUni.toFixed(2);
+    if (!playerWallet) { alert("Connect your wallet first!"); return; }
+    document.getElementById('withdraw-balance-max').innerText = hero.inGameUni.toFixed(8); // 👈 4 decimals
     document.getElementById('withdraw-input').value = "";
     document.getElementById('withdraw-menu').classList.remove('hidden');
 }
@@ -1326,16 +1506,19 @@ export async function executeWithdrawal(voucher) {
 // ==========================================
 // 🔄 HUD UPDATES
 // ==========================================
+// 🔄 HUD UPDATES
+// ==========================================
 export function updateHUD() {
     const uniDisplay = document.getElementById('uni-display');
     const playerCount = document.getElementById('player-count');
+    const fishDisplay = document.getElementById('fish-display');
+    const tgvDisplay = document.getElementById('tgv-display');
 
     if (uniDisplay) {
-        uniDisplay.innerText = `${(hero.inGameUni || 0).toFixed(2)} UNI`;
+        uniDisplay.innerText = `${(hero.inGameUni || 0).toFixed(8)} UNI`;
     }
 
     if (playerCount) {
-        // 👇 THE FIX: Count ourselves (1) + any remote player who is NOT offline
         let onlineCount = 1;
         import('./multiplayer.js').then(m => {
             m.remotePlayers.forEach(p => {
@@ -1343,6 +1526,15 @@ export function updateHUD() {
             });
             playerCount.innerText = `PLAYERS: ${onlineCount}`;
         });
+    }
+
+    if (fishDisplay) {
+        fishDisplay.innerText = `FISH: ${Math.floor(globalFishCount)}`;
+        fishDisplay.style.color = globalFishCount < 2000 ? "#FF4444" : "#00FFFF";
+    }
+
+    if (tgvDisplay) {
+        tgvDisplay.innerText = `TGV: ${(gameState.tvl || 0).toFixed(8)}`;
     }
 }
 
@@ -1497,41 +1689,6 @@ function dropItemToWorld(index, amount) {
     });
 }
 
-
-window.checkSystemUnlock = (sysX, sysY) => {
-    const sysKey = `${sysX}_${sysY}`;
-    
-    // 🛡️ SAFETY CHECK: Ensure the cache exists. If it doesn't, assume ONLY the center is unlocked.
-    const cache = window.unlockedSystemsCache || ["4_4"];
-
-    if (cache.includes(sysKey)) {
-        alert("This sector is already explored.");
-        return;
-    }
-
-    // Duplicate the server's price math so the UI can show the cost instantly
-    const layerX = Math.abs(sysX - 4);
-    const layerY = Math.abs(sysY - 4);
-    const layer = Math.max(layerX, layerY);
-    
-    let price = 1.0;
-    price *= Math.pow(1.5, layer);
-    
-    // 🛡️ Use the safe 'cache' variable here instead of the raw window property!
-    price *= Math.pow(1.1, cache.length - 1);
-
-    if (confirm(`Unlock System [${sysX}, ${sysY}] for the entire server?\nCost: ${price.toFixed(2)} UNI\nYour Balance: ${(hero.inGameUni || 0).toFixed(2)} UNI`)) {
-        if ((hero.inGameUni || 0) >= price) {
-            import('./multiplayer.js').then(m => {
-                if (m.socket) m.socket.emit('unlockSystem', { sysX, sysY });
-            });
-            alert("Sent expansion request to the network!");
-            toggleMenu(); // Close menu
-        } else {
-            alert("Insufficient UNI balance!");
-        }
-    }
-};
 
 // ==========================================
 // 📱 UNIFIED TOUCH DRAG & TOOLTIP ENGINE

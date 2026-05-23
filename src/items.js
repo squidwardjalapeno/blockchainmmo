@@ -349,6 +349,16 @@ export const ITEM_TYPES = {
         baseFertility: 0,
         drawSize: 8
     },
+    IRON_INGOT: {
+        name: "Iron Ingot",
+        seedType: "iron_ingot",
+        spriteID: 36,
+        tileset: "craftingTileset", // Width 16
+        baseHealth: 100,
+        baseVirulence: 0,
+        baseFertility: 0,
+        drawSize: 8
+    },
 };
 
 /**

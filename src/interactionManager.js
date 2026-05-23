@@ -116,11 +116,18 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
     if (inputState.interact || inputState.action) {
         
         if (obj) {
+            // Replaces the old openSmelterMenu
             if (obj.type === 'SMELTER') {
-                openSmelterMenu();
-                inputState.interact = false;
-                inputState.action = false;
-                return;
+                if (socket) socket.emit('requestSmelter', `smelter_${tx}_${ty}`);
+                inputState.interact = false; return;
+            }
+            if (obj.type === 'ANVIL') {
+                if (socket) socket.emit('requestAnvil', `anvil_${tx}_${ty}`);
+                inputState.interact = false; return;
+            }
+            if (obj.type === 'CRAFTING_TABLE') {
+                import('./uiManager.js').then(m => m.openCraftingTableMenu());
+                inputState.interact = false; return;
             }
 
             if (obj.type === 'BEDROLL') {
@@ -262,6 +269,52 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
         if (picked) inputState.interact = false;
     }
 
+    // --- WORK LOGIC (F Key Toggle) ---
+    // 1. Toggle work mode ON when F is pressed
+    if (inputState.keyF) {
+        inputState.keyF = false; // Instantly consume the keypress
+        
+        if (obj && (obj.type === 'SMELTER' || obj.type === 'ANVIL')) {
+            hero.isWorking = true;
+            hero.workingObj = { tx: tx, ty: ty, type: obj.type };
+            hero.workTimer = 0; // Reset the 1-second timer
+            console.log(`🔥 Started working at the ${obj.type}...`);
+        }
+    }
+
+    // 2. Continuously process work if active
+    if (hero.isWorking && hero.workingObj) {
+        
+        // Did the player tap a movement key or touch the joystick?
+        let isManualMove = false;
+        if (inputState.inputType === 'touch' && inputState.leftJoystick.active) isManualMove = true;
+        if (inputState.moveX !== 0 || inputState.moveY !== 0) isManualMove = true;
+
+        if (isManualMove) {
+            // Movement breaks concentration!
+            hero.isWorking = false;
+            hero.workingObj = null;
+            hero.workTimer = 0;
+            console.log("🛑 Work cancelled by movement.");
+        } else {
+            hero.isMoving = false; // Lock hero in place while hammering/smelting
+            
+            // Increment the 1-second timer
+            hero.workTimer += modifier;
+            
+            if (hero.workTimer >= 1.0) {
+                hero.workTimer -= 1.0; // Reset timer, keep remainder
+                
+                // Send exactly 1 strike per second!
+                if (hero.workingObj.type === 'SMELTER') {
+                    if (socket) socket.emit('workSmelterStrike', { jobId: `smelter_${hero.workingObj.tx}_${hero.workingObj.ty}` });
+                } else if (hero.workingObj.type === 'ANVIL') {
+                    if (socket) socket.emit('workAnvilStrike', { jobId: `anvil_${hero.workingObj.tx}_${hero.workingObj.ty}` });
+                }
+            }
+        }
+    }
+
     // --- 6. DROP ITEM (G Key) ---
     if (inputState.drop) {
         inputState.drop = false;
@@ -398,54 +451,6 @@ function consumeFood() {
         hero.energy = Math.min(hero.maxEnergy, hero.energy + restoreAmount);
         console.log(`🍗 Consumed ${item.name}! +${restoreAmount} Energy.`);
 
-        // 👇 🌟 DEBUG TOOL: TOMATO TELEPORT TO MINING CAMP
-        if (item.seedType === "tomato_item") {
-            import('./cellDecorator.js').then(module => {
-                const currentCX = Math.floor(hero.x / 1600);
-                const currentCY = Math.floor(hero.y / 1600);
-                let closestDist = Infinity;
-                let targetX = 0, targetY = 0;
-
-                // 1. Scan the macro map for Mining Camps (107)
-                for (let i = 0; i < window.worldMap.length; i++) {
-                    if (window.worldMap[i] === 107) {
-                        const cx = i % CONFIG.MAP_SIZE;
-                        const cy = Math.floor(i / CONFIG.MAP_SIZE);
-                        
-                        const dist = Math.abs(cx - currentCX) + Math.abs(cy - currentCY);
-                        
-                        // We use > 0 to make sure we don't teleport to the camp we are currently standing in!
-                        if (dist > 0 && dist < closestDist) {
-                            closestDist = dist;
-                            
-                            // Calculate the EXACT mathematical center (just like planMiningCamp does!)
-                            const seed = window.worldSeed || 1;
-                            const hash = Math.abs(Math.sin((cx + seed) * 12.9898 + (cy + seed) * 78.233) * 43758.5453);
-                            targetX = cx * 100 + (Math.floor(hash * 60) % 60 + 20);
-                            targetY = cy * 100 + (Math.floor((hash * 10) * 60) % 60 + 20);
-                        }
-                    }
-                }
-
-                // 2. Perform the Warp!
-                if (closestDist !== Infinity) {
-                    console.log(`🍅 TOMATO WARP! Jumping to Camp at [${targetX}, ${targetY}]`);
-                    hero.x = targetX * 16;
-                    hero.y = targetY * 16;
-                    
-                    // Tell the server we moved so it doesn't rubberband us
-                    if (socket) {
-                        socket.emit('movement', {
-                            x: hero.x, y: hero.y, dir: hero.dir, animFrame: hero.frame,
-                            isMoving: false, isWindingUp: false, currentTileID: 63
-                        });
-                    }
-                } else {
-                    console.log(`🍅 TOMATO WARP FAILED: No other mining camps exist on this map!`);
-                }
-            });
-        }
-        // 👆 END DEBUG TOOL
 
         // 🎒 Subtract from stack
         item.count--;

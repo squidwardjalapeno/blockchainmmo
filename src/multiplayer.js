@@ -80,6 +80,14 @@ export function initMultiplayer() {
             import('./uiManager.js').then(module => module.renderCharacterCreation());
         });
 
+        // Inside initMultiplayer() in src/multiplayer.js
+        socket.on('tgvUpdate', (data) => {
+       import('./entities.js').then(m => {
+        m.gameState.tvl = data.tgv; // Update the global state
+        import('./uiManager.js').then(ui => ui.updateHUD()); // Force HUD refresh
+             });
+        });
+
         // 🔄 UPDATED: When the server sends us our character data
         socket.on('restoreHero', (data) => {
             hero.xp = data.xp;

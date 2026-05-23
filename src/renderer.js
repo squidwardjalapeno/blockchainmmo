@@ -241,8 +241,10 @@ export function drawMap(worldMatrix, roomMatrix) {
                         const roadBorders = [302, 303, 304, 313, 315, 331, 335, 350, 351, 353, 354, 367];
                         if (roadBorders.includes(tID)) {
                             
-                            // PURE LOGIC FIX: Look 1 tile around us. Are we at the beach?
+                            // PURE LOGIC FIX: Look 1 tile around us to see what base layer we are buffering!
                             let isBeach = false;
+                            let isStone = false;
+                            
                             for (let ox = -1; ox <= 1; ox++) {
                                 for (let oy = -1; oy <= 1; oy++) {
                                     const nCX = Math.floor((k + ox) / 100);
@@ -255,6 +257,10 @@ export function drawMap(worldMatrix, roomMatrix) {
                                         // If touching Sand (0) or Water (10, 11, 17)
                                         if (neighborID === 0 || neighborID === 10 || neighborID === 11 || neighborID === 17) {
                                             isBeach = true;
+                                        } 
+                                        // If touching Paved Stone Road (208)
+                                        else if (neighborID === 208) {
+                                            isStone = true;
                                         }
                                     }
                                 }
@@ -263,6 +269,12 @@ export function drawMap(worldMatrix, roomMatrix) {
                             if (isBeach) {
                                 // Draw SAND (Tile 0 from worldTilesColor) underneath!
                                 ctx2.drawImage(tileImg, 0, 0, 16, 16, sX, sY, 16, 16);
+                            } else if (isStone) {
+                                // Draw STONE (Tile 8 from mainTileset2) underneath!
+                                const roadImg = images.mainTileset2;
+                                if (roadImg && roadImg.complete) {
+                                    ctx2.drawImage(roadImg, (8 % 8) * 16, Math.floor(8 / 8) * 16, 16, 16, sX, sY, 16, 16);
+                                }
                             } else {
                                 // Draw DIRT (Tile 337 from woodsTileset2) underneath!
                                 const dirtIdx = 337 - 300; 
@@ -391,7 +403,8 @@ else {
                             'KITCHEN': 8, 'MAP_TABLE': 9, 'ARMORY': 10,
                             'MILITARY_STORAGE': 10, 'FOOD_STORAGE': 11
                         };
-                        const oldMap = { 'SMELTER': 53, 'BEDROLL': 61, 'INT_WALL': 41 };
+                        const oldMap = { 'SMELTER': 53, 'BEDROLL': 61, 'INT_WALL': 41, 'ANVIL': 54 }; 
+
 
                         if (transMap[obj.type] !== undefined) {
                             const tImg = images.transparentTileset;
@@ -404,6 +417,10 @@ else {
                             const oid = oldMap[obj.type];
                             ctx2.drawImage(tileImg, (oid % 8) * 16, Math.floor(oid / 8) * 16, 16, 16, sX, sY, 16, 16);
                         }
+                        else if (obj.type === 'CRAFTING_TABLE') {
+    const kImg = images.keyTileset;
+    if (kImg && kImg.complete) ctx2.drawImage(kImg, (100 % 16) * 16, Math.floor(100 / 16) * 16, 16, 16, sX, sY, 16, 16);
+}
                     }
                 }
             }
@@ -1438,6 +1455,27 @@ export function drawProjectiles(ctx, serverProjectilesData) {
     });
 }
 
+export function drawWorkingIndicator(ctx, workingObj) {
+    if (!workingObj) return;
+
+    // Convert tile coordinates to screen coordinates
+    const screenX = viewport.offset[0] + (workingObj.tx * 16) + 8;
+    const screenY = viewport.offset[1] + (workingObj.ty * 16) + 8; 
+
+    // Make it pulse to show it's active
+    const pulse = Math.sin(Date.now() / 100) * 2;
+    const radius = 12 + pulse;
+
+    ctx.strokeStyle = "rgba(255, 50, 50, 0.9)"; 
+    ctx.fillStyle = "rgba(255, 50, 50, 0.3)";
+    ctx.lineWidth = 2;
+    
+    ctx.beginPath();
+    ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+}
+
 // js/renderer.js
 
 // src/renderer.js
@@ -1489,39 +1527,6 @@ export function drawHUDButton(ctx, x, y, radius, label, icon, isPressed, cooldow
 // In src/renderer.js
 
 export function drawAbilityButtons(ctxUI) {
-    // --- 🌍 WORLD INDICATORS (Bottom Left) ---
-    // Drawn for EVERYONE (PC and Mobile)
-    const uiX = 5;
-    const uiY = canvas3.height - 15;
-
-    ctxUI.save();
-    ctxUI.font = '6px "Press Start 2P"';
-    
-    // 1. WORLD FISH BOX
-    const fishText = `FISH:${Math.floor(globalFishCount)}`;
-    ctxUI.fillStyle = "rgba(0, 0, 0, 0.6)";
-    ctxUI.fillRect(uiX, uiY - 8, 50, 12);
-    ctxUI.strokeStyle = "var(--outline)";
-    ctxUI.lineWidth = 1;
-    ctxUI.strokeRect(uiX, uiY - 8, 50, 12);
-    
-    ctxUI.fillStyle = globalFishCount < 2000 ? "#FF4444" : "#00FFFF"; 
-    ctxUI.fillText(fishText, uiX + 2, uiY);
-
-    // 2. 🏛️ TVL BOX
-    const tvlX = uiX + 55; 
-    const tvlText = `TVL:${(gameState.tvl || 0).toFixed(3)}`;
-    
-    ctxUI.fillStyle = "rgba(0, 0, 0, 0.6)";
-    ctxUI.fillRect(tvlX, uiY - 8, 70, 12);
-    ctxUI.strokeStyle = "var(--outline)";
-    ctxUI.strokeRect(tvlX, uiY - 8, 70, 12);
-    
-    ctxUI.fillStyle = gameState.tvl > 0.01 ? "var(--safe)" : "#FF4444"; 
-    ctxUI.fillText(tvlText, tvlX + 2, uiY);
-    
-    ctxUI.restore();
-
     // 🛑 KEYBOARD CHECK: Stop drawing here if on PC to keep screen clean!
     if (inputState.inputType === 'keyboard') return;
 
@@ -1566,8 +1571,8 @@ export function drawXPStatus(ctxUI) {
     const info = getLevelInfo(hero.xp);
     const availablePoints = info.points - (hero.spentPoints || 0);
 
-    const x = 5;
-    const y = 20; // 👈 Moved to the top left so it doesn't overlap the joystick
+    const x = 10; // 👈 Slightly padded from the left edge
+    const y = Math.floor(canvas3.height / 2); // 👈 Center of the screen vertically
 
     // 1. Progress Bar Background
     const barW = 80;
