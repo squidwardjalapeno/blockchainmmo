@@ -718,22 +718,23 @@ socket.on('updateStats', (data) => {
     const p = players[socket.id];
     if (!p) return;
 
-    // 1. LIVE UPDATE: Merge the data into the active player object
+    // 🛡️ SECURITY: Prevent the client from ever overwriting the server's inventory
+    if (data.inventory) delete data.inventory;
+
+    // 1. Update the live RAM object
     Object.assign(p, data);
     
-    // Log for debugging (like your old listener did)
-    console.log(`📊 Stats Sync [${socket.id}]: Armor ${p.armor} | XP ${p.xp}`);
-
-    // 2. PERSISTENCE: If they are logged in via wallet, save to the "Cloud"
+    // 2. PERSISTENCE: If logged in, update the DB record
     if (socket.wallet) {
-        // Create a clean "Save State" copy (no circular references)
+        // We only update stats, we DO NOT replace the whole object
+        // This ensures the saved 'inventory' array stays safe!
         userDb[socket.wallet] = {
-            ...p,
-            id: undefined,  // Strip temporary socket ID
-            target: null    // Strip combat target
+            ...userDb[socket.wallet], // Keep existing data (like inventory!)
+            ...data,                  // Layer on the new stats
+            id: undefined,
+            target: null
         };
 
-        // Write to disk (Safe for JSON)
         fs.writeFileSync('persistence.json', JSON.stringify(userDb, null, 2));
     }
 });
@@ -1236,29 +1237,25 @@ socket.on('syncTile', (data) => {
 socket.on('identifyWallet', (data) => {
     const rawAddress = (typeof data === 'object') ? data.address : data;
     if (!rawAddress) return;
-
-    // 🛡️ THE FIX: Normalize address to match the save file
     const address = (rawAddress.startsWith('0x')) ? ethers.getAddress(rawAddress) : rawAddress;
     socket.wallet = address;
 
     let existingSocketId = Object.keys(players).find(id => players[id].wallet === address);
 
     if (existingSocketId) {
-        // ... (body re-possession logic)
+        // ... re-possession logic ...
         players[socket.id] = { ...players[existingSocketId], id: socket.id, isOffline: false };
         if (existingSocketId !== socket.id) delete players[existingSocketId];
         socket.emit('restoreHero', players[socket.id]);
     } 
     else if (userDb[address]) {
-        console.log(`💾 Restoring ${address}. Inventory count: ${userDb[address].inventory?.length}`);
+        console.log(`💾 FOUND SAVE: ${address} has ${userDb[address].inventory?.length || 0} items.`);
         
-        // 🛡️ THE FIX: Spread the saved DB record into the active player object
-        players[socket.id] = { 
-            ...players[socket.id], 
-            ...userDb[address], 
-            id: socket.id, 
-            isOffline: false 
-        };
+        // 🛡️ THE FIX: Ensure the inventory is merged into the player's current RAM session
+        players[socket.id].inventory = userDb[address].inventory || [];
+        
+        // Merge the rest of the stats
+        Object.assign(players[socket.id], userDb[address]);
         
         socket.emit('restoreHero', players[socket.id]);
     } 
@@ -1270,15 +1267,17 @@ socket.on('identifyWallet', (data) => {
 // 🆕 ADD THIS NEW LISTENER:
 socket.on('createCharacter', (data) => {
     const { wallet, charClass, skills } = data;
-    const cleanAddress = (wallet.startsWith('0x')) ? ethers.getAddress(wallet) : wallet;
+    const address = (wallet.startsWith('0x')) ? ethers.getAddress(wallet) : wallet;
 
-    players[socket.id].wallet = cleanAddress;
+    players[socket.id].wallet = address;
     players[socket.id].charClass = charClass;
     players[socket.id].skills = skills;
     
-    // 🛡️ THE FIX: ONLY set inventory to empty if they don't already have one in the DB
-    if (!players[socket.id].inventory) {
+    // 🛡️ THE FIX: Only initialize to empty if there is no saved bag
+    if (!userDb[address] || !userDb[address].inventory) {
         players[socket.id].inventory = [];
+    } else {
+        players[socket.id].inventory = userDb[address].inventory;
     }
     
     syncPlayerAndSave(socket.id);
