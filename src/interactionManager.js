@@ -40,32 +40,38 @@ function hasKeyForHouse(houseId) {
 export function giveItemToHero(newItem) {
     if (!newItem) return false;
 
-    // 1. If it's stackable, try to find an existing stack that isn't full
+    let success = false;
+
+    // 1. If the item is stackable, attempt to merge with an existing stack
     if (newItem.maxStack > 1) {
         const existing = hero.inventory.find(i => i.seedType === newItem.seedType && i.count < newItem.maxStack);
         if (existing) {
             const space = newItem.maxStack - existing.count;
             if (newItem.count <= space) {
                 existing.count += newItem.count;
-                return true;
+                success = true;
             } else {
-                // Fill this stack, and let the rest of the items fall through to a new slot!
+                // Fill this stack, and let the remaining count fall through to a new slot
                 existing.count = newItem.maxStack;
                 newItem.count -= space;
             }
         }
     }
 
-    // 2. If no stack found (or stack is full), take up a new inventory slot
-    if (hero.inventory.length < hero.maxSlots) {
+    // 2. If no stack was found (or has remaining leftovers), take up a new inventory slot
+    if (!success && hero.inventory.length < hero.maxSlots) {
         hero.inventory.push(newItem);
-                syncInventoryWithServer(); // 👈 Sync changes to server
-
-        return true;
+        success = true;
     }
 
-    console.log("🎒 Backpack is full!");
-    return false; 
+    // 3. Sync changes to the server immediately upon any success path
+    if (success) {
+        syncInventoryWithServer();
+    } else {
+        console.log("🎒 Backpack is full!");
+    }
+
+    return success;
 }
 
 
