@@ -8,7 +8,7 @@ import { getBacteriaData, seedBacteria, BACTERIA_TYPES } from './bacteria.js';
 import { inputState } from './input.js';
 import { socket, playerWallet, remotePlayers } from './multiplayer.js';
 
-import { openSmelterMenu, openChestMenu, openTempleMenu, openKitchenMenu, openMapTableMenu, openCellarMenu, openHayTableMenu, openHayStorageMenu, openWithdrawMenu, } from './uiManager.js'; 
+import { openChestMenu, openTempleMenu, openKitchenMenu, openMapTableMenu, openCellarMenu, openHayTableMenu, openHayStorageMenu, openWithdrawMenu, } from './uiManager.js'; 
 import { getObjectAt } from './staticObjects.js';
 import { CONFIG } from './config.js'
 import { CC_RESTRICT } from './entities.js'; // 👈 Import the restriction masks
