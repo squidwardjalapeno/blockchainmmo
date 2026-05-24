@@ -240,28 +240,24 @@ io.on('connection', (socket) => {
         x: 1600,
         y: 1600,
         hp: CONFIG.HERO_HP,
-        maxHp: CONFIG.HERO_HP, // Added maxHp for bars
+        maxHp: CONFIG.HERO_HP,
         shield: 0,
-
-        hasDivineBubble: false, // 👈 NEW
-
+        inventory: [], // 👈 THE CRITICAL FIX: Add this line!
+        hasDivineBubble: false,
         isInvincible: false,
-        passives: { hasFever: false }, // 👈 Track attacker passives
-        resonanceTimer: 0,             // 👈 Track victim debuffs
-
-
-
-        energy: 100,      // 🆕 Default Energy
-        maxEnergy: 100,   // 🆕 Default Max Energy
+        passives: { hasFever: false },
+        resonanceTimer: 0,
+        energy: 100,
+        maxEnergy: 100,
         ad: CONFIG.HERO_ATTACK,
         armor: CONFIG.HERO_ARMOR,
         magic: CONFIG.HERO_MAGIC,
         mr: CONFIG.HERO_MAGIC_RESISTANCE,
         dir: 'South',
-        inGameUni: 0, // 🆕 NEW STAT: Replaces onChainPoints
+        inGameUni: 0,
         animFrame: 0,
         isMoving: false,
-        isWindingUp: false // Sync the "Shake" animation
+        isWindingUp: false
     };
 
     socket.emit('secret', { seed: worldSeed, myId: socket.id });
@@ -1240,26 +1236,20 @@ socket.on('identifyWallet', (data) => {
     const address = (rawAddress.startsWith('0x')) ? ethers.getAddress(rawAddress) : rawAddress;
     socket.wallet = address;
 
-    let existingSocketId = Object.keys(players).find(id => players[id].wallet === address);
-
-    if (existingSocketId) {
-        // ... re-possession logic ...
-        players[socket.id] = { ...players[existingSocketId], id: socket.id, isOffline: false };
-        if (existingSocketId !== socket.id) delete players[existingSocketId];
-        socket.emit('restoreHero', players[socket.id]);
-    } 
-    else if (userDb[address]) {
-        console.log(`💾 FOUND SAVE: ${address} has ${userDb[address].inventory?.length || 0} items.`);
+    if (userDb[address]) {
+        console.log(`💾 Restore: ${address} (${userDb[address].inventory?.length || 0} items)`);
         
-        // 🛡️ THE FIX: Ensure the inventory is merged into the player's current RAM session
-        players[socket.id].inventory = userDb[address].inventory || [];
-        
-        // Merge the rest of the stats
-        Object.assign(players[socket.id], userDb[address]);
+        // 🛡️ THE FIX: Merge the database record into the active RAM object
+        // This ensures stats AND inventory are both restored.
+        players[socket.id] = { 
+            ...players[socket.id], 
+            ...userDb[address], 
+            id: socket.id, 
+            isOffline: false 
+        };
         
         socket.emit('restoreHero', players[socket.id]);
-    } 
-    else {
+    } else {
         socket.emit('needsCharacterCreation');
     }
 });
@@ -1332,22 +1322,11 @@ function syncPlayerAndSave(socketId) {
     const p = players[socketId];
     if (!p || !p.wallet) return;
 
-    // 🛡️ THE FIX: Normalize the address to prevent "0xabc" vs "0xABC" bugs
-    const cleanAddress = (p.wallet.startsWith('0x')) ? ethers.getAddress(p.wallet) : p.wallet;
-
-    // Create a clean snapshot of the player
-    userDb[cleanAddress] = {
-        x: p.x,
-        y: p.y,
-        hp: p.hp,
-        maxHp: p.maxHp,
-        xp: p.xp,
-        energy: p.energy,
-        inGameUni: p.inGameUni,
-        charClass: p.charClass,
-        skills: p.skills,
-        // 👈 THE FIX: Ensure the bag is physically included in the save
-        inventory: p.inventory || [] 
+    // 🛡️ THE FIX: Ensure we create a copy of the player that includes the inventory
+    userDb[p.wallet] = {
+        ...p,
+        id: undefined,  // Strip temp socket ID
+        target: null    // Strip temp combat targets
     };
 
     fs.writeFileSync('persistence.json', JSON.stringify(userDb, null, 2));
