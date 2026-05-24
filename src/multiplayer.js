@@ -88,6 +88,14 @@ export function initMultiplayer() {
              });
         });
 
+        socket.on('updateInventory', (serverInventory) => {
+    import('./entities.js').then(m => {
+        m.hero.inventory = serverInventory;
+        // Refresh the UI if the bag is open
+        import('./uiManager.js').then(ui => ui.renderTabContent());
+    });
+});
+
         // 🔄 UPDATED: When the server sends us our character data
         socket.on('restoreHero', (data) => {
             hero.xp = data.xp;
@@ -104,6 +112,9 @@ export function initMultiplayer() {
             if (data.inGameUni !== undefined) hero.inGameUni = data.inGameUni; 
             if(data.x !== undefined) hero.x = data.x;
             if(data.y !== undefined) hero.y = data.y;
+
+            hero.inventory = data.inventory || []; // 👈 Restore the bag!
+            import('./uiManager.js').then(ui => ui.updateHUD());
             
             // 🆕 DIRECTION TRANSLATOR (Fixes old save files!)
             if (data.dir) {

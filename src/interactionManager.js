@@ -545,28 +545,24 @@ function processPickup(tx, ty) {
         if (matchedSeedType) {
             const template = Object.values(ITEM_TYPES).find(t => t.seedType === matchedSeedType);
             if (template) {
-                const item = createItem(template);
-                item.health = traits & 0xFF;
-                item.virulence = (traits >> 8) & 0xFF;
-                
-                // Unpack Egg Stack
-                if (matchedSeedType === "egg") {
-                    item.count = traits & 0xFF;
-                    item.health = template.baseHealth; 
-                }
-                // Unpack 16-bit Key ID
-                else if (matchedSeedType === "key") {
-                    item.houseId = traits & 0xFFFF; 
-                    item.health = template.baseHealth; 
-                    item.virulence = template.baseVirulence;
-                    item.name = `Key to House #${item.houseId}`; 
-                }
-                
-                if (giveItemToHero(item)) {
-                    bac.data[bac.idx] = 0; // Remove from floor
-                    return true; // Successfully picked up an item!
-                }
+            // 🛡️ THE NEW SECURE WAY:
+            // Don't call giveItemToHero(item) anymore!
+            // Ask the server to do it.
+            if (socket) {
+                socket.emit('requestPickup', {
+                    tx: tx, ty: ty,
+                    name: template.name,
+                    seedType: template.seedType,
+                    count: 1, // Or template.count
+                    spriteID: template.spriteID,
+                    tileset: template.tileset
+                });
             }
+
+            // Remove it locally so the player "sees" it get picked up instantly
+            bac.data[bac.idx] = 0; 
+            return true;
+        }
         }
     }
 

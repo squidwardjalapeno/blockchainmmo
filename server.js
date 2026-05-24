@@ -787,6 +787,48 @@ socket.on('requestActivityLog', () => {
     socket.emit('activityData', activityLog);
 });
 
+// 🛡️ SECURE AUTHORITATIVE PICKUP
+    socket.on('requestPickup', (itemData) => {
+        const player = players[socket.id];
+        if (!player) return;
+
+        // 1. Anti-Teleport Check: Is the player near the item's coordinates?
+        const px = Math.floor(player.x / 16);
+        const py = Math.floor(player.y / 16);
+        const dist = Math.abs(px - itemData.tx) + Math.abs(py - itemData.ty);
+
+        if (dist > 5) {
+            console.log(`🚨 HACK BLOCKED: ${player.wallet} tried to vacuum an item!`);
+            return;
+        }
+
+        // 2. Inventory Check: Does the server see a free slot?
+        if (!player.inventory) player.inventory = [];
+        if (player.inventory.length >= 10) {
+            socket.emit('inventoryFull');
+            return;
+        }
+
+        // 3. SERVER-SIDE ADDITION
+        // We create the item object on the server so the hacker can't "inject" stats
+        const newItem = {
+            name: itemData.name,
+            seedType: itemData.seedType,
+            count: Math.min(64, itemData.count || 1), // Force max stack safety
+            spriteID: itemData.spriteID,
+            tileset: itemData.tileset
+        };
+
+        player.inventory.push(newItem);
+        
+        // 4. PERSIST & SYNC
+        syncPlayerAndSave(socket.id);
+        
+        // Tell the client: "Your inventory has changed, here is the new list."
+        socket.emit('updateInventory', player.inventory);
+        console.log(`📦 Securely added ${newItem.name} to ${player.wallet}'s account.`);
+    });
+
 
 // --- ⚔️ UPDATED: LOGARITHMIC ARMOR SCALING ---
 socket.on('pvpAttack', (data) => {
@@ -1279,15 +1321,26 @@ function saveStores() {
     fs.writeFileSync('stores.json', JSON.stringify(storeDb, null, 2));
 }
 
+// server.js
 function syncPlayerAndSave(socketId) {
     const p = players[socketId];
     if (!p || !p.wallet) return;
 
-    // 1. Sync RAM to Database
     if (!userDb[p.wallet]) userDb[p.wallet] = {};
-    Object.assign(userDb[p.wallet], p);
     
-    // 2. Persist to persistence.json
+    // 🛡️ Explicitly save the inventory to the database
+    userDb[p.wallet].inventory = p.inventory || [];
+    
+    // Save the rest of the stats
+    Object.assign(userDb[p.wallet], {
+        xp: p.xp,
+        inGameUni: p.inGameUni,
+        charClass: p.charClass,
+        skills: p.skills,
+        x: p.x,
+        y: p.y
+    });
+    
     fs.writeFileSync('persistence.json', JSON.stringify(userDb, null, 2));
 }
 
@@ -1411,6 +1464,9 @@ setInterval(() => {
         projectiles: projectiles
     });
 }, 50);
+
+
+
 
 // 5. START SERVER
 const PORT = process.env.PORT || 10000;
