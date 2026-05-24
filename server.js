@@ -819,14 +819,16 @@ socket.on('requestActivityLog', () => {
             tileset: itemData.tileset
         };
 
+        // 🛡️ THE FIX: Add to RAM inventory
+        if (!player.inventory) player.inventory = [];
         player.inventory.push(newItem);
         
-        // 4. PERSIST & SYNC
+        // 🛡️ THE FIX: Force immediate save to persistence.json
         syncPlayerAndSave(socket.id);
         
-        // Tell the client: "Your inventory has changed, here is the new list."
+        // Update the client bag
         socket.emit('updateInventory', player.inventory);
-        console.log(`📦 Securely added ${newItem.name} to ${player.wallet}'s account.`);
+        console.log(`📦 Saved ${newItem.name} to ${player.wallet}'s database record.`);
     });
 
 
@@ -1232,35 +1234,25 @@ socket.on('syncTile', (data) => {
 // ... inside io.on('connection', (socket) => { ...
 
 socket.on('identifyWallet', (data) => {
-    const address = (typeof data === 'object') ? data.address : data;
-    if (!address) return;
+    const rawAddress = (typeof data === 'object') ? data.address : data;
+    if (!rawAddress) return;
 
+    // 🛡️ THE FIX: Normalize address to match the save file
+    const address = (rawAddress.startsWith('0x')) ? ethers.getAddress(rawAddress) : rawAddress;
     socket.wallet = address;
 
-    // 1. Check for stationary "Sleeper" body in the current game world
     let existingSocketId = Object.keys(players).find(id => players[id].wallet === address);
 
     if (existingSocketId) {
-        console.log(`🔗 ${address} is re-possessing their body.`);
-        io.emit('playerLeft', existingSocketId); // Remove the "ghost" sprite
-
-        players[socket.id] = {
-            ...players[existingSocketId],
-            id: socket.id,
-            isOffline: false
-        };
-
-        if (existingSocketId !== socket.id) {
-            delete players[existingSocketId];
-        }
-
+        // ... (body re-possession logic)
+        players[socket.id] = { ...players[existingSocketId], id: socket.id, isOffline: false };
+        if (existingSocketId !== socket.id) delete players[existingSocketId];
         socket.emit('restoreHero', players[socket.id]);
     } 
-    // 2. Load from Database (This is where the inventory is pulled from persistence.json)
     else if (userDb[address]) {
-        console.log(`💾 ${address} returning from safe logout. Restoring items...`);
+        console.log(`💾 Restoring ${address}. Inventory count: ${userDb[address].inventory?.length}`);
         
-        // Merge the database record into the active server RAM
+        // 🛡️ THE FIX: Spread the saved DB record into the active player object
         players[socket.id] = { 
             ...players[socket.id], 
             ...userDb[address], 
@@ -1270,9 +1262,7 @@ socket.on('identifyWallet', (data) => {
         
         socket.emit('restoreHero', players[socket.id]);
     } 
-    // 3. Brand new player
     else {
-        console.log(`🆕 New player detected: ${address}. Awaiting Character Creation.`);
         socket.emit('needsCharacterCreation');
     }
 });
@@ -1280,14 +1270,15 @@ socket.on('identifyWallet', (data) => {
 // 🆕 ADD THIS NEW LISTENER:
 socket.on('createCharacter', (data) => {
     const { wallet, charClass, skills } = data;
-    
-    players[socket.id].wallet = wallet;
+    const cleanAddress = (wallet.startsWith('0x')) ? ethers.getAddress(wallet) : wallet;
+
+    players[socket.id].wallet = cleanAddress;
     players[socket.id].charClass = charClass;
     players[socket.id].skills = skills;
     
-    // 👈 THE FIX: Only set to 0 if they don't have a balance in the DB yet!
-    if (players[socket.id].inGameUni === undefined) {
-        players[socket.id].inGameUni = 0;
+    // 🛡️ THE FIX: ONLY set inventory to empty if they don't already have one in the DB
+    if (!players[socket.id].inventory) {
+        players[socket.id].inventory = [];
     }
     
     syncPlayerAndSave(socket.id);
@@ -1342,21 +1333,24 @@ function syncPlayerAndSave(socketId) {
     const p = players[socketId];
     if (!p || !p.wallet) return;
 
-    if (!userDb[p.wallet]) userDb[p.wallet] = {};
-    
-    // 🛡️ Explicitly save the inventory to the database
-    userDb[p.wallet].inventory = p.inventory || [];
-    
-    // Save the rest of the stats
-    Object.assign(userDb[p.wallet], {
+    // 🛡️ THE FIX: Normalize the address to prevent "0xabc" vs "0xABC" bugs
+    const cleanAddress = (p.wallet.startsWith('0x')) ? ethers.getAddress(p.wallet) : p.wallet;
+
+    // Create a clean snapshot of the player
+    userDb[cleanAddress] = {
+        x: p.x,
+        y: p.y,
+        hp: p.hp,
+        maxHp: p.maxHp,
         xp: p.xp,
+        energy: p.energy,
         inGameUni: p.inGameUni,
         charClass: p.charClass,
         skills: p.skills,
-        x: p.x,
-        y: p.y
-    });
-    
+        // 👈 THE FIX: Ensure the bag is physically included in the save
+        inventory: p.inventory || [] 
+    };
+
     fs.writeFileSync('persistence.json', JSON.stringify(userDb, null, 2));
 }
 
