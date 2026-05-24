@@ -51,6 +51,15 @@ export function openCraftingTableMenu() {
     document.getElementById('workshop-menu').classList.remove('hidden');
 }
 
+export function syncInventoryWithServer() {
+    if (socket) {
+        socket.emit('syncInventory', {
+            inventory: hero.inventory,
+            equipment: hero.equipment
+        });
+    }
+}
+
 function renderSmelterUI() {
     if (!activeSmelterData) return;
     const bar = document.getElementById('smelter-progress-bar');
@@ -294,6 +303,10 @@ export function initUI() {
         hero.inventory.push(createItem(ITEM_TYPES.COOKED_BASS));
         console.log("🔥 Sizzle... Fish cooked successfully!");
         alert("Success! You cooked a hearty meal.");
+
+        // Sync local changes to the server
+        syncInventoryWithServer();
+        renderTabContent();
     });
 
     // --- MAP TABLE LISTENERS ---
@@ -497,6 +510,8 @@ export function initUI() {
                 if (m.giveItemToHero(createItem(ITEM_TYPES.IRON_INGOT))) {
                     alert("🔥 Collected 1x Iron Ingot!");
                     renderTabContent();
+                                        syncInventoryWithServer(); // 👈 Syncs after the factory gives the item
+
                 } else {
                     alert("Backpack full! Make space first.");
                 }
@@ -522,6 +537,8 @@ export function initUI() {
                 if (m.giveItemToHero(createItem(ITEM_TYPES.DAGGER))) {
                     alert("🗡️ Crafted a Rusty Dagger!");
                     renderTabContent();
+                                        syncInventoryWithServer(); // 👈 Syncs after the factory gives the item
+
                 } else {
                     alert("Backpack full! Make space first.");
                 }
@@ -554,6 +571,8 @@ export function initUI() {
             // 2. We must manually remove it from the client's RAM so the UI updates instantly without waiting for a server sync
             hero.inventory.splice(oreIdx, 1);
             renderTabContent();
+                                syncInventoryWithServer(); // 👈 Syncs after the factory gives the item
+
             
         } else {
             if (!confirmingSmelterSpeedUp) {
@@ -591,6 +610,8 @@ export function initUI() {
             // 2. We must manually remove it from the client's RAM so the UI updates instantly without waiting for a server sync
             hero.inventory.splice(ingotIdx, 1);
             renderTabContent();
+                                syncInventoryWithServer(); // 👈 Syncs after the factory gives the item
+
             
         } else {
             if (!confirmingAnvilSpeedUp) {
@@ -905,6 +926,8 @@ function transferItem(index, source) {
     }
 
     renderChestUI();
+        syncInventoryWithServer(); // 👈 Sync changes to server
+
 }
 
 // ==========================================
@@ -977,6 +1000,8 @@ export function processClaimedStorage(items) {
         else console.log("Dropped due to full inventory:", item.name);
     });
     alert(`Looted ${items.length} items from Lockbox!`);
+        syncInventoryWithServer(); // 👈 Sync changes to server
+
 }
 
 function switchStoreTab(tab) {
@@ -1223,6 +1248,8 @@ function transferTempleItem(index, source) {
         altarItem = null;
     }
     renderTempleUI();
+        syncInventoryWithServer(); // 👈 Sync changes to server
+
 }
 
 // ==========================================
@@ -1336,6 +1363,8 @@ function transferCellarItem(index, source) {
 
     if (socket) socket.emit('updateCellar', { cellarId: activeCellarId, items: activeCellarItems });
     renderCellarUI();
+        syncInventoryWithServer(); // 👈 Sync changes to server
+
 }
 
 // ==========================================
@@ -1414,34 +1443,15 @@ function transferHayStorageItem(index, source) {
     }
     if (socket) socket.emit('updateHayStorage', { hayStorageId: activeHayStorageId, items: activeHayStorageItems });
     renderHayStorageUI();
+
+        syncInventoryWithServer(); // 👈 Sync changes to server
+
 }
 
 // ==========================================
 // 🔥 SMELTER UI LOGIC
 // ==========================================
-export function openSmelterMenu() {
-    const oreIdx = hero.inventory.findIndex(item => item.seedType === 'ore');
-    if (oreIdx === -1) {
-        alert("The smelter is cold. You need Gold Ore to begin.");
-        return;
-    }
 
-    const smelterUI = document.getElementById('smelter-menu');
-    smelterUI.classList.remove('hidden');
-
-    document.getElementById('mint-coin-btn').onclick = async () => {
-        const currentOreIdx = hero.inventory.findIndex(item => item.seedType === 'ore');
-        if (currentOreIdx !== -1) {
-            hero.inventory.splice(currentOreIdx, 1);
-            hero.inventory.push(createItem(ITEM_TYPES.GOLD_COIN));
-            smelterUI.classList.add('hidden');
-            alert("✨ Success! You minted a Gold Coin.");
-        }
-    };
-
-    const closeBtn = document.getElementById('close-smelter-btn');
-    if (closeBtn) closeBtn.onclick = () => smelterUI.classList.add('hidden');
-}
 
 // ==========================================
 // ⛏️ MINING UI LOGIC
@@ -1615,6 +1625,9 @@ window.equipItem = (invIndex) => {
         m.recalculateStats();
         renderTabContent(); // Refresh to show the border/new counts
     });
+
+        syncInventoryWithServer(); // 👈 Sync changes to server
+
 };
 
 window.unequipMainHand = () => {
@@ -1628,6 +1641,9 @@ window.unequipMainHand = () => {
         
         import('./interactionManager.js').then(m => m.recalculateStats());
         renderTabContent(); 
+
+            syncInventoryWithServer(); // 👈 Sync changes to server
+
     }
 };
 
@@ -1732,6 +1748,8 @@ function dropItemToWorld(index, amount) {
         }
         
         renderTabContent();
+            syncInventoryWithServer(); // 👈 Sync changes to server
+
     });
 }
 

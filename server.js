@@ -296,6 +296,21 @@ io.on('connection', (socket) => {
         io.emit('chatMessage', { sender: senderName, message: data.message });
     });
 
+    // ==========================================
+    // 🎒 AUTHORITATIVE INVENTORY SYNC
+    // ==========================================
+    socket.on('syncInventory', (data) => {
+        const player = players[socket.id];
+        if (!player) return;
+
+        // Sync the server-side representation with the validated client state
+        player.inventory = data.inventory || [];
+        player.equipment = data.equipment || { mainHand: null };
+
+        // Force immediate save to persistence.json
+        syncPlayerAndSave(socket.id);
+    });
+
     // --- SMELTER JOBS ---
 socket.on('requestSmelter', (jobId) => {
     if (!smelterDb[jobId]) smelterDb[jobId] = { workLeft: 200, maxWork: 200, active: false, ready: false };

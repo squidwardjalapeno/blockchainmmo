@@ -15,6 +15,9 @@ import { CC_RESTRICT } from './entities.js'; // 👈 Import the restriction mask
 
 import { animals } from './animals.js';
 
+import { syncInventoryWithServer } from './uiManager.js';
+
+
 // To this:
 if (typeof window !== 'undefined') {
     logStep("interactionManager.js");
@@ -56,6 +59,8 @@ export function giveItemToHero(newItem) {
     // 2. If no stack found (or stack is full), take up a new inventory slot
     if (hero.inventory.length < hero.maxSlots) {
         hero.inventory.push(newItem);
+                syncInventoryWithServer(); // 👈 Sync changes to server
+
         return true;
     }
 
@@ -330,6 +335,9 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
             if (item.count <= 0 || isNaN(item.count)) {
                 hero.equipment.mainHand = null;
             }
+
+                        syncInventoryWithServer(); // 👈 Added here
+
         }
     }
 
@@ -351,6 +359,9 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
                     createPlant(feetTX, feetTY, fertilityMatrix, 0, plantType);
                     item.count--;
                     if (item.count <= 0) hero.equipment.mainHand = null;
+
+                                syncInventoryWithServer(); // 👈 Added here
+
                 }
             }
         }
@@ -462,6 +473,9 @@ function consumeFood() {
         import('./multiplayer.js').then(m => {
             if (m.socket) m.socket.emit('updateStats', { energy: hero.energy });
         });
+
+                syncInventoryWithServer(); // 👈 Sync changes to server
+
         
         // Refresh UI to update the hand slot / inventory count
         import('./uiManager.js').then(m => m.renderTabContent());
