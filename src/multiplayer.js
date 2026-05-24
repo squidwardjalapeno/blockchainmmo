@@ -96,27 +96,27 @@ export function initMultiplayer() {
     });
 });
 
-        // 🔄 UPDATED: When the server sends us our character data
         socket.on('restoreHero', (data) => {
-            hero.xp = data.xp;
-            hero.maxHp = data.maxHp;
-            hero.hp = data.hp;
-            if (data.energy !== undefined) hero.energy = data.energy; 
-            if (data.maxEnergy !== undefined) hero.maxEnergy = data.maxEnergy;
-            hero.ad = data.ad;
-            hero.armor = data.armor;
-            hero.magic = data.magic;
-            hero.mr = data.mr;
-            hero.speed = data.speed;
-            hero.spentPoints = data.spentPoints;
-            if (data.inGameUni !== undefined) hero.inGameUni = data.inGameUni; 
+            hero.xp = data.xp || 0;
+            hero.hp = data.hp || 100;
+            hero.maxHp = data.maxHp || 100;
+            hero.energy = data.energy !== undefined ? data.energy : 100;
+            hero.maxEnergy = data.maxEnergy || 100;
+            hero.ad = data.ad || 10;
+            hero.armor = data.armor || 0;
+            hero.magic = data.magic || 10;
+            hero.mr = data.mr || 0;
+            hero.speed = data.speed || 100;
+            hero.spentPoints = data.spentPoints || 0;
+            hero.inGameUni = data.inGameUni || 0;
+            
+            // 🛡️ RESTORE INVENTORY
+            hero.inventory = data.inventory || []; 
+
             if(data.x !== undefined) hero.x = data.x;
             if(data.y !== undefined) hero.y = data.y;
 
-            hero.inventory = data.inventory || []; // 👈 Restore the bag!
-            import('./uiManager.js').then(ui => ui.updateHUD());
-            
-            // 🆕 DIRECTION TRANSLATOR (Fixes old save files!)
+            // 🆕 DIRECTION TRANSLATOR
             if (data.dir) {
                 let safeDir = data.dir;
                 if (safeDir === 'Down') safeDir = 'South';
@@ -128,17 +128,22 @@ export function initMultiplayer() {
                 hero.dir = 'South';
             }
             
-            // 🆕 LOAD CLASS DATA
-            hero.charClass = data.charClass || "Peasant";
+            hero.charClass = data.charClass || "Paladin";
             hero.skills = data.skills || [];
 
-            // 🆕 CLEAR MENUS AND SHOW HUD
+            // 🔄 UPDATE UI IMMEDIATELY
+            import('./uiManager.js').then(ui => {
+                ui.updateHUD();
+                ui.renderTabContent(); // 👈 THE FIX: Force the icons to draw!
+            });
+
+            // CLEAR MENUS
             document.getElementById('main-menu').classList.add('hidden');
             const charMenu = document.getElementById('character-creation-menu');
             if (charMenu) charMenu.classList.add('hidden');
             document.getElementById('hud').style.display = 'block';
 
-            console.log("✅ Identity confirmed. Stats and Position restored.");
+            console.log("✅ Identity confirmed. Inventory synced.");
         });
 
         socket.on('balanceUpdated', (data) => { hero.inGameUni = data.inGameUni; });

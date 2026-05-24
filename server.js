@@ -1237,26 +1237,42 @@ socket.on('identifyWallet', (data) => {
 
     socket.wallet = address;
 
-    // 1. Check for stationary "Sleeper" in world
+    // 1. Check for stationary "Sleeper" body in the current game world
     let existingSocketId = Object.keys(players).find(id => players[id].wallet === address);
 
     if (existingSocketId) {
         console.log(`🔗 ${address} is re-possessing their body.`);
-        io.emit('playerLeft', existingSocketId);
-        players[socket.id] = { ...players[existingSocketId], id: socket.id, isOffline: false };
-        if (existingSocketId !== socket.id) delete players[existingSocketId];
+        io.emit('playerLeft', existingSocketId); // Remove the "ghost" sprite
+
+        players[socket.id] = {
+            ...players[existingSocketId],
+            id: socket.id,
+            isOffline: false
+        };
+
+        if (existingSocketId !== socket.id) {
+            delete players[existingSocketId];
+        }
+
         socket.emit('restoreHero', players[socket.id]);
     } 
-    // 2. Load from Database (This is what fixes your issue!)
+    // 2. Load from Database (This is where the inventory is pulled from persistence.json)
     else if (userDb[address]) {
-        console.log(`💾 ${address} returning. Balance: ${userDb[address].inGameUni} UNI`);
-        // Merge stored data into active player object
-        players[socket.id] = { ...players[socket.id], ...userDb[address], id: socket.id, isOffline: false };
+        console.log(`💾 ${address} returning from safe logout. Restoring items...`);
+        
+        // Merge the database record into the active server RAM
+        players[socket.id] = { 
+            ...players[socket.id], 
+            ...userDb[address], 
+            id: socket.id, 
+            isOffline: false 
+        };
+        
         socket.emit('restoreHero', players[socket.id]);
     } 
     // 3. Brand new player
     else {
-        console.log(`🆕 New player: ${address}.`);
+        console.log(`🆕 New player detected: ${address}. Awaiting Character Creation.`);
         socket.emit('needsCharacterCreation');
     }
 });
