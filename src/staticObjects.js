@@ -3,23 +3,20 @@
 export const staticObjects = new Map();
 export const solidTiles = new Set(); // 👈 New: Tracks physical coordinate blockers
 
+// Inside registerObject() in src/staticObjects.js:
+
 export function registerObject(gx, gy, type, metadata = {}) {
     const key = (gx * 10000) + gy;
     staticObjects.set(key, { type, ...metadata });
 
-    // Mark specific multi-tile coordinates as physically solid
-    if (type === 'FOREST_TREE') {
-        // Tree trunks are 2x1 solid blocks at the bottom
-        solidTiles.add(`${gx}_${gy}`);
-        solidTiles.add(`${gx + 1}_${gy}`);
-    } 
-    else if (type === 'WELL_OBJECT') {
-        // Wells are 2x2 solid blocks
+    // 🎯 Only register the WELL as a solid tile block (4 full squares)
+    if (type === 'WELL_OBJECT') {
         solidTiles.add(`${gx}_${gy}`);
         solidTiles.add(`${gx + 1}_${gy}`);
         solidTiles.add(`${gx}_${gy - 1}`);
         solidTiles.add(`${gx + 1}_${gy - 1}`);
     }
+    // (Trees are now bypassed here and handled with sub-pixel precision instead!)
 }
 
 export function getObjectAt(gx, gy) {

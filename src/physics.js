@@ -28,8 +28,40 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
 
     if (target.tileID === undefined) return false;
 
-    // 🎯 THE PHYSICS GATE: Block movement if coordinate is occupied by an overlay (well or tree)
+    // 1. Block standard full-tile solid objects (like Wells)
     if (solidTiles.has(`${target.gx}_${target.gy}`)) return false;
+
+    // ==========================================
+    // 🌲 2. SUB-PIXEL TREE TRUNK COLLISION (Centered 16px Box)
+    // ==========================================
+    const tx = target.gx;
+    const ty = target.gy;
+    const pxMin = x + 2;
+    const pxMax = x + 14; // Player's right-side hitbox boundary
+    const pyMin = y + 8;
+    const pyMax = y + 15; // Player's feet-side hitbox boundary
+
+    // Check the current tile and the tile directly to its left (since the tree is 2 tiles wide)
+    for (let ox = -1; ox <= 0; ox++) {
+        const anchorX = tx + ox;
+        const obj = getObjectAt(anchorX, ty);
+        
+        if (obj && obj.type === 'FOREST_TREE') {
+            // Calculate narrowed 16-pixel centered boundaries
+            const treeMinX = (anchorX * 16) + 8;  // Strip 8 pixels on the left
+            const treeMaxX = (anchorX * 16) + 24; // Strip 8 pixels on the right
+            const treeMinY = ty * 16;
+            const treeMaxY = (ty * 16) + 16;
+
+            // Check AABB overlap between player and tree trunk
+            const overlapX = (pxMin < treeMaxX) && (pxMax > treeMinX);
+            const overlapY = (pyMin < treeMaxY) && (pyMax > treeMinY);
+
+            if (overlapX && overlapY) {
+                return false; // Collision detected! Block movement
+            }
+        }
+    }
 
     // ==========================================
     // 🚪 DOOR & GATE LOGIC
