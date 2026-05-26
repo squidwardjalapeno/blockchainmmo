@@ -1764,11 +1764,11 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
             }
         }
 
-        // 3. Only spawn trees if we confirmed we are in a forest region
+        // Inside decorateCell() in src/cellDecorator.js (under the tree spawner section):
+
         if (isForestRegion) {
             setWorldSeed((window.worldSeed || 1) + (cx * 1000) + cy + 777);
             
-            // Denser inside the forest/village, slightly sparser on deep coastlines
             const spawnThreshold = (cellType === 104 || cellType === 101 || cellType === 102 || cellType === 103 || cellType === 107) ? 0.55 : 0.80;
             
             for (let ly = 0; ly < 100; ly++) { 
@@ -1781,35 +1781,45 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
                             const gx = (cx * 100) + lx;
                             const gy = (cy * 100) + ly;
                             
-                            // Check if this tile is inside the protected Ring Road polygon!
                             if (typeof isInsideVillagePolygon === 'function' && isInsideVillagePolygon(gx, gy)) continue;
                             
-                            // Allow trees to overlap each other (406, 407), but stay away from roads/buildings!
+                            // 🎯 THE FIX: Verify clear space by checking for existing static objects
+                            // and expand the radius slightly so trees don't spawn on top of each other.
                             let isClear = true;
-                            for (let ox = -1; ox <= 2; ox++) {
-                                for (let oy = 0; oy <= 3; oy++) {
-                                    const tCX = Math.floor((gx + ox) / 100);
-                                    const tCY = Math.floor((gy + oy) / 100);
-                                    
-                                    if(tCX >= 0 && tCX < CONFIG.MAP_SIZE && tCY >= 0 && tCY < CONFIG.MAP_SIZE) {
-                                        if(worldMatrix[tCX] && worldMatrix[tCX][tCY]) {
-                                            const tLX = (((gx + ox) % 100) + 100) % 100;
-                                            const tLY = (((gy + oy) % 100) + 100) % 100;
+                            for (let ox = -3; ox <= 3; ox++) {
+                                for (let oy = -3; oy <= 3; oy++) {
+                                    const checkGX = gx + ox;
+                                    const checkGY = gy + oy;
+
+                                    // 1. If another tree is already registered within this radius, abort!
+                                    if (getObjectAt(checkGX, checkGY)) {
+                                        isClear = false;
+                                        break;
+                                    }
+
+                                    // 2. Keep the terrain and building boundary checks
+                                    const tCX = Math.floor(checkGX / 100);
+                                    const tCY = Math.floor(checkGY / 100);
+                                    if (tCX >= 0 && tCX < CONFIG.MAP_SIZE && tCY >= 0 && tCY < CONFIG.MAP_SIZE) {
+                                        if (worldMatrix[tCX] && worldMatrix[tCX][tCY]) {
+                                            const tLX = ((checkGX % 100) + 100) % 100;
+                                            const tLY = ((checkGY % 100) + 100) % 100;
                                             const tID = worldMatrix[tCX][tCY][tLY * 100 + tLX];
+                                            const rID = roomMatrix[tCX][tCY][tLY * 100 + tLX];
                                             
-                                            if (tID !== 63 && tID !== 406 && tID !== 407) {
+                                            if (tID !== 63 || (rID !== 0 && rID !== 9999)) {
                                                 isClear = false;
+                                                break;
                                             }
                                         }
                                     }
                                 }
+                                if (!isClear) break;
                             }
                             
                             if (isClear) {
-    // Simply register the tree trunk anchor. 
-    // No ground tiles or grass borders are overwritten!
-    registerObject(gx, gy + 2, 'FOREST_TREE');
-}
+                                registerObject(gx, gy, 'FOREST_TREE');
+                            }
                         }
                     }
                 }
