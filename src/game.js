@@ -433,19 +433,6 @@ async function mainInit() {
             planAllSettlements(worldMap, worldMatrix, roomMatrix, fertilityMatrix);
         });
 
-        await measureStep("Step 5: Drawing the Village Ring Roads", () => {
-            drawRingRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-        });
-
-        await measureStep("Step 6: Connecting Ranch Roads", () => {
-            drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-        });
-
-        
-        await measureStep("Step 6.2: Drawing Town Fortifications", () => {
-            drawTownWalls(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-        });
-
 
         await measureStep("Step 9: Cleaning up Blueprints", () => {
             clearBlueprints(roomMatrix);

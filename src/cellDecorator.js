@@ -16,6 +16,9 @@ let nextHouseId = 1;
 // 🆕 Add this near the top of your imports
 export const ecoGenerated = new Set();
 
+// At the top of src/cellDecorator.js
+export const zoneLookup = new Map(); // Key: "cx_cy", Value: Array of chunks in the zone
+
 // To this:
 if (typeof window !== 'undefined') {
     logStep("cellDecorator.js");
@@ -148,6 +151,49 @@ function isAreaClear(gx, gy, w, h, worldMatrix, roomMatrix, worldMap) {
     return true;
 }
 
+// Add these declarations near the top of cellDecorator.js (near zoneLookup)
+export const initializedZones = new Set(); // Tracks initialized settlements
+
+export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
+    const cellKey = `${cx}_${cy}`;
+    const zone = zoneLookup.get(cellKey);
+    if (!zone) return;
+
+    // Find the planned well that belongs to this settlement zone
+    const zoneWell = plannedWells.find(w => {
+        const wCX = Math.floor(w.x / 100);
+        const wCY = Math.floor(w.y / 100);
+        return zone.some(zc => zc.cx === wCX && zc.cy === wCY);
+    });
+
+    if (!zoneWell) return;
+
+    // Check if this specific settlement has already been built
+    const zoneKey = `${zoneWell.x}_${zoneWell.y}`;
+    if (initializedZones.has(zoneKey)) return; 
+    initializedZones.add(zoneKey);
+
+    console.log(`🎪 LAZY INITIALIZING SETTLEMENT at Well [${zoneWell.x}, ${zoneWell.y}]`);
+
+    // 1. Force-load / decorate all chunks in the zone first (ensures background terrain is set)
+    zone.forEach(c => {
+        const chunkKey = `${c.cx}_${c.cy}`;
+        if (!decoratedCells.has(chunkKey)) {
+            decorateCell(c.cx, c.cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            decoratedCells.add(chunkKey);
+        }
+    });
+
+    // 2. Stamp all static structures, ranches, and wells for all chunks in the zone
+    zone.forEach(c => {
+        stampStructuresForChunk(c.cx, c.cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+    });
+
+    // 3. Draw the regional roads and walls (highly optimized, filtered to this settlement)
+    drawRingRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell);
+    drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell.x, zoneWell.y);
+    drawTownWalls(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell);
+}
 
 
 
@@ -585,6 +631,28 @@ export function drawStorageRoom(gx, gy, worldMatrix, roomMatrix, fertilityMatrix
 
 export function planVillage(gvx, gvy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     plannedWells.push({ x: gvx, y: gvy, type: 101 }); // Type 101 = Village
+
+    // ==========================================
+    // 🎪 ZONE REGISTRATION (3x3 Chunk Boundary)
+    // ==========================================
+    const cx = Math.floor(gvx / 100);
+    const cy = Math.floor(gvy / 100);
+    const villageChunks = [];
+
+    for (let ox = -1; ox <= 1; ox++) {
+        for (let oy = -1; oy <= 1; oy++) {
+            const tCX = cx + ox;
+            const tCY = cy + oy;
+            if (tCX >= 0 && tCX < CONFIG.MAP_SIZE && tCY >= 0 && tCY < CONFIG.MAP_SIZE) {
+                villageChunks.push({ cx: tCX, cy: tCY });
+            }
+        }
+    }
+
+    // Map each of the 9 chunks to this village zone group
+    villageChunks.forEach(c => {
+        zoneLookup.set(`${c.cx}_${c.cy}`, villageChunks);
+    });
 
     // Gather existing roads
     let roadTiles = [];
@@ -1120,6 +1188,28 @@ export function drawTownHall(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, w
 export function planTown(gtx, gty, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     plannedWells.push({ x: gtx, y: gty, type: 102 }); // Type 102 = Town
 
+    // ==========================================
+    // 🎪 ZONE REGISTRATION (5x5 Chunk Boundary)
+    // ==========================================
+    const cx = Math.floor(gtx / 100);
+    const cy = Math.floor(gty / 100);
+    const townChunks = [];
+
+    for (let ox = -2; ox <= 2; ox++) {
+        for (let oy = -2; oy <= 2; oy++) {
+            const tCX = cx + ox;
+            const tCY = cy + oy;
+            if (tCX >= 0 && tCX < CONFIG.MAP_SIZE && tCY >= 0 && tCY < CONFIG.MAP_SIZE) {
+                townChunks.push({ cx: tCX, cy: tCY });
+            }
+        }
+    }
+
+    // Map each of the 25 chunks to this town zone group
+    townChunks.forEach(c => {
+        zoneLookup.set(`${c.cx}_${c.cy}`, townChunks);
+    });
+
     let roadTiles = [];
     for (let x = gtx - 90; x < gtx + 90; x++) {
         for (let y = gty - 90; y < gty + 90; y++) {
@@ -1146,7 +1236,6 @@ export function planTown(gtx, gty, worldMatrix, roomMatrix, fertilityMatrix, wor
         { func: drawRootCellar, w: 2, h: 3, count: Math.floor(seededRandom() * 9) + 12 },
     ];
 
-    // Inside planTown()... replace placeBuildings and the forEach loops:
     const placeBuildings = (bp, maxAttempts, snapToRoad) => {
         let placed = 0, attempts = 0;
         while (placed < bp.count && attempts < maxAttempts) {
@@ -1154,7 +1243,6 @@ export function planTown(gtx, gty, worldMatrix, roomMatrix, fertilityMatrix, wor
             let tx = gtx + Math.floor(seededRandom() * 180) - 90;
             let ty = gty + Math.floor(seededRandom() * 180) - 90;
             
-            // Only snap to road if snapToRoad is TRUE
             if (snapToRoad && hasRoad && attempts < maxAttempts * 0.75) {
                 const road = roadTiles[Math.floor(seededRandom() * roadTiles.length)];
                 const side = Math.floor(seededRandom() * 4);
@@ -1173,19 +1261,19 @@ export function planTown(gtx, gty, worldMatrix, roomMatrix, fertilityMatrix, wor
         }
     };
 
-    uniqueBuildings.forEach(bp => placeBuildings(bp, 300, false)); // Scattered
-    residential.forEach(bp => placeBuildings(bp, 1500, true));     // Snapped to roads
-    utilities.forEach(bp => placeBuildings(bp, 500, false));       // Scattered
+    uniqueBuildings.forEach(bp => placeBuildings(bp, 300, false));
+    residential.forEach(bp => placeBuildings(bp, 1500, true));
+    utilities.forEach(bp => placeBuildings(bp, 500, false));
 
-    // 4. Plan Ranches (Massive 5 to 60 width/height)
+    // 4. Plan Ranches (with barns)
     let ranchesPlaced = 0, ranchAttempts = 0;
-    const ranchGoal = Math.floor(seededRandom() * 17) + 16; // 16 to 32 Ranches
+    const ranchGoal = Math.floor(seededRandom() * 17) + 16; 
     
     let barnsPlaced = 0;
-    const maxBarns = Math.floor(seededRandom() * 7) + 8; // 8 to 14 Barns
+    const maxBarns = Math.floor(seededRandom() * 7) + 8; 
     
     let largeBarnsPlaced = 0;
-    const maxLargeBarns = Math.floor(seededRandom() * 3) + 4; // 4 to 6 Large Barns
+    const maxLargeBarns = Math.floor(seededRandom() * 3) + 4; 
 
     while (ranchesPlaced < ranchGoal && ranchAttempts < 500) {
         ranchAttempts++;
@@ -1198,7 +1286,6 @@ export function planTown(gtx, gty, worldMatrix, roomMatrix, fertilityMatrix, wor
             reserveFootprint(rx, ry, rw, rh, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
             const gateX = Math.floor(seededRandom() * (rw - 2)) + 1;
             
-            // Allocate barns perfectly based on goals
             let barnType = 'NONE';
             if (rw >= 20 && rh >= 20 && largeBarnsPlaced < maxLargeBarns) {
                 barnType = 'LARGE_BARN';
@@ -1941,23 +2028,28 @@ export function ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix,
             if (cx < 0 || cx >= CONFIG.MAP_SIZE || cy < 0 || cy >= CONFIG.MAP_SIZE) continue;
 
             const cellKey = `${cx}_${cy}`;
-            if (!decoratedCells.has(cellKey)) {
-                // SIMPLIFIED: Just call decorateCell. 
-                // It will wake up the memory AND draw structures in one go.
-                decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-                decoratedCells.add(cellKey);
+            const zone = zoneLookup.get(cellKey);
+
+            // ==========================================
+            // 🎪 STEP 1: LAZY LOADING / STRUCTURE STAMPING
+            // ==========================================
+            if (zone) {
+                // Initialize the entire settlement (buildings, roads, walls) if not done yet
+                ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            } else {
+                // WILDERNESS LOADING: Load this single chunk normally
+                if (!decoratedCells.has(cellKey)) {
+                    decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+                    decoratedCells.add(cellKey);
+                }
             }
 
-            // 🌟 NEW: MODULAR AUTO-TILING LAZY LOAD!
-            // Priority 1: Sand and Water (Draws over grass)
+            // ==========================================
+            // 🌟 STEP 2: MODULAR AUTO-TILING LAZY LOAD
+            // ==========================================
             autoTileLayerChunk(cx, cy, worldMatrix, [0, 10, 11, 17], 0, 'sand');
-            
-            // Priority 2: Paved Town Stone (Draws over remaining grass)
             autoTileLayerChunk(cx, cy, worldMatrix, [208], 208, 'stone');
-            
-            // Priority 3: Organic Dirt Paths (Draws over remaining grass)
             autoTileLayerChunk(cx, cy, worldMatrix, [337], 337, 'dirt');
-
         }
     }
 }
@@ -2235,7 +2327,7 @@ export function planAllSettlements(worldMap, worldMatrix, roomMatrix, fertilityM
 // ==========================================
 // 🚜 PLANNED RANCH ROADS
 // ==========================================
-export function drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
+export function drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap, targetWellX = null, targetWellY = null) {
     
     // 🚀 Helper: 1x1 Road + 1-Tile Buffer = 3x3 Check
     function isRanchStepBlocked(tx, ty) {
@@ -2258,6 +2350,8 @@ export function drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, 
     }
 
     plannedRanches.forEach(r => {
+        // 🛑 FILTER: Skip ranches that do not belong to the target well being initialized
+        if (targetWellX !== null && (r.wellX !== targetWellX || r.wellY !== targetWellY)) return;
         // 🌟 DYNAMIC TILE FIX: Check if the well belongs to a Town (102) to use paved road (208)
         const well = plannedWells.find(w => w.x === r.wellX && w.y === r.wellY);
         const roadTileID = 337; // Always use organic dirt for ranch driveways
@@ -2474,8 +2568,10 @@ function isInsideVillagePolygon(gx, gy) {
 // ==========================================
 // ⭕ DYNAMIC PERIMETER ROADS (Organic & Safe)
 // ==========================================
-export function drawRingRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
-    plannedWells.forEach(well => {
+export function drawRingRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap, targetWell = null) {
+    const wellsToProcess = targetWell ? [targetWell] : plannedWells;
+
+    wellsToProcess.forEach(well => {
         let boxes = [];
 
         // 1. Collect Exact Bounding Boxes for normal buildings
@@ -2750,8 +2846,10 @@ export function clearBlueprints(roomMatrix) {
 // ==========================================
 // 🧱 TOWN FORTIFICATIONS (Thick Buffer & Fracture-Free)
 // ==========================================
-export function drawTownWalls(worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
-    plannedWells.forEach(well => {
+export function drawTownWalls(worldMatrix, roomMatrix, fertilityMatrix, worldMap, targetWell = null) {
+    const wellsToProcess = targetWell ? [targetWell] : plannedWells;
+
+    wellsToProcess.forEach(well => {
         if (well.type !== 102 || !well.spokes) return; 
 
         // We need the boxes again to guarantee the wall doesn't clip buildings!
