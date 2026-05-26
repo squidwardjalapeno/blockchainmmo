@@ -2,11 +2,12 @@
 import { viewport } from './viewport.js';
 import { moveEntity, getTileData } from './physics.js'; 
 import { hero } from './entities.js'; 
-import { worldTime } from './game.js'; 
 import { getObjectAt, staticObjects, solidTiles } from './staticObjects.js'; 
 import { plants } from './plants.js';
 import { bacteriaCells } from './bacteria.js'; 
 import { syncInventoryWithServer } from './uiManager.js';
+import { worldTime } from './clock.js'; // 👈 ADD THIS IMPORT
+
 
 export const hobbits = [];
 
