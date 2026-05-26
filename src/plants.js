@@ -1,7 +1,8 @@
-// js/plants.js
+// src/plants.js
 import { seedBacteria } from './bacteria.js';
 import { ITEM_TYPES } from './items.js';
 import { hero } from './entities.js'; 
+import { viewport } from './viewport.js'; // 👈 IMPORTED: Allows viewport boundary checks
 
 if (typeof window !== 'undefined') {
     logStep("plants.js");
@@ -9,7 +10,7 @@ if (typeof window !== 'undefined') {
 
 export const plants = new Map();
 
-// The normal, slow growth rates!
+// Standard botanical definitions
 export const PLANT_DEFS = {
     grass: { stages: [59, 58, 57, 56, 55], growthRate: 0.5, fertilityReq: 3, spreadRange: 2 },
     rose: { stages: [10, 9, 8, 7, 6], growthRate: 0.25, fertilityReq: 8, spreadRange: 2 },
@@ -18,41 +19,38 @@ export const PLANT_DEFS = {
     turnip: { stages: [4, 3, 2, 1], growthRate: 0.4, fertilityReq: 5, spreadRange: 1 },
     tomato: { 
         stages: [23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12], 
-        tileset: 'cropTileset2', // 👈 Point to the new image!
+        tileset: 'cropTileset2', 
         growthRate: 0.2, 
         fertilityReq: 40, 
         spreadRange: 1,
-        isCyclical: true,        // 👈 NEW: Tells the engine not to delete it!
-        resetGrowth: 26,         // 👈 NEW: Resets to 26% (Tile 20 - Mature Plant)
-        flowerGrowth: 34,        // 👈 NEW: Hits the flower stage at 34% (Tile 19)
-        flowerFertilityCost: 15,  // 👈 NEW: Drains 15 fertility every time it flowers!
-        harvestWindow: 3 // 👈 NEW: It can be harvested in the last 3 stages (14, 13, 12)
-
+        isCyclical: true,        
+        resetGrowth: 26,         
+        flowerGrowth: 34,        
+        flowerFertilityCost: 15,  
+        harvestWindow: 3 
     },
     eggplant: { 
-        stages: [46, 45, 44, 43, 42, 41, 40, 39, 38, 37], // 10 stages total
-        tileset: 'cropTileset2', // Uses the new tileset!
+        stages: [46, 45, 44, 43, 42, 41, 40, 39, 38, 37], 
+        tileset: 'cropTileset2', 
         growthRate: 0.15, 
         fertilityReq: 85, 
         spreadRange: 1,
-        isCyclical: true,        // 👈 Makes it a recurring crop
-        resetGrowth: 31,         // 👈 Reverts to Tile 43 (Index 3) after harvest
-        flowerGrowth: 41,        // 👈 Hits the flower stage at Tile 42 (Index 4)
-        flowerFertilityCost: 20  // 👈 Drains fertility every time it flowers
+        isCyclical: true,        
+        resetGrowth: 31,         
+        flowerGrowth: 41,        
+        flowerFertilityCost: 20  
     },
-
     strawberry: { 
-        stages: [82, 81, 80, 79, 78, 77, 76, 75, 74, 73], // 10 stages total
+        stages: [82, 81, 80, 79, 78, 77, 76, 75, 74, 73], 
         tileset: 'cropTileset2',
         growthRate: 0.24, 
         fertilityReq: 45, 
         spreadRange: 1,
-        isCyclical: true,        // 👈 Recurring crop
-        resetGrowth: 31,         // 👈 Reverts to Tile 79 (Mature leaves, no fruit)
-        flowerGrowth: 41,        // 👈 Flowers at Tile 78
-        flowerFertilityCost: 10  // 👈 Drains fertility every time it flowers
+        isCyclical: true,        
+        resetGrowth: 31,         
+        flowerGrowth: 41,        
+        flowerFertilityCost: 10  
     },
-    
     pumpkin: { stages: [100, 99, 98, 97], growthRate: 0.35, fertilityReq: 25, spreadRange: 1 },
     watermelon: { stages: [34, 33, 32, 31], growthRate: 0.35, fertilityReq: 28, spreadRange: 1 },
     corn: { stages: [112, 111, 110, 109], growthRate: 0.35, fertilityReq: 8, spreadRange: 1 },
@@ -60,6 +58,29 @@ export const PLANT_DEFS = {
     pineapple: { stages: [53, 52, 51, 50, 49], growthRate: 0.05, fertilityReq: 25, spreadRange: 1 },
     potato: { stages: [89, 88, 87, 86, 85], growthRate: 0.15, fertilityReq: 32, spreadRange: 1 }
 };
+
+// 🧠 HELPER: Deletes a plant, refunds nutrients to soil, and spawns compost
+function witherPlant(plant, key, fertilityMatrix) {
+    const cx = Math.floor(plant.gx / 100);
+    const cy = Math.floor(plant.gy / 100);
+    const lx = ((plant.gx % 100) + 100) % 100;
+    const ly = ((plant.gy % 100) + 100) % 100;
+    const idx = (ly * 100) + lx;
+
+    // Instant Nutrient Refund
+    if (fertilityMatrix[cx] && fertilityMatrix[cx][cy]) {
+        fertilityMatrix[cx][cy][idx] = Math.min(255, fertilityMatrix[cx][cy][idx] + PLANT_DEFS[plant.type].fertilityReq);
+    }
+
+    // Wipe the bacteria anchor and drop compost
+    import('./bacteria.js').then(m => {
+        const bac = m.getBacteriaData(plant.gx, plant.gy);
+        if (bac && bac.data) bac.data[bac.idx] = 0;
+        m.seedBacteria(plant.gx, plant.gy, "grass_item", 12, 2);
+    });
+
+    plants.delete(key);
+}
 
 export function createPlant(gx, gy, fertilityMatrix, startingGrowth = 0, type = 'grass', leftoverTime = 0) {
     const key = `${gx}_${gy}`;
@@ -72,11 +93,9 @@ export function createPlant(gx, gy, fertilityMatrix, startingGrowth = 0, type = 
     const idx = (ly * 100) + lx; 
 
     const cell = fertilityMatrix[cx]?.[cy];
-
-    
     if (!cell) return;
-    const soilF = cell[idx] || 0;
 
+    const soilF = cell[idx] || 0;
     const required = PLANT_DEFS[type].fertilityReq;
     if (soilF < required) return; 
 
@@ -98,11 +117,7 @@ export function createPlant(gx, gy, fertilityMatrix, startingGrowth = 0, type = 
         spriteStage: initialStage,
         seedsRemaining: Math.floor(Math.random() * 2) + 3,
         seedTimer: startingGrowth >= 100 ? (Math.random() * 200.0) : 0,
-        hasFlowered: false, // 👈 NEW: Tracks if it paid the fertility cost yet
-
-        
-        // 🕰️ TIME TRAVEL FIX: If this seed was theoretically dropped 500 seconds ago,
-        // we set its "birth date" to 500 seconds in the past!
+        hasFlowered: false, 
         lastUpdated: Date.now() - (leftoverTime * 1000) 
     });
 
@@ -118,23 +133,47 @@ export function updatePlants(modifier, fertilityMatrix, worldMatrix, roomMatrix)
         const plantCX = Math.floor(plant.gx / 100);
         const plantCY = Math.floor(plant.gy / 100);
 
-        // 🧊 TIER 3 FREEZER
-        // If they are outside the grid, we skip them entirely!
-        // This causes their `lastUpdated` to fall behind the current time.
-        if (Math.abs(plantCX - heroCX) > 1 || Math.abs(plantCY - heroCY) > 1) {
-            continue; 
+        // ==========================================
+        // ❄️ TIER 3: FROZEN ZONE (Outside 3x3 Chunks)
+        // ==========================================
+        const isInsideActiveChunks = Math.abs(plantCX - heroCX) <= 1 && Math.abs(plantCY - heroCY) <= 1;
+        if (!isInsideActiveChunks) {
+            continue; // Deep sleep. No calculations are run.
         }
 
-        // 🕰️ TIME-DIFFERENTIAL CATCH-UP LOGIC
-        if (!plant.lastUpdated) plant.lastUpdated = now; // Fallback for old saves
-        
+        // Initialize elapsed duration
+        if (!plant.lastUpdated) plant.lastUpdated = now;
         let deltaSeconds = (now - plant.lastUpdated) / 1000;
-        if (deltaSeconds < 0) deltaSeconds = 0; // Safety check
-        plant.lastUpdated = now;
+        if (deltaSeconds < 0) deltaSeconds = 0;
 
-        // How much time do we need to simulate this tick?
-        // (Normally 1.0s, but if we just unfroze, it could be 600.0s!)
+        // Viewport check
+        const pad = 32; 
+        const screenX = (plant.gx * 16) + viewport.offset[0];
+        const screenY = (plant.gy * 16) + viewport.offset[1];
+        const inViewport = (
+            screenX >= -pad && 
+            screenX <= viewport.screen[0] + pad && 
+            screenY >= -pad && 
+            screenY <= viewport.screen[1] + pad
+        );
+
+        // ==========================================
+        // ❄️ TIER 2: COLD HEARTBEAT (Off-Screen Active)
+        // ==========================================
+        // If the plant is off-screen, keep it completely silent.
+        // It only runs logical checks once it accumulates 1.5s of real-time delta.
+        // (If deltaSeconds is > 2.0 on entry, it falls through to the catch-up step)
+        if (!inViewport && deltaSeconds < 1.5) {
+            continue; // Bypass updates for this frame.
+        }
+
+        // Update timestamps and prepare evaluation window
+        plant.lastUpdated = now;
         let simulatedTime = deltaSeconds;
+
+        // ==========================================
+        // ⚡ TIER 1: VIEWPORT ACTIVE (On-Screen Real-Time / Catch-up)
+        // ==========================================
 
         // --- 1. GROWTH PHASE ---
         if (plant.growth < 100) {
@@ -142,11 +181,10 @@ export function updatePlants(modifier, fertilityMatrix, worldMatrix, roomMatrix)
             const growthAdded = ratePerSec * simulatedTime;
             const def = PLANT_DEFS[plant.type];
 
-            // 🌸 CYCLICAL FLOWERING FERTILITY DRAIN
+            // Cyclical flower drain
             if (def.isCyclical && !plant.hasFlowered && plant.growth >= def.flowerGrowth) {
                 plant.hasFlowered = true;
                 
-                // Drain fertility from the soil!
                 const cx = Math.floor(plant.gx / 100);
                 const cy = Math.floor(plant.gy / 100);
                 const lx = ((plant.gx % 100) + 100) % 100;
@@ -159,71 +197,34 @@ export function updatePlants(modifier, fertilityMatrix, worldMatrix, roomMatrix)
                 console.log(`🌸 ${plant.type} flowered! Drained ${def.flowerFertilityCost} fertility.`);
             }
             
-            // Did it reach 100% while we were gone?
             if (plant.growth + growthAdded >= 100) {
                 const timeTo100 = (100 - plant.growth) / ratePerSec;
-                
                 plant.growth = 100;
                 plant.spriteStage = def.stages.length - 1; 
                 plant.seedTimer = 100.0; 
-                
                 simulatedTime -= timeTo100; 
             } else {
                 plant.growth += growthAdded;
-                // We let the renderer calculate the visual stage dynamically now!
                 simulatedTime = 0; 
             }
         }
         
         // --- 2. SEEDING & WITHERING PHASE ---
-        // If it's fully grown and we STILL have simulated time leftover!
         if (plant.growth >= 100 && simulatedTime > 0) {
-            
-            // Fast-forward through as many seeds/withering events as the time allows
             while (simulatedTime > 0 && plant.seedsRemaining > 0) {
-                
-                // Do we have enough time to drop the next seed?
                 if (simulatedTime >= plant.seedTimer) {
                     simulatedTime -= plant.seedTimer;
-                    
-                    // 👇 Pass the REMAINING simulatedTime to the seed!
                     spreadSeed(plant, fertilityMatrix, worldMatrix, roomMatrix, simulatedTime); 
-                    
                     plant.seedsRemaining--;
 
-                    // Are we out of seeds? (Time to wither)
                     if (plant.seedsRemaining <= 0) {
-                        
-                        // 🍂 THE WITHERING
-                        const cx = Math.floor(plant.gx / 100);
-                        const cy = Math.floor(plant.gy / 100);
-                        const lx = ((plant.gx % 100) + 100) % 100;
-                        const ly = ((plant.gy % 100) + 100) % 100;
-                        const idx = (ly * 100) + lx;
-
-                        // Instant Nutrient Refund
-                        if (fertilityMatrix[cx] && fertilityMatrix[cx][cy]) {
-                            fertilityMatrix[cx][cy][idx] = Math.min(255, fertilityMatrix[cx][cy][idx] + PLANT_DEFS[plant.type].fertilityReq);
-                        }
-
-                        // Wipe the bacteria anchor and drop compost
-                        import('./bacteria.js').then(m => {
-                            const bac = m.getBacteriaData(plant.gx, plant.gy);
-                            if (bac && bac.data) bac.data[bac.idx] = 0;
-                            m.seedBacteria(plant.gx, plant.gy, "grass_item", 12, 2);
-                        });
-
-                        plants.delete(key);
-                        
-                        // Stop simulating for this plant (it's dead!)
+                        witherPlant(plant, key, fertilityMatrix);
                         simulatedTime = 0; 
                         break; 
                     } else {
-                        // Reset the timer for the next seed drop
                         plant.seedTimer = 100.0 + (Math.random() * 100.0);
                     }
                 } else {
-                    // Not enough time to drop a seed, just drain the timer
                     plant.seedTimer -= simulatedTime;
                     simulatedTime = 0; 
                 }
