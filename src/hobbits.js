@@ -5,6 +5,8 @@ import { hero } from './entities.js';
 import { getObjectAt, staticObjects } from './staticObjects.js'; 
 import { plants } from './plants.js';
 import { bacteriaCells } from './bacteria.js'; 
+import { worldTime } from './clock.js'; // 👈 ADD THIS IMPORT
+
 
 export const hobbits = [];
 
