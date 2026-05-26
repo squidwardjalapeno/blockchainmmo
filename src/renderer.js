@@ -388,9 +388,6 @@ export function drawPlants(roomMatrix) {
     });
 }
 
-// Add this import to the top of src/renderer.js:
-import { getHobbitAnimationData } from './animations.js';
-
 // Add this function to src/renderer.js:
 export function drawHobbits(ctx2, activeHobbits) {
     const w = canvas2.width;
