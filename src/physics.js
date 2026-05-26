@@ -24,8 +24,6 @@ export function getTileData(pxX, pxY, worldMatrix, roomMatrix) {
 
 // Inside checkCollision() in src/physics.js:
 
-// Inside checkCollision() in src/physics.js:
-
 export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     let target = getTileData(x, y, worldMatrix, roomMatrix);
     const current = getTileData(entity.x + 8, entity.y + 15, worldMatrix, roomMatrix); 
@@ -38,26 +36,27 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     // ==========================================
     // 🌲 2. SUB-PIXEL TREE TRUNK COLLISION (Centered 16px Box)
     // ==========================================
-    // 🎯 THE FIX: Force coordinates to calculate from the player's active feet/center
-    const tx = Math.floor((x + 8) / 16); 
-    const ty = Math.floor((y + 15) / 16); 
-    
+    const tx = target.gx;
+    const ty = target.gy;
     const pxMin = x + 2;
     const pxMax = x + 14; 
     const pyMin = y + 8;
     const pyMax = y + 15; 
 
-    // Safe horizontal search window
+    // 🎯 THE FIX: Expanded loop from -2 to 1. This guarantees the tree at anchorX
+    // is found whether the player is standing on the left, right, or approaching from the sides.
     for (let ox = -2; ox <= 1; ox++) {
         const anchorX = tx + ox;
         const obj = getObjectAt(anchorX, ty);
         
         if (obj && obj.type === 'FOREST_TREE') {
-            const treeMinX = (anchorX * 16) + 8;  // Left boundary
-            const treeMaxX = (anchorX * 16) + 24; // Right boundary
+            // Calculate narrowed 16-pixel centered boundaries
+            const treeMinX = (anchorX * 16) + 8;  // 8px buffer on the left
+            const treeMaxX = (anchorX * 16) + 24; // 8px buffer on the right
             const treeMinY = ty * 16;
             const treeMaxY = (ty * 16) + 16;
 
+            // Check AABB overlap between player and tree trunk
             const overlapX = (pxMin < treeMaxX) && (pxMax > treeMinX);
             const overlapY = (pyMin < treeMaxY) && (pyMax > treeMinY);
 
@@ -66,11 +65,6 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
             }
         }
     }
-
-    // ==========================================
-    // 🚪 DOOR & GATE LOGIC
-    // ==========================================
-    // ... (rest of your door and interior checks stay exactly the same) ...
 
     // ==========================================
     // 🚪 DOOR & GATE LOGIC
