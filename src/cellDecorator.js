@@ -1766,9 +1766,12 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
 
         // Inside decorateCell() in src/cellDecorator.js (under the tree spawner section):
 
+        // Inside decorateCell() in src/cellDecorator.js:
+
         if (isForestRegion) {
             setWorldSeed((window.worldSeed || 1) + (cx * 1000) + cy + 777);
             
+            // Original high-frequency forest density (45% chance per tile)
             const spawnThreshold = (cellType === 104 || cellType === 101 || cellType === 102 || cellType === 103 || cellType === 107) ? 0.55 : 0.80;
             
             for (let ly = 0; ly < 100; ly++) { 
@@ -1783,21 +1786,25 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
                             
                             if (typeof isInsideVillagePolygon === 'function' && isInsideVillagePolygon(gx, gy)) continue;
                             
-                            // 🎯 THE FIX: Verify clear space by checking for existing static objects
-                            // and expand the radius slightly so trees don't spawn on top of each other.
+                            // 🎯 THE FIX: 2x1 Trunk-Only Spacing.
+                            // We only check if an existing tree is anchored at gx-1, gx, or gx+1 on the same row.
+                            // This permits 0-tile vertical gaps and 0-tile horizontal gaps, allowing
+                            // trees to group shoulder-to-shoulder while preventing identical duplicate overlays.
                             let isClear = true;
-                            for (let ox = -3; ox <= 3; ox++) {
-                                for (let oy = -3; oy <= 3; oy++) {
+                            
+                            for (let ox = -1; ox <= 1; ox++) {
+                                if (getObjectAt(gx + ox, gy)) {
+                                    isClear = false;
+                                    break;
+                                }
+                            }
+
+                            // Verify both trunk tiles sit on natural grass and avoid roads, water, or buildings
+                            if (isClear) {
+                                for (let ox = 0; ox <= 1; ox++) {
                                     const checkGX = gx + ox;
-                                    const checkGY = gy + oy;
-
-                                    // 1. If another tree is already registered within this radius, abort!
-                                    if (getObjectAt(checkGX, checkGY)) {
-                                        isClear = false;
-                                        break;
-                                    }
-
-                                    // 2. Keep the terrain and building boundary checks
+                                    const checkGY = gy;
+                                    
                                     const tCX = Math.floor(checkGX / 100);
                                     const tCY = Math.floor(checkGY / 100);
                                     if (tCX >= 0 && tCX < CONFIG.MAP_SIZE && tCY >= 0 && tCY < CONFIG.MAP_SIZE) {
@@ -1812,9 +1819,11 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
                                                 break;
                                             }
                                         }
+                                    } else {
+                                        isClear = false; // Out of bounds safety
+                                        break;
                                     }
                                 }
-                                if (!isClear) break;
                             }
                             
                             if (isClear) {
