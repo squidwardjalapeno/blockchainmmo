@@ -24,6 +24,8 @@ export function getTileData(pxX, pxY, worldMatrix, roomMatrix) {
 
 // Inside checkCollision() in src/physics.js:
 
+// src/physics.js
+
 export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     let target = getTileData(x, y, worldMatrix, roomMatrix);
     const current = getTileData(entity.x + 8, entity.y + 15, worldMatrix, roomMatrix); 
@@ -34,42 +36,26 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     if (solidTiles.has(`${target.gx}_${target.gy}`)) return false;
 
     // ==========================================
-    // 🌲 2. SUB-PIXEL TREE TRUNK COLLISION (Centered 16px Box)
+    // 🌲 2. SUB-PIXEL TREE TRUNK COLLISION (Point-In-Trunk Check)
     // ==========================================
     const tx = target.gx;
     const ty = target.gy;
-    const pxMin = x + 2;
-    const pxMax = x + 14; 
-    const pyMin = y + 8;
-    const pyMax = y + 15; 
 
-    // 🎯 THE FIX: Expanded loop from -2 to 1. This guarantees the tree at anchorX
-    // is found whether the player is standing on the left, right, or approaching from the sides.
-    for (let ox = -2; ox <= 1; ox++) {
+    // Scan the current tile and the tile to its left (since the tree is 2 tiles wide)
+    for (let ox = -1; ox <= 0; ox++) {
         const anchorX = tx + ox;
         const obj = getObjectAt(anchorX, ty);
         
         if (obj && obj.type === 'FOREST_TREE') {
-            // Calculate narrowed 16-pixel centered boundaries
-            const treeMinX = (anchorX * 16) + 8;  // 8px buffer on the left
-            const treeMaxX = (anchorX * 16) + 24; // 8px buffer on the right
-            const treeMinY = ty * 16;
-            const treeMaxY = (ty * 16) + 16;
+            const treeMinX = (anchorX * 16) + 8;  // Left trunk boundary (8px buffer)
+            const treeMaxX = (anchorX * 16) + 24; // Right trunk boundary (8px buffer)
 
-            // Check AABB overlap between player and tree trunk
-            const overlapX = (pxMin < treeMaxX) && (pxMax > treeMinX);
-            const overlapY = (pyMin < treeMaxY) && (pyMax > treeMinY);
-
-            if (overlapX && overlapY) {
-                return false; // Collision! Block movement
+            // 🎯 THE FIX: Verify if the exact tested coordinate falls inside the trunk
+            if (x >= treeMinX && x <= treeMaxX) {
+                return false; // Collision detected! Block movement
             }
         }
     }
-
-    // ==========================================
-    // 🚪 DOOR & GATE LOGIC
-    // ==========================================
-    // ... (rest of your door and interior checks stay exactly the same) ...
 
     // ==========================================
     // 🚪 DOOR & GATE LOGIC
@@ -94,7 +80,7 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
                         }
                     }
                     
-                    // RANCH GATES (Open automatically)
+                    // RANCH GATES
                     if (near.tileID === 22 || near.tileID === 19) {
                         worldMatrix[near.cx][near.cy][nearIdx] = (near.tileID === 22) ? 23 : 20;
                     }
@@ -102,7 +88,6 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
             }
         }
 
-        // Auto-close doors
         const doorCheckX = entity.x + 8;
         const doorCheckY = entity.y + 8;
         
@@ -174,7 +159,6 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
         return false; 
     }
 
-    // Static structures and boundaries that block movement
     const worldSolids = [
         40, 48, 50, 52, 17, 18, 19, 21, 22, 24, 27, 1, 3,
         46, 47
