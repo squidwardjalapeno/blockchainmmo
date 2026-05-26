@@ -17,7 +17,9 @@ let nextHouseId = 1;
 export const ecoGenerated = new Set();
 
 // At the top of src/cellDecorator.js
-export const zoneLookup = new Map(); // Key: "cx_cy", Value: Array of chunks in the zone
+export const zoneLookup = new Map();     // Key: "cx_cy", Value: Array of chunks in the zone
+export const zoneWellLookup = new Map(); // Key: "cx_cy", Value: The anchor well object (O(1) Index)
+export const initializedZones = new Set(); // Tracks built settlements
 
 // To this:
 if (typeof window !== 'undefined') {
@@ -151,31 +153,23 @@ function isAreaClear(gx, gy, w, h, worldMatrix, roomMatrix, worldMap) {
     return true;
 }
 
-// Add these declarations near the top of cellDecorator.js (near zoneLookup)
-export const initializedZones = new Set(); // Tracks initialized settlements
-
 export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     const cellKey = `${cx}_${cy}`;
     const zone = zoneLookup.get(cellKey);
     if (!zone) return;
 
-    // Find the planned well that belongs to this settlement zone
-    const zoneWell = plannedWells.find(w => {
-        const wCX = Math.floor(w.x / 100);
-        const wCY = Math.floor(w.y / 100);
-        return zone.some(zc => zc.cx === wCX && zc.cy === wCY);
-    });
-
+    // 🎯 CONSTANT-TIME LOOKUP (Replaced the heavy loop with a simple map query!)
+    const zoneWell = zoneWellLookup.get(cellKey);
     if (!zoneWell) return;
 
-    // Check if this specific settlement has already been built
+    // Check if this specific settlement has already been initialized
     const zoneKey = `${zoneWell.x}_${zoneWell.y}`;
     if (initializedZones.has(zoneKey)) return; 
     initializedZones.add(zoneKey);
 
     console.log(`🎪 LAZY INITIALIZING SETTLEMENT at Well [${zoneWell.x}, ${zoneWell.y}]`);
 
-    // 1. Force-load / decorate all chunks in the zone first (ensures background terrain is set)
+    // 1. Force-load / decorate all chunks in the zone first
     zone.forEach(c => {
         const chunkKey = `${c.cx}_${c.cy}`;
         if (!decoratedCells.has(chunkKey)) {
@@ -184,17 +178,16 @@ export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertility
         }
     });
 
-    // 2. Stamp all static structures, ranches, and wells for all chunks in the zone
+    // 2. Stamp all buildings, ranches, and wells for all chunks in the zone
     zone.forEach(c => {
         stampStructuresForChunk(c.cx, c.cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     });
 
-    // 3. Draw the regional roads and walls (highly optimized, filtered to this settlement)
+    // 3. Draw the regional roads and walls (highly optimized)
     drawRingRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell);
     drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell.x, zoneWell.y);
     drawTownWalls(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell);
 }
-
 
 
 
@@ -630,10 +623,11 @@ export function drawStorageRoom(gx, gy, worldMatrix, roomMatrix, fertilityMatrix
 // js/cellDecorator.js
 
 export function planVillage(gvx, gvy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
-    plannedWells.push({ x: gvx, y: gvy, type: 101 }); // Type 101 = Village
+    const wellObj = { x: gvx, y: gvy, type: 101 }; // Create reference object
+    plannedWells.push(wellObj);
 
     // ==========================================
-    // 🎪 ZONE REGISTRATION (3x3 Chunk Boundary)
+    // 🎪 ZONE REGISTRATION (3x3 Constant-Time Indexing)
     // ==========================================
     const cx = Math.floor(gvx / 100);
     const cy = Math.floor(gvy / 100);
@@ -649,9 +643,10 @@ export function planVillage(gvx, gvy, worldMatrix, roomMatrix, fertilityMatrix, 
         }
     }
 
-    // Map each of the 9 chunks to this village zone group
     villageChunks.forEach(c => {
-        zoneLookup.set(`${c.cx}_${c.cy}`, villageChunks);
+        const chunkKey = `${c.cx}_${c.cy}`;
+        zoneLookup.set(chunkKey, villageChunks);
+        zoneWellLookup.set(chunkKey, wellObj); // 👈 Direct O(1) link to the well
     });
 
     // Gather existing roads
@@ -1186,10 +1181,11 @@ export function drawTownHall(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, w
  * and a full residential/industrial district.
  */
 export function planTown(gtx, gty, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
-    plannedWells.push({ x: gtx, y: gty, type: 102 }); // Type 102 = Town
+    const wellObj = { x: gtx, y: gty, type: 102 }; // Create reference object
+    plannedWells.push(wellObj);
 
     // ==========================================
-    // 🎪 ZONE REGISTRATION (5x5 Chunk Boundary)
+    // 🎪 ZONE REGISTRATION (5x5 Constant-Time Indexing)
     // ==========================================
     const cx = Math.floor(gtx / 100);
     const cy = Math.floor(gty / 100);
@@ -1205,9 +1201,10 @@ export function planTown(gtx, gty, worldMatrix, roomMatrix, fertilityMatrix, wor
         }
     }
 
-    // Map each of the 25 chunks to this town zone group
     townChunks.forEach(c => {
-        zoneLookup.set(`${c.cx}_${c.cy}`, townChunks);
+        const chunkKey = `${c.cx}_${c.cy}`;
+        zoneLookup.set(chunkKey, townChunks);
+        zoneWellLookup.set(chunkKey, wellObj); // 👈 Direct O(1) link to the well
     });
 
     let roadTiles = [];
@@ -1265,7 +1262,6 @@ export function planTown(gtx, gty, worldMatrix, roomMatrix, fertilityMatrix, wor
     residential.forEach(bp => placeBuildings(bp, 1500, true));
     utilities.forEach(bp => placeBuildings(bp, 500, false));
 
-    // 4. Plan Ranches (with barns)
     let ranchesPlaced = 0, ranchAttempts = 0;
     const ranchGoal = Math.floor(seededRandom() * 17) + 16; 
     
@@ -1286,21 +1282,20 @@ export function planTown(gtx, gty, worldMatrix, roomMatrix, fertilityMatrix, wor
             reserveFootprint(rx, ry, rw, rh, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
             const gateX = Math.floor(seededRandom() * (rw - 2)) + 1;
             
-            let barnType = 'NONE';
+            let r_barnType = 'NONE';
             if (rw >= 20 && rh >= 20 && largeBarnsPlaced < maxLargeBarns) {
-                barnType = 'LARGE_BARN';
+                r_barnType = 'LARGE_BARN';
                 largeBarnsPlaced++;
             } else if (rw >= 6 && rh >= 6 && barnsPlaced < maxBarns && seededRandom() > 0.5) {
-                barnType = 'BARN';
+                r_barnType = 'BARN';
                 barnsPlaced++;
             }
 
-            plannedRanches.push({ gx: rx, gy: ry, w: rw, h: rh, gateX, barnType, wellX: gtx, wellY: gty });
+            plannedRanches.push({ gx: rx, gy: ry, w: rw, h: rh, gateX, barnType: r_barnType, wellX: gtx, wellY: gty });
             ranchesPlaced++;
         }
     }
 }
-
 
 /**
  * Spawns 3 smaller villages around the main town
@@ -1797,8 +1792,8 @@ export function populateWorld(worldMap) {
             const roll = seededRandom(); 
             if (roll > 1.99995177469) worldMap[i] = 103; // Castle
             else if (roll > 1.99942129629) worldMap[i] = 102; // Town
-            else if (roll > 0.990) worldMap[i] = 107; // MINING CAMP
-            else if (roll > 0.97305555555) worldMap[i] = 102; // Village
+            else if (roll > 0.9978) worldMap[i] = 107; // MINING CAMP
+            else if (roll > 0.99305555555) worldMap[i] = 101; // Village
         }
     }
 
@@ -2034,8 +2029,15 @@ export function ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix,
             // 🎪 STEP 1: LAZY LOADING / STRUCTURE STAMPING
             // ==========================================
             if (zone) {
-                // Initialize the entire settlement (buildings, roads, walls) if not done yet
-                ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+                const zoneWell = zoneWellLookup.get(cellKey);
+                if (zoneWell) {
+                    const zoneKey = `${zoneWell.x}_${zoneWell.y}`;
+                    
+                    // 🎯 CONSTANT-TIME GATE: Only call init if this zone is brand new!
+                    if (!initializedZones.has(zoneKey)) {
+                        ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+                    }
+                }
             } else {
                 // WILDERNESS LOADING: Load this single chunk normally
                 if (!decoratedCells.has(cellKey)) {
