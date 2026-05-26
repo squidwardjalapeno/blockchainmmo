@@ -2,12 +2,11 @@
 import { viewport } from './viewport.js';
 import { moveEntity, getTileData } from './physics.js'; 
 import { hero } from './entities.js'; 
+import { worldTime } from './clock.js'; // 👈 Central Clock
 import { getObjectAt, staticObjects, solidTiles } from './staticObjects.js'; 
 import { plants } from './plants.js';
 import { bacteriaCells } from './bacteria.js'; 
 import { syncInventoryWithServer } from './uiManager.js';
-import { worldTime } from './clock.js'; // 👈 ADD THIS IMPORT
-
 
 export const hobbits = [];
 
@@ -29,9 +28,7 @@ export function spawnHobbit(gx, gy) {
         stamina: 100,      
         
         state: 'idle',     
-        
-        // 🎯 THE STARTUP OVERRIDE: Begin with 'get_key' and 0 timer to execute immediately!
-        goal: 'get_key',    
+        goal: 'get_key',    // 🎯 STARTUP OVERRIDE: Get key first
         moveTimer: 0, 
 
         dir: 'South',
@@ -46,7 +43,6 @@ export function spawnHobbit(gx, gy) {
     });
 }
 
-// 🧠 HELPER: Scans active 3x3 chunks for a dropped key matching the target house ID
 function findKeyOnGround(hobbitCX, hobbitCY, houseId) {
     for (let ox = -1; ox <= 1; ox++) {
         for (let oy = -1; oy <= 1; oy++) {
@@ -74,7 +70,6 @@ function findKeyOnGround(hobbitCX, hobbitCY, houseId) {
     return null;
 }
 
-// 🧠 HELPER: Scans active 3x3 chunks for ANY available key lying on the ground
 function findAnyKeyOnGround(hobbitCX, hobbitCY) {
     for (let ox = -1; ox <= 1; ox++) {
         for (let oy = -1; oy <= 1; oy++) {
@@ -145,7 +140,8 @@ function findNearestMatureCrop(currTX, currTY) {
     return nearest;
 }
 
-function isWalkable(tx, ty, worldMatrix, roomMatrix) {
+// 🧠 INDEPENDENT WALKABLE CHECK FOR HOBBIT PATHFINDER
+function isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix, hobbit) {
     if (solidTiles.has(`${tx}_${ty}`)) return false;
 
     const obj = getObjectAt(tx, ty);
@@ -155,17 +151,42 @@ function isWalkable(tx, ty, worldMatrix, roomMatrix) {
 
     const data = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix);
     if (!data || data.tileID === undefined) return false;
+
+    // 🎯 THE FIX: Closed doors (49, 12) block pathfinding ONLY if we don't have the key!
+    if (data.tileID === 49 || data.tileID === 12) {
+        const hasKey = hobbit.inventory.some(i => i.isKey && i.houseId === data.roomID);
+        if (!hasKey) return false; // Blocked! We cannot open this door yet.
+    }
+
     const solids = [40, 48, 50, 52, 17, 18, 19, 21, 22, 24, 27, 1, 3];
     if (solids.includes(data.tileID)) return false;
     return true;
 }
 
-function findWalkableNeighbor(targetX, targetY, worldMatrix, roomMatrix) {
+// 🧠 THE FIX: Finds a walkable floor tile strictly INSIDE the same room/house
+function findWalkableNeighborInRoom(targetX, targetY, targetRoomID, worldMatrix, roomMatrix, hobbit) {
     const dirs = [[0,1], [0,-1], [1,0], [-1,0]];
     for (let d of dirs) {
         const tx = targetX + d[0];
         const ty = targetY + d[1];
-        if (isWalkable(tx, ty, worldMatrix, roomMatrix)) {
+        if (isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix, hobbit)) {
+            const rData = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix);
+            // Accept the neighbor ONLY if its roomID matches the target chest/bed roomID
+            if (rData && rData.roomID === targetRoomID) {
+                return { x: tx, y: ty };
+            }
+        }
+    }
+    return { x: targetX, y: targetY }; // Fallback
+}
+
+// Simple legacy neighbor for crops/keys (which don't have rooms)
+function findWalkableNeighbor(targetX, targetY, worldMatrix, roomMatrix, hobbit) {
+    const dirs = [[0,1], [0,-1], [1,0], [-1,0]];
+    for (let d of dirs) {
+        const tx = targetX + d[0];
+        const ty = targetY + d[1];
+        if (isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix, hobbit)) {
             return { x: tx, y: ty };
         }
     }
@@ -174,14 +195,14 @@ function findWalkableNeighbor(targetX, targetY, worldMatrix, roomMatrix) {
 
 function assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix) {
     const dirs = [[0,-1], [0,1], [-1,0], [1,0]];
-    const valid = dirs.filter(d => isWalkable(currTX + d[0], currTY + d[1], worldMatrix, roomMatrix));
+    const valid = dirs.filter(d => isWalkableForHobbit(currTX + d[0], currTY + d[1], worldMatrix, roomMatrix, hobbit));
     if (valid.length > 0) {
         const pick = valid[Math.floor(Math.random() * valid.length)];
         hobbit.path = [{ x: currTX + pick[0], y: currTY + pick[1] }];
     }
 }
 
-function findPathToCoords(startTX, startTY, targetTX, targetTY, worldMatrix, roomMatrix) {
+function findPathToCoords(startTX, startTY, targetTX, targetTY, worldMatrix, roomMatrix, hobbit) {
     const queue = [{ x: startTX, y: startTY, path: [] }];
     const visited = new Set([`${startTX}_${startTY}`]);
     const maxDepth = 80; 
@@ -204,7 +225,7 @@ function findPathToCoords(startTX, startTY, targetTX, targetTY, worldMatrix, roo
             const key = `${n.x}_${n.y}`;
             if (!visited.has(key)) {
                 visited.add(key);
-                if (isWalkable(n.x, n.y, worldMatrix, roomMatrix)) {
+                if (isWalkableForHobbit(n.x, n.y, worldMatrix, roomMatrix, hobbit)) {
                     queue.push({ x: n.x, y: n.y, path: [...curr.path, { x: n.x, y: n.y }] });
                 }
             }
@@ -269,6 +290,9 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             const currTX = Math.floor((hobbit.x + 8) / 16);
             const currTY = Math.floor((hobbit.y + 8) / 16);
 
+            // Fetch current roomID directly from feet physics
+            const currentRoomID = getTileData(hobbit.x + 8, hobbit.y + 15, worldMatrix, roomMatrix).roomID;
+
             // ==========================================
             // 🧠 CORE MOTIVES & STATE DECISION TREE
             // ==========================================
@@ -288,18 +312,20 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 hobbit.stamina = Math.min(100, hobbit.stamina + 5);
                 hobbit.targetKeyCoords = null;
                 
-                // 🎯 THE UNIFIED DECISION FLOW (Forced Get Key on Startup)
-                if (!hobbit.assignedHouseId) {
-                    const availableKey = findAnyKeyOnGround(hobbitCX, hobbitCY);
-                    if (availableKey) {
-                        hobbit.goal = 'get_key';
-                        hobbit.targetKeyCoords = availableKey;
+                if (hobbit.inventory.length >= hobbit.maxSlots) {
+                    const hasMyKey = hobbit.assignedHouseId && hobbit.inventory.some(i => i.isKey && i.houseId === hobbit.assignedHouseId);
+                    
+                    if (hasMyKey) {
+                        hobbit.goal = 'deposit';
                     } else {
-                        hobbit.goal = 'gather';
+                        const availableKey = findAnyKeyOnGround(hobbitCX, hobbitCY);
+                        if (availableKey) {
+                            hobbit.goal = 'get_key';
+                            hobbit.targetKeyCoords = availableKey;
+                        } else {
+                            hobbit.goal = 'deposit';
+                        }
                     }
-                } 
-                else if (hobbit.inventory.length >= hobbit.maxSlots) {
-                    hobbit.goal = 'deposit';
                 } else {
                     hobbit.goal = 'gather';
                 }
@@ -340,11 +366,11 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             hobbit.assignedHouseId = extractedHouseId;
                             console.log(`🔑 Hobbit claimed House #${extractedHouseId}!`);
 
-                            // Immediately transition to harvest
                             hobbit.goal = 'gather';
                             hobbit.state = 'idle';
                         } else {
-                            const path = findPathToCoords(currTX, currTY, tk.gx, tk.gy, worldMatrix, roomMatrix);
+                            // 🎯 THE FIX: Pass "hobbit" to pathfinder!
+                            const path = findPathToCoords(currTX, currTY, tk.gx, tk.gy, worldMatrix, roomMatrix, hobbit);
                             if (path) {
                                 hobbit.path = path;
                                 hobbit.state = 'walking';
@@ -362,11 +388,12 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         if (bed) {
                             hobbit.assignedHouseId = bed.houseId;
 
-                            if (Math.abs(currTX - bed.x) <= 1 && Math.abs(currTY - bed.y) <= 1) {
+                            if (Math.abs(currTX - bed.x) <= 1 && Math.abs(currTY - bed.y) <= 1 && currentRoomID === bed.houseId) {
                                 hobbit.state = 'sleeping';
                             } else {
-                                const target = findWalkableNeighbor(bed.x, bed.y, worldMatrix, roomMatrix);
-                                const path = findPathToCoords(currTX, currTY, target.x, target.y, worldMatrix, roomMatrix);
+                                // 🎯 THE FIX: Pass "hobbit" to neighbor search!
+                                const target = findWalkableNeighborInRoom(bed.x, bed.y, bed.houseId, worldMatrix, roomMatrix, hobbit);
+                                const path = findPathToCoords(currTX, currTY, target.x, target.y, worldMatrix, roomMatrix, hobbit);
                                 if (path) {
                                     hobbit.path = path;
                                     hobbit.state = 'walking';
@@ -410,15 +437,16 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
 
                         if (chest) {
-                            if (Math.abs(currTX - chest.x) <= 1 && Math.abs(currTY - chest.y) <= 1) {
+                            if (Math.abs(currTX - chest.x) <= 1 && Math.abs(currTY - chest.y) <= 1 && currentRoomID === hobbit.assignedHouseId) {
                                 hobbit.state = 'depositing';
                                 console.log(`🧝 Hobbit deposited resources into House Chest #${hobbit.assignedHouseId}!`);
                                 hobbit.inventory = []; 
                                 hobbit.goal = 'gather';
                                 hobbit.state = 'idle';
                             } else {
-                                const target = findWalkableNeighbor(chest.x, chest.y, worldMatrix, roomMatrix);
-                                const path = findPathToCoords(currTX, currTY, target.x, target.y, worldMatrix, roomMatrix);
+                                // 🎯 THE FIX: Pass "hobbit" to neighbor search!
+                                const target = findWalkableNeighborInRoom(chest.x, chest.y, hobbit.assignedHouseId, worldMatrix, roomMatrix, hobbit);
+                                const path = findPathToCoords(currTX, currTY, target.x, target.y, worldMatrix, roomMatrix, hobbit);
                                 if (path) {
                                     hobbit.path = path;
                                     hobbit.state = 'walking';
@@ -444,8 +472,8 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 plants.delete(`${crop.gx}_${crop.gy}`);
                                 hobbit.state = 'idle';
                             } else {
-                                const target = findWalkableNeighbor(crop.gx, crop.gy, worldMatrix, roomMatrix);
-                                const path = findPathToCoords(currTX, currTY, target.x, target.y, worldMatrix, roomMatrix);
+                                const target = findWalkableNeighbor(crop.gx, crop.gy, worldMatrix, roomMatrix, hobbit);
+                                const path = findPathToCoords(currTX, currTY, target.x, target.y, worldMatrix, roomMatrix, hobbit);
                                 if (path) {
                                     hobbit.path = path;
                                     hobbit.state = 'walking';
