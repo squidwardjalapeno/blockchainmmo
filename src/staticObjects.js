@@ -1,23 +1,28 @@
-// js/staticObjects.js
+// src/staticObjects.js
 
-// To this:
-if (typeof window !== 'undefined') {
-    logStep("staticObjects.js");
-}
-
-export const staticObjects = new Map(); // Key: "gx_gy", Value: { type: 'SMELTER', ...metadata }
-
-// js/staticObjects.js
+export const staticObjects = new Map();
+export const solidTiles = new Set(); // 👈 New: Tracks physical coordinate blockers
 
 export function registerObject(gx, gy, type, metadata = {}) {
-    // ⚡ USE A UNIQUE NUMBER INSTEAD OF A STRING
-    // Max world size is 10k, so (gx * 10000 + gy) is always a unique number
     const key = (gx * 10000) + gy;
     staticObjects.set(key, { type, ...metadata });
+
+    // Mark specific multi-tile coordinates as physically solid
+    if (type === 'FOREST_TREE') {
+        // Tree trunks are 2x1 solid blocks at the bottom
+        solidTiles.add(`${gx}_${gy}`);
+        solidTiles.add(`${gx + 1}_${gy}`);
+    } 
+    else if (type === 'WELL_OBJECT') {
+        // Wells are 2x2 solid blocks
+        solidTiles.add(`${gx}_${gy}`);
+        solidTiles.add(`${gx + 1}_${gy}`);
+        solidTiles.add(`${gx}_${gy - 1}`);
+        solidTiles.add(`${gx + 1}_${gy - 1}`);
+    }
 }
 
 export function getObjectAt(gx, gy) {
     if (staticObjects.size === 0) return null;
-    // ⚡ NO STRINGS CREATED
     return staticObjects.get((gx * 10000) + gy);
 }

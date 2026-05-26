@@ -9,7 +9,7 @@ import { drawHouse, drawTemple, drawGeneralStore, drawVillageHall, drawRootCella
 import { applyShorelineRules } from './terrainRules.js';
 import { inputState, initInput, handleHeroUpdate } from './input.js';
 import { viewport } from './viewport.js';
-import { ctx2, ctx3, canvas2, canvas3, drawMap, drawJoystick, drawProjectiles, drawTargetCircle, drawWorkingIndicator, drawHeroRange, drawHealthBar, drawEnergyBar, drawAbilityButtons, drawXPStatus, drawAimIndicator, initRenderer, clearAll, drawAnimals, drawPlants, drawHero, drawRemotePlayers, drawBobber, preRenderMinimap, drawDroppedItems, drawCanopy } from './renderer.js';
+import { ctx2, ctx3, canvas2, canvas3, drawMap, drawStaticObjects, drawJoystick, drawProjectiles, drawTargetCircle, drawWorkingIndicator, drawHeroRange, drawHealthBar, drawEnergyBar, drawAbilityButtons, drawXPStatus, drawAimIndicator, initRenderer, clearAll, drawAnimals, drawPlants, drawHero, drawRemotePlayers, drawBobber, preRenderMinimap, drawDroppedItems, drawCanopy } from './renderer.js';
 import { hero, resetEntities, gameState } from './entities.js';
 import { CONFIG } from './config.js'
 import { checkCollision, getTileData } from './physics.js'; 
@@ -214,6 +214,9 @@ var render = function () {
     viewport.update(hero.x + 8, hero.y + 8);
 
     drawMap(worldMatrix, roomMatrix); 
+
+    drawStaticObjects();                       // Pass 1.5: Draw Static Overlays (Wells & Trees) 👈 ADDED HERE
+
 
     // 👇 PASS ROOM MATRIX HERE 👇
     drawPlants(roomMatrix); 

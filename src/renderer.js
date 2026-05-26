@@ -199,20 +199,7 @@ export function drawMap(worldMatrix, roomMatrix) {
                             }
                         }
 
-                        if (tID === 406) {
-                            const drawPiece = (localId, offsetX, offsetY) => {
-                                const srcX = (localId % 12) * 16;
-                                const srcY = Math.floor(localId / 12) * 16;
-                                ctx2.drawImage(woodsImg, srcX, srcY, 16, 16, sX + offsetX, sY + offsetY, 16, 16);
-                            };
-                            drawPiece(106, 0, 0);
-                            drawPiece(107, 16, 0);
-
-                            // Push to flat array for fast on-top canopy rendering
-                            visibleTrees.push({ sX, sY });
-                            continue;
-                        }
-                        if (tID === 407) continue;
+                        
 
                         const localIdx = tID - 300; 
                         const srcX = (localIdx % 12) * 16;
@@ -314,6 +301,50 @@ export function drawMap(worldMatrix, roomMatrix) {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+// Add this function to src/renderer.js:
+
+export function drawStaticObjects() {
+    const startX = viewport.startTile[0];
+    const endX = viewport.endTile[0];
+    const startY = viewport.startTile[1];
+    const endY = viewport.endTile[1];
+
+    // Reset the visible trees array
+    visibleTrees = [];
+
+    for (let k = startX; k <= endX; k++) {
+        const sX = Math.floor((k * 16) + viewport.offset[0]);
+        for (let l = startY; l <= endY; l++) {
+            const obj = getObjectAt(k, l);
+            if (!obj) continue;
+
+            const sY = Math.floor((l * 16) + viewport.offset[1]);
+
+            if (obj.type === 'WELL_OBJECT') {
+                const tImg = images.worldTilesColor;
+                if (tImg && tImg.complete) {
+                    // Draw 2x2 well segments smoothly over the completed ground
+                    ctx2.drawImage(tImg, (38 % 8) * 16, Math.floor(38 / 8) * 16, 16, 16, sX, sY, 16, 16);          // Bottom-Left
+                    ctx2.drawImage(tImg, (39 % 8) * 16, Math.floor(39 / 8) * 16, 16, 16, sX + 16, sY, 16, 16);     // Bottom-Right
+                    ctx2.drawImage(tImg, (30 % 8) * 16, Math.floor(30 / 8) * 16, 16, 16, sX, sY - 16, 16, 16);      // Top-Left
+                    ctx2.drawImage(tImg, (31 % 8) * 16, Math.floor(31 / 8) * 16, 16, 16, sX + 16, sY - 16, 16, 16); // Top-Right
+                }
+            }
+            else if (obj.type === 'FOREST_TREE') {
+                const woodsImg = images.woodsTileset2;
+                if (woodsImg && woodsImg.complete) {
+                    // Draw tree trunks smoothly over the completed ground
+                    ctx2.drawImage(woodsImg, (106 % 12) * 16, Math.floor(106 / 12) * 16, 16, 16, sX, sY, 16, 16);
+                    ctx2.drawImage(woodsImg, (107 % 12) * 16, Math.floor(107 / 12) * 16, 16, 16, sX + 16, sY, 16, 16);
+                    
+                    // Collect canopy coordinates
+                    visibleTrees.push({ sX, sY });
                 }
             }
         }

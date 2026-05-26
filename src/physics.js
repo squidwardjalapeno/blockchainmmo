@@ -1,14 +1,7 @@
-
 // src/physics.js
 import { CONFIG } from './config.js';
-import { getObjectAt } from './staticObjects.js';
+import { getObjectAt, solidTiles } from './staticObjects.js'; // 👈 IMPORTED: solidTiles coordinate set
 import { roomMetadata } from './cellDecorator.js';
-import { hero } from './entities.js';
-
-
-if (typeof window !== 'undefined') {
-    if (window.logStep) logStep("physics.js loaded");
-}
 
 export function getTileData(pxX, pxY, worldMatrix, roomMatrix) {
     const gx = Math.floor(pxX / 16);
@@ -29,20 +22,19 @@ export function getTileData(pxX, pxY, worldMatrix, roomMatrix) {
     };
 }
 
-// --- Inside checkCollision in src/physics.js ---
 export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     let target = getTileData(x, y, worldMatrix, roomMatrix);
     const current = getTileData(entity.x + 8, entity.y + 15, worldMatrix, roomMatrix); 
 
     if (target.tileID === undefined) return false;
 
+    // 🎯 THE PHYSICS GATE: Block movement if coordinate is occupied by an overlay (well or tree)
+    if (solidTiles.has(`${target.gx}_${target.gy}`)) return false;
+
     // ==========================================
     // 🚪 DOOR & GATE LOGIC
     // ==========================================
-    // 👇 THE FIX: Use entity.floor instead of hero.floor
     if (entity.floor === 1) {
-        
-        // 1. OPENING LOGIC
         const isNearClosedDoor = (
             [49, 12, 22, 19].includes(target.tileID) || 
             [49, 12, 22, 19].includes(current.tileID)
@@ -56,14 +48,13 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
 
                     // Houses & Barns (Require Keys)
                     if (near.tileID === 49 || near.tileID === 12) {
-                        // 👇 THE FIX: Use entity.inventory instead of hero.inventory
                         const hasKey = entity.inventory.some(item => item.isKey && item.houseId === near.roomID);
                         if (hasKey) {
                             worldMatrix[near.cx][near.cy][nearIdx] = (near.tileID === 49) ? 35 : 13;
                         }
                     }
                     
-                    // RANCH GATES (Open automatically!)
+                    // RANCH GATES (Open automatically)
                     if (near.tileID === 22 || near.tileID === 19) {
                         worldMatrix[near.cx][near.cy][nearIdx] = (near.tileID === 22) ? 23 : 20;
                     }
@@ -71,8 +62,7 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
             }
         }
 
-        // 2. CLOSING LOGIC
-        // 👇 THE FIX: Use entity.x and entity.y instead of hero.x and hero.y
+        // Auto-close doors
         const doorCheckX = entity.x + 8;
         const doorCheckY = entity.y + 8;
         
@@ -94,20 +84,15 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
             }
         }
 
-        // 3. ALLOW PASSAGE THROUGH OPEN DOORS & GATES
         if ([35, 13, 23, 20, 54, 55].includes(target.tileID) || [35, 13, 23, 20, 54, 55].includes(current.tileID)) return true;
     }
 
     // ==========================================
     // 🧱 GENERAL COLLISION LOGIC
     // ==========================================
-
-    // 1. OBJECT BLOCKER (Furniture/Walls)
     const objAtTarget = getObjectAt(target.gx, target.gy);
     if (objAtTarget && objAtTarget.type === 'INT_WALL') return false;
 
-    // 2. INSIDE BUILDING LOGIC
-    // 2. INSIDE BUILDING LOGIC
     if (current.roomID !== 0 && current.roomID !== 9999) {
         const meta = roomMetadata[current.roomID];
         
@@ -115,16 +100,13 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
             const offsetY = target.gy - meta.frontY;
             const top = meta.maxOffset;
 
-            // 👈 THE FIX: Use 'entity.floor' instead of 'hero.floor'
-            // Floor 1 Mask
             if (entity.floor === 1) {
-                if (offsetY === top) return false;      // Black Row
-                if (offsetY === top + 1) return false;  // Back Wall Row
+                if (offsetY === top) return false;      
+                if (offsetY === top + 1) return false;  
             }
-            // Floor 2 Mask
             if (entity.floor === 2) {
-                if (offsetY === 0) return false;        // Front door row
-                if (offsetY === top) return false;      // Back Wall Row
+                if (offsetY === 0) return false;        
+                if (offsetY === top) return false;      
             }
 
             if (target.roomID === current.roomID) return true;
@@ -135,24 +117,16 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
             const oy = target.gy - meta.frontY;
             const isMidCol = (ox === 2 || ox === 3);
 
-            // 👈 THE FIX: Use 'entity.floor' instead of 'hero.floor'
             if (entity.floor === 1) {
-                if (oy <= -6) return false; // Block top slab
+                if (oy <= -6) return false; 
             } else {
-                if (!isMidCol) return false; // Block sides
-                if (oy === 0) return false;  // Block front door
+                if (!isMidCol) return false; 
+                if (oy === 0) return false;  
             }
             
             if (target.roomID === current.roomID) return true;
         }
         
-        // ... (rest of function unchanged)
-                
-        // 🛠️ BUG FIX: Removed the `y - 16` dataAbove check! 
-        // This was an artificial invisible boundary to prevent a 72px tall character from overlapping the top wall.
-        // Since the hero is now 16x16, this is unnecessary and was breaking top-wall collision!
-
-        // Added more comprehensive protection against walking through specific solid walls from the inside
         const hardSolids = [40, 41, 43, 27, 46, 47]; 
         if (hardSolids.includes(target.tileID)) return false;
 
@@ -160,20 +134,14 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
         return false; 
     }
 
-    // 3. OPEN WORLD RULES
-    // 🆕 Added Ranch tiles: 18 (V-Fence), 19 (V-Gate Closed), 21 (H-Fence), 22 (H-Gate Closed), 24 (Corner)
-    // 3. OPEN WORLD RULES
-    // 🆕 Added Ranch tiles & Forest Tree Tiles
+    // Static structures and boundaries that block movement
     const worldSolids = [
         40, 48, 50, 52, 17, 18, 19, 21, 22, 24, 27, 1, 3,
-        406, 407, // 👈 Trees!
         46, 47
     ];
 
     if (worldSolids.includes(target.tileID)) return false;
 
-    // 4. PERIMETER GUARD (Wilderness blocks entry without a door)
-    // 👇 THE FIX: Treat 9999 and 0 as the exact same thing for boundary checks
     const cRoom = (current.roomID === 9999) ? 0 : current.roomID;
     const tRoom = (target.roomID === 9999) ? 0 : target.roomID;
     
@@ -183,11 +151,7 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
 }
 
 export function moveEntity(entity, dx, dy, worldMatrix, roomMatrix) {
-    // 🛡️ THE FIX: Tighter hitboxes.
-    // Instead of measuring near the edges (2 to 13), we check slightly wider bounds 
-    // to ensure the entity's sprite can't overlap the wall's drawing space.
     const left = 2, right = 14, top = 8, bottom = 15; 
-    
     let movedX = false;
     let movedY = false;
 

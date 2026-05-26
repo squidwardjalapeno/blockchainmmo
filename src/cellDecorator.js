@@ -1806,10 +1806,10 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
                             }
                             
                             if (isClear) {
-                                registerObject(gx, gy, 'FOREST_TREE');
-                                setGlobalTile(gx, gy + 2, 406, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-                                setGlobalTile(gx + 1, gy + 2, 407, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-                            }
+    // Simply register the tree trunk anchor. 
+    // No ground tiles or grass borders are overwritten!
+    registerObject(gx, gy + 2, 'FOREST_TREE');
+}
                         }
                     }
                 }
@@ -2314,13 +2314,14 @@ export function autoTileLayerChunk(cx, cy, worldMatrix, baseIds, fillTileId, lay
 
 // Add this helper function near the top or bottom of cellDecorator.js
 
+// Inside src/cellDecorator.js
+
 export function stampStructuresForChunk(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
-    // 1. Construct standard buildings (Houses, Halls, Temples, Shops, etc.)
+    // 1. Construct standard buildings (Halls, Temples, Shops, etc.)
     plannedBuildings.forEach(b => {
         const bCX = Math.floor(b.args[0] / 100);
         const bCY = Math.floor(b.args[1] / 100);
         
-        // If the building's origin coordinate falls inside this chunk, construct it
         if (bCX === cx && bCY === cy) {
             b.func(b.args[0], b.args[1], worldMatrix, roomMatrix, fertilityMatrix, worldMap);
         }
@@ -2336,19 +2337,13 @@ export function stampStructuresForChunk(cx, cy, worldMatrix, roomMatrix, fertili
         }
     });
 
-    // 3. Construct Wells
+    // 3. Construct Wells (🎯 UPDATED: Pure overlay registration with no tile-overwriting)
     plannedWells.forEach(w => {
         const wCX = Math.floor(w.x / 100);
         const wCY = Math.floor(w.y / 100);
         
         if (wCX === cx && wCY === cy) {
-            const currentTile = getTileData(w.x * 16, w.y * 16, worldMatrix, roomMatrix).tileID;
-            const wellId = (currentTile >= 300 && currentTile < 400) ? 998 : 999;
-            
-            setGlobalTile(w.x, w.y, 30, wellId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-            setGlobalTile(w.x + 1, w.y, 31, wellId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-            setGlobalTile(w.x, w.y + 1, 38, wellId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-            setGlobalTile(w.x + 1, w.y + 1, 39, wellId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            registerObject(w.x, w.y + 1, 'WELL_OBJECT');
         }
     });
 }
@@ -2550,19 +2545,13 @@ export function buildPlannedStructures(worldMatrix, roomMatrix, fertilityMatrix,
         drawRanch(r.gx, r.gy, r.w, r.h, r.gateX, r.barnType, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     });
 }
+// Inside src/cellDecorator.js
+
 export function buildPlannedWells(worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     plannedWells.forEach(w => {
-        // Check what is currently on the ground
-        const currentTile = getTileData(w.x * 16, w.y * 16, worldMatrix, roomMatrix).tileID;
-        
-        // If it is Dirt (337) or a road border (300-399), mark it as Connected (998)
-        // If it is Grass (63), mark it as Isolated (999)
-        const wellId = (currentTile >= 300 && currentTile < 400) ? 998 : 999;
-        
-        setGlobalTile(w.x, w.y, 30, wellId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-        setGlobalTile(w.x + 1, w.y, 31, wellId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-        setGlobalTile(w.x, w.y + 1, 38, wellId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-        setGlobalTile(w.x + 1, w.y + 1, 39, wellId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        // Register the WELL_OBJECT only at the bottom-left coordinate anchor.
+        // This is used for both physics collisions and rendering.
+        registerObject(w.x, w.y + 1, 'WELL_OBJECT');
     });
 }
 
