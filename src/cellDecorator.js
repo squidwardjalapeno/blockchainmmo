@@ -5,7 +5,7 @@ import { CONFIG } from './config.js'
 import { createPlant, plants } from './plants.js'; // 👈 Swapped createGrass for createPlant
 import { spawnChicken } from './animals.js'; // 👈 ADD THIS IMPORT
 import { seededRandom, setWorldSeed } from "./mapGenerator.js";
-import { registerObject } from './staticObjects.js';
+import { registerObject, getObjectAt } from './staticObjects.js';
 import { getTileData } from './physics.js';
 
 
