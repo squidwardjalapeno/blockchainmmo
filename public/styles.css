@@ -66,9 +66,8 @@ canvas {
     image-rendering: pixelated;
 }
 
-#myCanvas { z-index: 1; }
-#myCanvas2 { z-index: 2; pointer-events: none; } /* Hero layer needs no pointer events */
-#myCanvas3 { z-index: 3; pointer-events: auto; } /* UI canvas needs pointer events */
+#myCanvas2 { z-index: 1; } /* Hero layer needs no pointer events */
+#myCanvas3 { z-index: 2; pointer-events: auto; } /* UI canvas needs pointer events */
 
 
 /* =========================================

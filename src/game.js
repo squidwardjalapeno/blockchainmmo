@@ -9,7 +9,7 @@ import { drawHouse, drawTemple, drawGeneralStore, drawVillageHall, drawRootCella
 import { applyShorelineRules } from './terrainRules.js';
 import { inputState, initInput, handleHeroUpdate } from './input.js';
 import { viewport } from './viewport.js';
-import { ctx, ctx2, ctx3, canvas, canvas2, canvas3, drawMap, drawJoystick, drawProjectiles, drawTargetCircle, drawWorkingIndicator, drawHeroRange, drawHealthBar, drawEnergyBar, drawAbilityButtons, drawXPStatus, drawAimIndicator, initRenderer, clearAll, drawAnimals, drawPlants, drawHero, drawRemotePlayers, drawBobber, preRenderMinimap, drawDroppedItems, drawCanopy } from './renderer.js';
+import { ctx2, ctx3, canvas2, canvas3, drawMap, drawJoystick, drawProjectiles, drawTargetCircle, drawWorkingIndicator, drawHeroRange, drawHealthBar, drawEnergyBar, drawAbilityButtons, drawXPStatus, drawAimIndicator, initRenderer, clearAll, drawAnimals, drawPlants, drawHero, drawRemotePlayers, drawBobber, preRenderMinimap, drawDroppedItems, drawCanopy } from './renderer.js';
 import { hero, resetEntities, gameState } from './entities.js';
 import { CONFIG } from './config.js'
 import { checkCollision, getTileData } from './physics.js'; 
@@ -482,25 +482,25 @@ async function mainInit() {
 }
 
 // Inside src/game.js
+// At the bottom of src/game.js (Inside the window.addEventListener('resize'...) block)
+
 window.addEventListener('resize', () => {
     const w = window.innerWidth;
     const h = window.innerHeight;
     const zoom = CONFIG.ZOOM;
 
-    [canvas, canvas2, canvas3].forEach(c => {
-        // Internal resolution is cut in half
+    // 🎯 Only resize active Game World (canvas2) and UI (canvas3) layers
+    [canvas2, canvas3].forEach(c => {
         c.width = Math.floor(w / zoom);
         c.height = Math.floor(h / zoom);
-        
-        // CSS forces it to fill the whole screen (hardware upscale)
         c.style.width = w + 'px';
         c.style.height = h + 'px';
     });
 
-    // Update the culling logic so we only render what fits in the new smaller canvas!
     viewport.screen = [Math.floor(w / zoom), Math.floor(h / zoom)];
 
-    [ctx, ctx2, ctx3].forEach(c => {
+    // 🎯 Set smoothing properties only on active contexts
+    [ctx2, ctx3].forEach(c => {
         c.imageSmoothingEnabled = false;
         c.webkitImageSmoothingEnabled = false;
         c.mozImageSmoothingEnabled = false; 
