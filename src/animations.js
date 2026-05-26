@@ -81,3 +81,33 @@ export function getAnimalAnimationData(animal, images) {
         srcH 
     };
 }
+
+// Add to the bottom of src/animations.js
+
+export function getHobbitAnimationData(hobbit, images) {
+    const srcW = 16;
+    const srcH = 16;
+
+    if (!hobbit.dir) hobbit.dir = 'South';
+
+    // 1. Attack / Lunge Sheet Selection
+    if (hobbit.state === 'attacking') {
+        const imgKey = `hobbitLunge${hobbit.dir}`;
+        return { 
+            img: images[imgKey] || images.hobbitLungeSouth, 
+            srcX: hobbit.frame * srcW, 
+            srcY: 0, srcW, srcH 
+        };
+    }
+
+    // 2. Standard Walk Sheet Selection
+    const imgKey = `hobbitWalk${hobbit.dir}`;
+    const isMoving = hobbit.state === 'walking';
+    const frame = isMoving ? hobbit.frame : 0; // Lock to standing frame 0 if still
+
+    return { 
+        img: images[imgKey] || images.hobbitWalkSouth, 
+        srcX: frame * srcW, 
+        srcY: 0, srcW, srcH 
+    };
+}

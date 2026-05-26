@@ -9,7 +9,7 @@ import { drawHouse, drawTemple, drawGeneralStore, drawVillageHall, drawRootCella
 import { applyShorelineRules } from './terrainRules.js';
 import { inputState, initInput, handleHeroUpdate } from './input.js';
 import { viewport } from './viewport.js';
-import { ctx2, ctx3, canvas2, canvas3, drawMap, drawStaticObjects, drawJoystick, drawProjectiles, drawTargetCircle, drawWorkingIndicator, drawHeroRange, drawHealthBar, drawEnergyBar, drawAbilityButtons, drawXPStatus, drawAimIndicator, initRenderer, clearAll, drawAnimals, drawPlants, drawHero, drawRemotePlayers, drawBobber, preRenderMinimap, drawDroppedItems, drawCanopy } from './renderer.js';
+import { ctx2, ctx3, canvas2, canvas3, drawMap, drawHobbits, drawStaticObjects, drawJoystick, drawProjectiles, drawTargetCircle, drawWorkingIndicator, drawHeroRange, drawHealthBar, drawEnergyBar, drawAbilityButtons, drawXPStatus, drawAimIndicator, initRenderer, clearAll, drawAnimals, drawPlants, drawHero, drawRemotePlayers, drawBobber, preRenderMinimap, drawDroppedItems, drawCanopy } from './renderer.js';
 import { hero, resetEntities, gameState } from './entities.js';
 import { CONFIG } from './config.js'
 import { checkCollision, getTileData } from './physics.js'; 
@@ -22,6 +22,7 @@ import { socket, initMultiplayer, playerWallet, remotePlayers, serverProjectiles
 import { handleInteractions, updateHeroStats, handlePvPCombat, handleFinancialActions } from './interactionManager.js';
 import { initUI, updateHUD } from './uiManager.js';
 import { getMasterBalance } from './blockchainManager.js';
+import { updateHobbits, hobbits } from './hobbits.js';
 // js/overworldGame.js
 
 const DEBUG_FLAGS = {
@@ -162,6 +163,8 @@ var update = function (modifier) {
         // 👇 THE FIX: Let chickens run smoothly here (Removed the 'false' arg)
         if (DEBUG_FLAGS.ENABLE_WORLD_SIM) {
             updateAnimals(modifier * 3, worldMatrix, roomMatrix); 
+            updateHobbits(modifier * 3, worldMatrix, roomMatrix); // 👈 ADDED HERE
+
         }
     }
 
@@ -227,6 +230,9 @@ var render = function () {
 
     // 👇 ADD THIS LINE to actually draw the flock to the screen!
     drawAnimals(); 
+
+    drawHobbits(ctx2, hobbits);                // 👈 ADDED HERE
+
 
     // 👇 MOBA FIX: Only draw the red circle when we are locked onto an enemy!
     if (hero.target) drawTargetCircle(ctx2, hero.target);

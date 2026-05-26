@@ -2365,6 +2365,37 @@ export function stampStructuresForChunk(cx, cy, worldMatrix, roomMatrix, fertili
             registerObject(w.x, w.y + 1, 'WELL_OBJECT');
         }
     });
+
+    // Inside stampStructuresForChunk() in src/cellDecorator.js:
+
+    // 3. Construct Wells
+    plannedWells.forEach(w => {
+        // ... (existing well registration stays unchanged) ...
+    });
+
+    // 🎯 4. Spawns Hobbits inside Village/Town zones
+    const zone = zoneLookup.get(`${cx}_${cy}`);
+    if (zone && seededRandom() > 0.001) { // 40% chance to populate this chunk with hobbits
+        const numToSpawn = Math.floor(seededRandom() * 2) + 8; // Spawns 2 to 3 hobbits
+        
+        for (let s = 0; s < numToSpawn; s++) {
+            for (let attempts = 0; attempts < 20; attempts++) {
+                // Find a safe, walkable open grass coordinate in the chunk
+                const lx = Math.floor(seededRandom() * 60) + 20;
+                const ly = Math.floor(seededRandom() * 60) + 20;
+                const idx = ly * 100 + lx;
+
+                if (worldMatrix[cx]?.[cy]?.[idx] === 63 && roomMatrix[cx]?.[cy]?.[idx] === 0) {
+                    const gx = cx * 100 + lx;
+                    const gy = cy * 100 + ly;
+                    
+                    // Spawn the hobbit
+                    import('./hobbits.js').then(m => m.spawnHobbit(gx, gy));
+                    break;
+                }
+            }
+        }
+    }
 }
 
 // ==========================================

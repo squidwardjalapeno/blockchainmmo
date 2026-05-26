@@ -24,6 +24,30 @@ const imageSources = {
     zenithGuardianWalkSouthEast: "images/zenithGuardianWalkSouthEast.png",
     zenithGuardianWalkSouthWest: "images/zenithGuardianWalkSouthWest.png",
 
+    // Inside the imageSources object in src/assetLoader.js:
+
+    // 🧝 HOBBIT WALK (4 Frames each)
+    hobbitWalkSouth:     "images/hobbitWalkSouth.png",
+    hobbitWalkSouthEast: "images/hobbitWalkSouthEast.png",
+    hobbitWalkEast:      "images/hobbitWalkEast.png",
+    hobbitWalkNorthEast: "images/hobbitWalkNorthEast.png",
+    hobbitWalkNorth:     "images/hobbitWalkNorth.png",
+    hobbitWalkNorthWest: "images/hobbitWalkNorthWest.png",
+    hobbitWalkWest:      "images/hobbitWalkWest.png",
+    hobbitWalkSouthWest: "images/hobbitWalkSouthWest.png",
+
+    // 🧝 HOBBIT LUNGE (3 Frames each)
+    hobbitLungeSouth:     "images/hobbitLungeSouth.png",
+    hobbitLungeSouthEast: "images/hobbitLungeSouthEast.png",
+    hobbitLungeEast:      "images/hobbitLungeEast.png",
+    hobbitLungeNorthEast: "images/hobbitLungeNorthEast.png",
+    hobbitLungeNorth:     "images/hobbitLungeNorth.png",
+    hobbitLungeNorthWest: "images/hobbitLungeNorthWest.png",
+    hobbitLungeWest:      "images/hobbitLungeWest.png",
+    hobbitLungeSouthWest: "images/hobbitLungeSouthWest.png",
+
+    hobbit: "hobbit.png",
+
     // 🆕 ZENITH GUARDIAN IDLE (8 Frames - 1 for each direction)
     zenithGuardianIdle: "images/zenithGuardianIdle.png",
 
