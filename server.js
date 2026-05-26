@@ -799,12 +799,12 @@ socket.on('requestActivityLog', () => {
     socket.emit('activityData', activityLog);
 });
 
-// 🛡️ SECURE AUTHORITATIVE PICKUP
+// Inside socket.on('requestPickup'...) in server.js:
+
     socket.on('requestPickup', (itemData) => {
         const player = players[socket.id];
         if (!player) return;
 
-        // 1. Anti-Teleport Check: Is the player near the item's coordinates?
         const px = Math.floor(player.x / 16);
         const py = Math.floor(player.y / 16);
         const dist = Math.abs(px - itemData.tx) + Math.abs(py - itemData.ty);
@@ -814,33 +814,28 @@ socket.on('requestActivityLog', () => {
             return;
         }
 
-        // 2. Inventory Check: Does the server see a free slot?
         if (!player.inventory) player.inventory = [];
         if (player.inventory.length >= 10) {
             socket.emit('inventoryFull');
             return;
         }
 
-        // 3. SERVER-SIDE ADDITION
-        // We create the item object on the server so the hacker can't "inject" stats
+        // 🎯 THE FIX: Preserve isKey and houseId on the server database record
         const newItem = {
             name: itemData.name,
             seedType: itemData.seedType,
-            count: Math.min(64, itemData.count || 1), // Force max stack safety
+            count: Math.min(64, itemData.count || 1),
             spriteID: itemData.spriteID,
-            tileset: itemData.tileset
+            tileset: itemData.tileset,
+            isKey: itemData.houseId ? true : undefined,
+            houseId: itemData.houseId 
         };
 
-        // 🛡️ THE FIX: Add to RAM inventory
-        if (!player.inventory) player.inventory = [];
         player.inventory.push(newItem);
-        
-        // 🛡️ THE FIX: Force immediate save to persistence.json
         syncPlayerAndSave(socket.id);
         
-        // Update the client bag
         socket.emit('updateInventory', player.inventory);
-        console.log(`📦 Saved ${newItem.name} to ${player.wallet}'s database record.`);
+        console.log(`📦 Saved ${newItem.name} (House #${itemData.houseId || 'None'}) to ${player.wallet}'s database record.`);
     });
 
 

@@ -546,12 +546,11 @@ function processFishing(modifier) {
     }
 }
 
+// Inside processPickup() in src/interactionManager.js:
+
 function processPickup(tx, ty) {
     if (hero.inventory.length >= hero.maxSlots) return false;
 
-    // ==========================================
-    // PRIORITY 1: DROPPED ITEMS (Keys, Weapons, Eggs, Dropped Crops)
-    // ==========================================
     const bac = getBacteriaData(tx, ty);
     const traits = bac ? bac.data[bac.idx] : 0;
 
@@ -565,26 +564,34 @@ function processPickup(tx, ty) {
         if (matchedSeedType) {
             const template = Object.values(ITEM_TYPES).find(t => t.seedType === matchedSeedType);
             if (template) {
-            // 🛡️ THE NEW SECURE WAY:
-            // Don't call giveItemToHero(item) anymore!
-            // Ask the server to do it.
-            if (socket) {
-                socket.emit('requestPickup', {
-                    tx: tx, ty: ty,
-                    name: template.name,
-                    seedType: template.seedType,
-                    count: 1, // Or template.count
-                    spriteID: template.spriteID,
-                    tileset: template.tileset
-                });
-            }
+                
+                // 🎯 THE FIX: If picking up a key, extract the houseId from the bottom 16 bits!
+                let extractedHouseId = undefined;
+                let itemName = template.name;
 
-            // Remove it locally so the player "sees" it get picked up instantly
-            bac.data[bac.idx] = 0; 
-            return true;
-        }
+                if (typeID === 61) { // 61 is the Key type ID
+                    extractedHouseId = traits & 0xFFFF; // Extract 16-bit ID
+                    itemName = `Key to House #${extractedHouseId}`;
+                }
+
+                if (socket) {
+                    socket.emit('requestPickup', {
+                        tx: tx, ty: ty,
+                        name: itemName,
+                        seedType: template.seedType,
+                        count: 1, 
+                        spriteID: template.spriteID,
+                        tileset: template.tileset,
+                        houseId: extractedHouseId // 👈 Send the extracted ID to the server
+                    });
+                }
+
+                bac.data[bac.idx] = 0; // Clear locally
+                return true;
+            }
         }
     }
+    // ... (rest of your plant harvesting is unchanged) ...
 
     // ==========================================
     // PRIORITY 2: GROWING PLANTS (Crops, Flowers, Grass)
