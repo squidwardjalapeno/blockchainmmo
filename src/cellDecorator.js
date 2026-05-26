@@ -7,6 +7,8 @@ import { spawnChicken } from './animals.js'; // 👈 ADD THIS IMPORT
 import { seededRandom, setWorldSeed } from "./mapGenerator.js";
 import { registerObject, getObjectAt } from './staticObjects.js';
 import { getTileData } from './physics.js';
+import { seedBacteria } from './bacteria.js'; // 👈 ADD THIS LINE
+
 
 
 // This is our global "Phone Book" for buildings
