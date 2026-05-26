@@ -65,7 +65,7 @@ async function syncTVLWithBlockchain() {
 syncTVLWithBlockchain();
 
 // 👈 Increased frequency: 10 seconds
-setInterval(syncTVLWithBlockchain, 10000);
+setInterval(syncTVLWithBlockchain, 60000);
 
 // Only seeds are allowed! We use '1' as a multiplier flag.
 const POINT_VALUES = {
