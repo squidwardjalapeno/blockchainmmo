@@ -2,7 +2,6 @@
 import { viewport } from './viewport.js';
 import { moveEntity, getTileData } from './physics.js'; 
 import { hero } from './entities.js'; 
-import { worldTime } from './game.js'; 
 import { getObjectAt, staticObjects } from './staticObjects.js'; 
 import { plants } from './plants.js';
 import { bacteriaCells } from './bacteria.js'; 
