@@ -1571,6 +1571,9 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
     if (!ecoGenerated.has(cellKey)) {
         ecoGenerated.add(cellKey);
 
+        // 🏗️ LAZY STRUCTURE STAMPING (Constructs buildings for this chunk only)
+        stampStructuresForChunk(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+
         // ==========================================
         // 🌲 TREE SPAWNER (Forests, Coastlines, & Settlements)
         // ==========================================
@@ -2129,6 +2132,47 @@ export function autoTileLayerChunk(cx, cy, worldMatrix, baseIds, fillTileId, lay
     }
 }
 
+
+// Add this helper function near the top or bottom of cellDecorator.js
+
+export function stampStructuresForChunk(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
+    // 1. Construct standard buildings (Houses, Halls, Temples, Shops, etc.)
+    plannedBuildings.forEach(b => {
+        const bCX = Math.floor(b.args[0] / 100);
+        const bCY = Math.floor(b.args[1] / 100);
+        
+        // If the building's origin coordinate falls inside this chunk, construct it
+        if (bCX === cx && bCY === cy) {
+            b.func(b.args[0], b.args[1], worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        }
+    });
+
+    // 2. Construct Ranches
+    plannedRanches.forEach(r => {
+        const rCX = Math.floor(r.gx / 100);
+        const rCY = Math.floor(r.gy / 100);
+        
+        if (rCX === cx && rCY === cy) {
+            drawRanch(r.gx, r.gy, r.w, r.h, r.gateX, r.barnType, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        }
+    });
+
+    // 3. Construct Wells
+    plannedWells.forEach(w => {
+        const wCX = Math.floor(w.x / 100);
+        const wCY = Math.floor(w.y / 100);
+        
+        if (wCX === cx && wCY === cy) {
+            const currentTile = getTileData(w.x * 16, w.y * 16, worldMatrix, roomMatrix).tileID;
+            const wellId = (currentTile >= 300 && currentTile < 400) ? 998 : 999;
+            
+            setGlobalTile(w.x, w.y, 30, wellId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            setGlobalTile(w.x + 1, w.y, 31, wellId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            setGlobalTile(w.x, w.y + 1, 38, wellId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            setGlobalTile(w.x + 1, w.y + 1, 39, wellId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        }
+    });
+}
 
 // ==========================================
 // 🧠 SMART PATHFINDING HELPERS

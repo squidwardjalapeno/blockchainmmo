@@ -447,11 +447,6 @@ async function mainInit() {
         });
 
 
-        await measureStep("Step 8: Constructing Buildings and Wells", () => {
-            buildPlannedStructures(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-            buildPlannedWells(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-        });
-
         await measureStep("Step 9: Cleaning up Blueprints", () => {
             clearBlueprints(roomMatrix);
         });
