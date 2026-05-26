@@ -153,6 +153,8 @@ function isAreaClear(gx, gy, w, h, worldMatrix, roomMatrix, worldMap) {
     return true;
 }
 
+// Inside ensureZoneInitialized() in src/cellDecorator.js:
+
 export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     const cellKey = `${cx}_${cy}`;
     const zone = zoneLookup.get(cellKey);
@@ -165,8 +167,6 @@ export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertility
     if (initializedZones.has(zoneKey)) return; 
     initializedZones.add(zoneKey);
 
-    // 🎯 THE FIX: Generate the spoke data BEFORE loading the chunks,
-    // so that isInsideVillagePolygon can read them during decorateCell!
     generateWellSpokes(zoneWell);
 
     console.log(`🎪 LAZY INITIALIZING SETTLEMENT at Well [${zoneWell.x}, ${zoneWell.y}]`);
@@ -189,6 +189,11 @@ export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertility
     drawRingRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell);
     drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell.x, zoneWell.y);
     drawTownWalls(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell);
+
+    // 🎯 4. SPAWN EXACTLY 1 HOBBIT (Spawns on the walkable ground right next to the central well)
+    const spawnX = zoneWell.x + 2;
+    const spawnY = zoneWell.y + 2;
+    import('./hobbits.js').then(m => m.spawnHobbit(spawnX, spawnY));
 }
 
 
@@ -314,6 +319,10 @@ export function drawTree(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, world
     setGlobalTile(gx + 1, gy + 2, 407, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
 }
 
+// Inside drawHouse() in src/cellDecorator.js:
+
+// Inside src/cellDecorator.js:
+
 export function drawHouse(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     const currentId = nextHouseId++;
 
@@ -329,22 +338,21 @@ export function drawHouse(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worl
         setGlobalTile(gx + i, gy - 1, 48, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
 
         let foundTile = 50; 
-        if (i === 1) foundTile = 49; 
-        if (i === 2) foundTile = 52; 
+        if (i === 1) foundTile = 49; // Closed Door (Solid)
+        if (i === 2) foundTile = 52; // Wall (Solid)
         
         setGlobalTile(gx + i, gy, foundTile, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
 
-        // --- NEW: LOGIC REGISTRATION ---
-        // Register the Smelter (Left side wall)
         if (i === 0) {
             registerObject(gx + i, gy - 1, 'CHEST_STORAGE', { houseId: currentId });
         }
-        // Register the Bedroll (Right side floor/wall)
         if (i === 3) {
             registerObject(gx + i, gy - 1, 'BEDROLL', { houseId: currentId });
-            //registerObject(gx + i, gy, 'BEDROLL', { houseId: currentId });
         }
     }
+
+    // 🔑 THE INSTANTIATION: Spawns the key on the walkable grass right outside the front wall!
+    seedBacteria(gx + 2, gy + 1, "key", currentId, 0);
 }
 
 // js/cellDecorator.js
@@ -2373,29 +2381,6 @@ export function stampStructuresForChunk(cx, cy, worldMatrix, roomMatrix, fertili
         // ... (existing well registration stays unchanged) ...
     });
 
-    // 🎯 4. Spawns Hobbits inside Village/Town zones
-    const zone = zoneLookup.get(`${cx}_${cy}`);
-    if (zone && seededRandom() > 0.001) { // 40% chance to populate this chunk with hobbits
-        const numToSpawn = Math.floor(seededRandom() * 2) + 8; // Spawns 2 to 3 hobbits
-        
-        for (let s = 0; s < numToSpawn; s++) {
-            for (let attempts = 0; attempts < 20; attempts++) {
-                // Find a safe, walkable open grass coordinate in the chunk
-                const lx = Math.floor(seededRandom() * 60) + 20;
-                const ly = Math.floor(seededRandom() * 60) + 20;
-                const idx = ly * 100 + lx;
-
-                if (worldMatrix[cx]?.[cy]?.[idx] === 63 && roomMatrix[cx]?.[cy]?.[idx] === 0) {
-                    const gx = cx * 100 + lx;
-                    const gy = cy * 100 + ly;
-                    
-                    // Spawn the hobbit
-                    import('./hobbits.js').then(m => m.spawnHobbit(gx, gy));
-                    break;
-                }
-            }
-        }
-    }
 }
 
 // ==========================================

@@ -179,12 +179,16 @@ var update = function (modifier) {
     // 🐢 SLOW-TICK LOOP (Runs once per second)
     // ==========================================
     // 🐢 SLOW-TICK LOOP (Runs once per second)
+    // Inside update() in src/game.js:
+
+    // ==========================================
+    // 🐢 SLOW-TICK LOOP (Runs once per second)
     // ==========================================
     slowTickTimer += modifier;
     if (slowTickTimer >= 1.0) { 
 
-        // 🕰️ Central clock: 1 real second = 10 in-game minutes
-        worldTime.minute += 10;
+        // 🕰️ Central clock: 1 real second = 8 in-game minutes (180s per day)
+        worldTime.minute += 8; // 👈 UPDATED HERE
         if (worldTime.minute >= 60) {
             worldTime.minute = 0;
             worldTime.hour++;
@@ -193,6 +197,8 @@ var update = function (modifier) {
             }
         }
         worldTime.isNight = (worldTime.hour >= 20 || worldTime.hour < 6); // Night is 8:00 PM to 6:00 AM
+
+        // ... (rest of your slow-tick loop remains the same) ...
 
         // 🌾 Run standard world simulations
         if (DEBUG_FLAGS.ENABLE_WORLD_SIM) {
