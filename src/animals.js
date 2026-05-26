@@ -4,21 +4,22 @@ import { plants } from './plants.js';
 import { ITEM_TYPES } from './items.js';
 import { moveEntity, getTileData } from './physics.js'; 
 import { hero } from './entities.js'; 
+import { viewport } from './viewport.js'; // 👈 IMPORTED: Allows viewport boundary checks
 
 export const animals = []; 
 
-// 1. Add stats to spawnChicken:
 export function spawnChicken(gx, gy) {
     animals.push({
         id: 'animal_' + Math.random().toString(36).substr(2, 9),
-        isAnimal: true, // 👈 Identifies them to the combat system
+        isAnimal: true, // Identifies them to the combat system
         x: gx * 16, y: gy * 16, floor: 1, inventory: [], speed: 20,
         
-        hp: 30, maxHp: 30,             // 👈 NEW STATS
-        energy: 100, maxEnergy: 100,   // 👈 NEW STATS
+        hp: 30, maxHp: 30,             
+        energy: 100, maxEnergy: 100,   
         
         hunger: 80, eggTimer: 10.0, state: 'idle', goal: 'wander', path: [], 
-        moveTimer: Math.random() * 2, dir: 'East', lastUpdated: Date.now()
+        moveTimer: Math.random() * 2, dir: 'East', lastUpdated: Date.now(),
+        slowTickTimer: Math.random() * 1.5 // 👈 Tracks cold-heartbeat updates
     });
 }
 
@@ -27,14 +28,13 @@ function isWalkable(tx, ty, worldMatrix, roomMatrix) {
     const data = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix);
     if (!data || data.tileID === undefined) return false;
     
-    // Notice Tile 44 (Nesting Box) is NOT in this list, so they can walk onto it!
     const solids = [40, 48, 50, 52, 17, 18, 19, 21, 22, 24, 27, 1, 3];
     if (solids.includes(data.tileID)) return false;
     
     return true;
 }
 
-// 🧠 HELPER: BFS Pathfinding (Can look for Food OR a specific Tile ID)
+// 🧠 HELPER: BFS Pathfinding
 function findPathToTarget(startTX, startTY, worldMatrix, roomMatrix, targetTileID = null) {
     const queue = [{ x: startTX, y: startTY, path: [] }];
     const visited = new Set([`${startTX}_${startTY}`]);
@@ -110,10 +110,14 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
     const heroCY = Math.floor(hero.y / 1600);
     const now = Date.now();
 
-    // 👇 1. CLEANUP DEAD CHICKENS AT THE VERY TOP
+    // 1. CLEANUP DEAD ANIMALS AT THE VERY TOP
     for (let i = animals.length - 1; i >= 0; i--) {
         if (animals[i].hp <= 0) {
-            import('./bacteria.js').then(m => m.seedBacteria(Math.floor(animals[i].x/16), Math.floor(animals[i].y/16), "raw_chicken", 50, 0));
+            import('./bacteria.js').then(m => m.seedBacteria(
+                Math.floor(animals[i].x / 16), 
+                Math.floor(animals[i].y / 16), 
+                "raw_chicken", 50, 0
+            ));
             animals.splice(i, 1);
             continue;
         }
@@ -123,14 +127,22 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
         const chickenCX = Math.floor(chicken.x / 1600);
         const chickenCY = Math.floor(chicken.y / 1600);
 
-        // 🧊 TIER 3 FREEZER
-        if (Math.abs(chickenCX - heroCX) > 1 || Math.abs(chickenCY - heroCY) > 1) return; 
+        // ==========================================
+        // ❄️ TIER 3: FROZEN ZONE (Outside 3x3 Chunks)
+        // ==========================================
+        const isInsideActiveChunks = Math.abs(chickenCX - heroCX) <= 1 && Math.abs(chickenCY - heroCY) <= 1;
+        if (!isInsideActiveChunks) {
+            return; // Completely skip calculations. Animal is frozen.
+        }
 
-        // 🕰️ STATISTICAL CATCH-UP LOGIC (Drunkard's Walk)
+        // Initialize elapsed time
         if (!chicken.lastUpdated) chicken.lastUpdated = now;
         let deltaSeconds = (now - chicken.lastUpdated) / 1000;
         chicken.lastUpdated = now;
 
+        // ==========================================
+        // 🕰️ TIER 3: CATCH-UP (Step-In Fast Forward)
+        // ==========================================
         if (deltaSeconds > 2.0) {
             let timeRemaining = Math.min(deltaSeconds, 86400); // Max 24 hours
             let simX = Math.floor(chicken.x / 16);
@@ -145,7 +157,7 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                 chicken.energy = Math.max(0, chicken.energy - (stepTime * 2.0));
                 chicken.eggTimer -= stepTime;
 
-                // 1. IS IT HUNGRY? (Energy < 50)
+                // Hunger
                 if (chicken.energy < 50) {
                     let foundFood = false;
                     let bestPlantKey = null;
@@ -185,19 +197,19 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                         simX = wanderResult.x; simY = wanderResult.y;
                     }
                 } 
-                // 2. IS IT READY TO LAY AN EGG? (Requires 40 Energy!)
+                // Lay Eggs
                 else if (chicken.eggTimer <= 0 && chicken.energy >= 40) {
                     chicken.energy -= 40;
                     import('./bacteria.js').then(m => m.seedBacteria(simX, simY, "egg", 1, 0));
                     chicken.eggTimer = 10.0;
                 }
-                // 3. WANDER
+                // Wander
                 else {
                     const wanderResult = macroWander(simX, simY, 2, worldMatrix, roomMatrix); 
                     simX = wanderResult.x; simY = wanderResult.y;
                 }
 
-                // 4. POOP ON THE TRAIL
+                // Dropping poop
                 if (poopsToDrop > 0 && Math.random() < 0.3) {
                     if (isWalkable(simX, simY, worldMatrix, roomMatrix)) {
                         import('./bacteria.js').then(m => m.seedBacteria(simX, simY, "chicken_poop", 3, 12));
@@ -213,10 +225,90 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
             return; 
         }
 
+        // Determine viewport presence
+        const pad = 32; 
+        const screenX = chicken.x + viewport.offset[0];
+        const screenY = chicken.y + viewport.offset[1];
+        const inViewport = (
+            screenX >= -pad && 
+            screenX <= viewport.screen[0] + pad && 
+            screenY >= -pad && 
+            screenY <= viewport.screen[1] + pad
+        );
+
         // ==========================================
-        // ⚡ REAL-TIME NORMAL TICK 
+        // ❄️ TIER 2: COLD HEARTBEAT (Off-Screen Active)
         // ==========================================
-        chicken.energy = Math.max(0, chicken.energy - (modifier * 0.5)); // Slow drain
+        if (!inViewport) {
+            chicken.slowTickTimer -= modifier;
+            if (chicken.slowTickTimer <= 0) {
+                chicken.slowTickTimer = 1.5; // Tick once every 1.5 seconds
+
+                // Deduct flat hunger over the ticked duration
+                chicken.energy = Math.max(0, chicken.energy - 0.75);
+                chicken.eggTimer -= 1.5;
+
+                const currTX = Math.floor((chicken.x + 8) / 16);
+                const currTY = Math.floor((chicken.y + 8) / 16);
+
+                if (!chicken.path || chicken.path.length === 0) {
+                    if (chicken.energy < 50) {
+                        const pathToFood = findPathToTarget(currTX, currTY, worldMatrix, roomMatrix, null);
+                        if (pathToFood) { chicken.path = pathToFood; chicken.goal = 'food'; }
+                        else { assignRandomWalk(chicken, currTX, currTY, worldMatrix, roomMatrix); chicken.goal = 'wander'; }
+                    } 
+                    else if (chicken.eggTimer <= 0 && chicken.energy >= 40) {
+                        const pathToBox = findPathToTarget(currTX, currTY, worldMatrix, roomMatrix, 44);
+                        if (pathToBox) { chicken.path = pathToBox; chicken.goal = 'egg'; }
+                        else {
+                            chicken.energy -= 40;
+                            import('./bacteria.js').then(m => m.seedBacteria(currTX, currTY, "egg", 1, 0));
+                            chicken.eggTimer = 10.0;
+                            assignRandomWalk(chicken, currTX, currTY, worldMatrix, roomMatrix);
+                            chicken.goal = 'wander';
+                        }
+                    } else {
+                        assignRandomWalk(chicken, currTX, currTY, worldMatrix, roomMatrix);
+                        chicken.goal = 'wander';
+                    }
+                }
+
+                // Simplified path execution: Teleport to the next tile instantly
+                if (chicken.path && chicken.path.length > 0) {
+                    const nextNode = chicken.path.shift();
+                    chicken.x = nextNode.x * 16;
+                    chicken.y = nextNode.y * 16;
+
+                    if (chicken.path.length === 0) {
+                        const key = `${nextNode.x}_${nextNode.y}`;
+                        if (chicken.goal === 'food' && plants.has(key)) {
+                            const targetPlant = plants.get(key);
+                            chicken.energy = Math.min(100, chicken.energy + Math.max(20, targetPlant.growth));
+                            import('./bacteria.js').then(m => {
+                                const bac = m.getBacteriaData(targetPlant.gx, targetPlant.gy);
+                                if (bac && bac.data) bac.data[bac.idx] = 0;
+                            });
+                            plants.delete(key);
+                        } 
+                        else if (chicken.goal === 'egg' && chicken.energy >= 40) {
+                            chicken.energy -= 40;
+                            import('./bacteria.js').then(m => m.seedBacteria(nextNode.x, nextNode.y, "egg", 1, 0));
+                            chicken.eggTimer = 10.0;
+                        }
+                    }
+                }
+
+                if (Math.random() > 0.8) {
+                    import('./bacteria.js').then(m => m.seedBacteria(currTX, currTY, "chicken_poop", 3, 12));
+                }
+            }
+            return; // Skip real-time physics and stepping completely!
+        }
+
+        // ==========================================
+        // ⚡ TIER 1: VIEWPORT ACTIVE (On-Screen Real-Time)
+        // ==========================================
+        chicken.energy = Math.max(0, chicken.energy - (modifier * 0.5)); 
         chicken.frustration = Math.max(0, (chicken.frustration || 0) - modifier);
         chicken.moveTimer -= modifier;
         chicken.eggTimer -= modifier;
@@ -224,10 +316,7 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
         const currTX = Math.floor((chicken.x + 8) / 16);
         const currTY = Math.floor((chicken.y + 8) / 16);
 
-        // --- 🧠 AI DECISION MAKING ---
         if (chicken.moveTimer <= 0 && (!chicken.path || chicken.path.length === 0)) {
-            
-            // PRIORITY 1: HUNGER (Energy < 50)
             if (chicken.energy < 50 && chicken.frustration <= 0) { 
                 const pathToFood = findPathToTarget(currTX, currTY, worldMatrix, roomMatrix, null);
                 if (pathToFood) {
@@ -238,7 +327,6 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                     chicken.goal = 'wander';
                 }
             } 
-            // PRIORITY 2: LAY EGG (Requires 40 Energy!)
             else if (chicken.eggTimer <= 0 && chicken.energy >= 40) {
                 const pathToBox = findPathToTarget(currTX, currTY, worldMatrix, roomMatrix, 44);
                 if (pathToBox) {
@@ -248,12 +336,10 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                     chicken.energy -= 40;
                     import('./bacteria.js').then(m => m.seedBacteria(currTX, currTY, "egg", 1, 0));
                     chicken.eggTimer = 10.0;
-                    
                     assignRandomWalk(chicken, currTX, currTY, worldMatrix, roomMatrix);
                     chicken.goal = 'wander';
                 }
             }
-            // PRIORITY 3: CHILL
             else {
                 if (Math.random() > 0.3) {
                     assignRandomWalk(chicken, currTX, currTY, worldMatrix, roomMatrix);
@@ -263,7 +349,6 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
             chicken.moveTimer = 1 + Math.random() * 2;
         }
 
-        // --- 🐾 EXECUTE PATHING ---
         if (chicken.path && chicken.path.length > 0) {
             chicken.state = 'walking';
             const nextNode = chicken.path[0];
@@ -292,7 +377,6 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                 chicken.y = targetY;
                 chicken.path.shift(); 
 
-                // ARRIVED AT DESTINATION
                 if (chicken.path.length === 0) {
                     chicken.state = 'idle';
                     const key = `${currTX}_${currTY}`;
@@ -300,7 +384,6 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                     if (chicken.goal === 'food' && plants.has(key)) {
                         const targetPlant = plants.get(key);
                         chicken.energy = Math.min(100, chicken.energy + Math.max(20, targetPlant.growth));
-                        
                         import('./bacteria.js').then(m => {
                             const bac = m.getBacteriaData(targetPlant.gx, targetPlant.gy);
                             if (bac && bac.data) bac.data[bac.idx] = 0;
@@ -318,7 +401,6 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
             chicken.state = 'idle';
         }
 
-        // --- 💩 POOP LOGIC ---
         if (Math.random() > 0.998) {
             import('./bacteria.js').then(m => m.seedBacteria(currTX, currTY, "chicken_poop", 3, 12));
         }
