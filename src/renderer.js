@@ -343,10 +343,7 @@ export function drawStaticObjects() {
                     ctx2.drawImage(woodsImg, (107 % 12) * 16, Math.floor(107 / 12) * 16, 16, 16, sX + 16, sY, 16, 16);
                     visibleTrees.push({ sX, sY });
 
-                    // 🎯 DEBUG: Draw Tree Hitbox (Red)
-                    ctx2.strokeStyle = "rgba(255, 0, 0, 0.8)";
-                    ctx2.lineWidth = 1;
-                    ctx2.strokeRect(sX + 8, sY, 16, 16); // Centered 16px trunk box
+                    
                 }
             }
         }
@@ -742,10 +739,6 @@ export function drawHero() {
             ctx2.stroke();
         }
 
-        // 🎯 DEBUG: Draw Player Hitbox (Green)
-        ctx2.strokeStyle = "rgba(0, 255, 0, 0.8)";
-        ctx2.lineWidth = 1;
-        ctx2.strokeRect(drawX + 2, drawY + 8, 12, 7); // Matches player's pxMin/pxMax and pyMin/pyMax
     }
 }
 
