@@ -2,9 +2,11 @@
 import { viewport } from './viewport.js';
 import { moveEntity, getTileData } from './physics.js'; 
 import { hero } from './entities.js'; 
-import { worldTime } from './game.js'; // 👈 IMPORTED: Shared world clock
-import { getObjectAt, staticObjects } from './staticObjects.js'; // 👈 IMPORTED: Find beds/chests
+import { worldTime } from './game.js'; 
+import { getObjectAt, staticObjects } from './staticObjects.js'; 
 import { plants } from './plants.js';
+import { bacteriaCells } from './bacteria.js'; 
+import { syncInventoryWithServer } from './uiManager.js';
 
 export const hobbits = [];
 
@@ -21,26 +23,54 @@ export function spawnHobbit(gx, gy) {
         maxHp: 40,
         ad: 2, 
 
-        // 🧠 NEEDS & INVENTORY
         inventory: [],
-        maxSlots: 4,       // Small pockets!
-        stamina: 100,      // Fatigue tracker (100 = awake, 0 = exhausted)
+        maxSlots: 4,       
+        stamina: 100,      
         
-        state: 'idle',     // 'idle', 'walking', 'sleeping', 'harvesting', 'depositing'
-        goal: 'wander',    // 'wander', 'sleep', 'gather', 'deposit'
+        state: 'idle',     // 'idle', 'walking', 'sleeping', 'harvesting', 'depositing', 'looting'
+        goal: 'wander',    // 'wander', 'sleep', 'gather', 'deposit', 'get_key'
         dir: 'South',
         frame: 0,
         animTimer: 0,
         moveTimer: Math.random() * 3,
         path: [],
-        targetX: null,
-        targetY: null,
         lastUpdated: Date.now(),
-        slowTickTimer: Math.random() * 1.5
+        slowTickTimer: Math.random() * 1.5,
+        
+        targetKeyCoords: null,
+        assignedHouseId: null
     });
 }
 
-// 🧠 HELPER: Scans the village to find the nearest static object by type (e.g. BEDROLL, FOOD_STORAGE)
+// 🧠 HELPER: Scans active 3x3 chunks for a dropped key matching the target house ID
+function findKeyOnGround(heroCX, heroCY, houseId) {
+    for (let ox = -1; ox <= 1; ox++) {
+        for (let oy = -1; oy <= 1; oy++) {
+            const targetCX = heroCX + ox;
+            const targetCY = heroCY + oy;
+            const data = bacteriaCells.get(`${targetCX}_${targetCY}`);
+            if (!data) continue;
+
+            for (let idx = 0; idx < 10000; idx++) {
+                const traits = data[idx];
+                if (traits === 0) continue;
+                
+                const typeID = (traits >> 20) & 0xFF;
+                const storedHouseId = traits & 0xFFFF; // Key stores houseId in bottom 16 bits
+
+                // Key ID is 61
+                if (typeID === 61 && storedHouseId === houseId) {
+                    return {
+                        gx: (targetCX * 100) + (idx % 100),
+                        gy: (targetCY * 100) + Math.floor(idx / 100)
+                    };
+                }
+            }
+        }
+    }
+    return null;
+}
+
 function findNearestStaticObject(currTX, currTY, type) {
     let nearest = null;
     let minDist = Infinity;
@@ -52,14 +82,13 @@ function findNearestStaticObject(currTX, currTY, type) {
             const dist = Math.abs(gx - currTX) + Math.abs(gy - currTY);
             if (dist < minDist) {
                 minDist = dist;
-                nearest = { x: gx, y: gy };
+                nearest = { x: gx, y: gy, houseId: obj.houseId };
             }
         }
     }
     return nearest;
 }
 
-// 🧠 HELPER: Scans the village to find the nearest mature, harvestable crop
 function findNearestMatureCrop(currTX, currTY) {
     let nearest = null;
     let minDist = Infinity;
@@ -93,11 +122,10 @@ function assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix) {
     }
 }
 
-// Simple pathfinder toward coordinates
 function findPathToCoords(startTX, startTY, targetTX, targetTY, worldMatrix, roomMatrix) {
     const queue = [{ x: startTX, y: startTY, path: [] }];
     const visited = new Set([`${startTX}_${startTY}`]);
-    const maxDepth = 40; // Deeper search for specific targeting
+    const maxDepth = 40; 
 
     while (queue.length > 0) {
         const curr = queue.shift();
@@ -149,9 +177,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         let deltaSeconds = (now - hobbit.lastUpdated) / 1000;
         hobbit.lastUpdated = now;
 
-        // Catch-up
         if (deltaSeconds > 2.0) {
-            // Keep macro catch-up lightweight
             hobbit.x = hobbit.x;
             hobbit.y = hobbit.y;
             hobbit.path = [];
@@ -169,7 +195,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             screenY <= viewport.screen[1] + pad
         );
 
-        // We run active state calculations on the offscreen cold heartbeat OR real-time frames
         let shouldProcessAI = false;
         if (!inViewport) {
             hobbit.slowTickTimer -= modifier;
@@ -188,101 +213,164 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             // ==========================================
             // 🧠 CORE MOTIVES & STATE DECISION TREE
             // ==========================================
-            
-            // 1. MOTIVE: SLEEP (Triggered at Night)
             if (worldTime.isNight) {
-                hobbit.goal = 'sleep';
-                hobbit.stamina = Math.max(0, hobbit.stamina - 2); // Drain stamina
-            } else {
-                hobbit.stamina = Math.min(100, hobbit.stamina + 5); // Regenerate stamina during day
+                hobbit.stamina = Math.max(0, hobbit.stamina - 2);
                 
-                // 2. MOTIVE: DEPOSIT HARVEST (If backpack is full)
+                // 🎯 THE FIX: Force sleep goal by default at night,
+                // allowing key-search routine to trigger dynamically if blocked.
+                if (hobbit.goal !== 'get_key') {
+                    hobbit.goal = 'sleep';
+                }
+            } else {
+                hobbit.stamina = Math.min(100, hobbit.stamina + 5);
+                hobbit.targetKeyCoords = null;
+                
                 if (hobbit.inventory.length >= hobbit.maxSlots) {
                     hobbit.goal = 'deposit';
-                } 
-                // 3. MOTIVE: GATHER CROPS (If day, awake, and have backpack space)
-                else {
+                } else {
                     hobbit.goal = 'gather';
                 }
             }
 
             // ==========================================
-            // 🎬 EXECUTE GOALS (Path Generation)
+            // 🎬 EXECUTE GOALS
             // ==========================================
             if (!hobbit.path || hobbit.path.length === 0) {
-                
-                // --- GOAL: SLEEP ---
-                if (hobbit.goal === 'sleep') {
-                    const bed = findNearestStaticObject(currTX, currTY, 'BEDROLL');
-                    if (bed) {
-                        // If standing next to the bed, lie down and sleep!
-                        if (Math.abs(currTX - bed.x) <= 1 && Math.abs(currTY - bed.y) <= 1) {
-                            hobbit.state = 'sleeping';
-                        } else {
-                            // Pathfind to the bed
-                            const path = findPathToCoords(currTX, currTY, bed.x, bed.y, worldMatrix, roomMatrix);
-                            if (path) { hobbit.path = path; hobbit.state = 'walking'; }
-                        }
-                    } else {
-                        // No bed found, just wander/sleep on the ground
-                        assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                        hobbit.state = 'walking';
-                    }
-                }
+                hobbit.moveTimer -= (inViewport ? modifier : 1.5);
 
-                // --- GOAL: DEPOSIT ---
-                else if (hobbit.goal === 'deposit') {
-                    const storage = findNearestStaticObject(currTX, currTY, 'FOOD_STORAGE');
-                    if (storage) {
-                        // If standing next to the cellar, deposit resources!
-                        if (Math.abs(currTX - storage.x) <= 1 && Math.abs(currTY - storage.y) <= 1) {
-                            hobbit.state = 'depositing';
-                            console.log("🧝 Hobbit deposited resources into the Root Cellar!");
-                            hobbit.inventory = []; // Empty inventory!
-                            hobbit.goal = 'gather';
+                if (hobbit.moveTimer <= 0) {
+                    hobbit.moveTimer = 0;
+
+                    // --- GOAL: GET KEY ---
+                    if (hobbit.goal === 'get_key' && hobbit.targetKeyCoords) {
+                        const tk = hobbit.targetKeyCoords;
+                        if (currTX === tk.gx && currTY === tk.gy) {
+                            hobbit.state = 'looting';
+                            console.log(`🔑 Hobbit picked up Key for House #${hobbit.assignedHouseId}!`);
+                            
+                            hobbit.inventory.push({ 
+                                name: `Key #${hobbit.assignedHouseId}`, 
+                                seedType: 'key', 
+                                isKey: true, 
+                                houseId: hobbit.assignedHouseId 
+                            });
+
+                            const kChunk = bacteriaCells.get(`${Math.floor(tk.gx/100)}_${Math.floor(tk.gy/100)}`);
+                            if (kChunk) {
+                                kChunk[((tk.gy%100)*100)+(tk.gx%100)] = 0;
+                            }
+
+                            hobbit.goal = 'sleep';
                             hobbit.state = 'idle';
                         } else {
-                            // Pathfind to the cellar
-                            const path = findPathToCoords(currTX, currTY, storage.x, storage.y, worldMatrix, roomMatrix);
-                            if (path) { hobbit.path = path; hobbit.state = 'walking'; }
+                            const path = findPathToCoords(currTX, currTY, tk.gx, tk.gy, worldMatrix, roomMatrix);
+                            if (path) {
+                                hobbit.path = path;
+                                hobbit.state = 'walking';
+                            } else {
+                                hobbit.path = [];
+                                hobbit.state = 'idle';
+                                hobbit.moveTimer = 5.0; 
+                            }
                         }
-                    } else {
-                        assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                        hobbit.state = 'walking';
                     }
-                }
 
-                // --- GOAL: GATHER ---
-                else if (hobbit.goal === 'gather') {
-                    const crop = findNearestMatureCrop(currTX, currTY);
-                    if (crop) {
-                        // If standing next to the crop, harvest it!
-                        if (Math.abs(currTX - crop.gx) <= 1 && Math.abs(currTY - crop.gy) <= 1) {
-                            hobbit.state = 'harvesting';
-                            console.log(`🧝 Hobbit harvested a ${crop.type}!`);
-                            
-                            // 🎒 Add to local inventory
-                            hobbit.inventory.push({ name: crop.type, seedType: `${crop.type}_item` });
-                            
-                            // Delete crop from map
-                            plants.delete(`${crop.gx}_${crop.gy}`);
-                            
-                            hobbit.state = 'idle';
+                    // --- GOAL: SLEEP ---
+                    else if (hobbit.goal === 'sleep') {
+                        const bed = findNearestStaticObject(currTX, currTY, 'BEDROLL');
+                        if (bed) {
+                            hobbit.assignedHouseId = bed.houseId;
+
+                            if (Math.abs(currTX - bed.x) <= 1 && Math.abs(currTY - bed.y) <= 1) {
+                                hobbit.state = 'sleeping';
+                            } else {
+                                const path = findPathToCoords(currTX, currTY, bed.x, bed.y, worldMatrix, roomMatrix);
+                                if (path) {
+                                    hobbit.path = path;
+                                    hobbit.state = 'walking';
+                                } else {
+                                    const hasKey = hobbit.inventory.some(i => i.isKey && i.houseId === bed.houseId);
+                                    
+                                    if (!hasKey) {
+                                        const droppedKey = findKeyOnGround(heroCX, heroCY, bed.houseId);
+                                        if (droppedKey) {
+                                            console.log(`🧝 Hobbit noticed Key #${bed.houseId} on the doorstep! Rerouting to retrieve...`);
+                                            hobbit.goal = 'get_key';
+                                            hobbit.targetKeyCoords = droppedKey;
+                                            hobbit.path = [];
+                                            hobbit.state = 'idle';
+                                            hobbit.moveTimer = 0; 
+                                            return;
+                                        }
+                                    }
+
+                                    hobbit.path = [];
+                                    hobbit.state = 'idle';
+                                    hobbit.moveTimer = 5.0; 
+                                }
+                            }
                         } else {
-                            // Pathfind to the crop
-                            const path = findPathToCoords(currTX, currTY, crop.gx, crop.gy, worldMatrix, roomMatrix);
-                            if (path) { hobbit.path = path; hobbit.state = 'walking'; }
+                            assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                            hobbit.state = 'walking';
                         }
-                    } else {
-                        // No crops, wander around
-                        assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                        hobbit.state = 'walking';
+                    }
+
+                    // --- GOAL: DEPOSIT ---
+                    else if (hobbit.goal === 'deposit') {
+                        const storage = findNearestStaticObject(currTX, currTY, 'FOOD_STORAGE');
+                        if (storage) {
+                            if (Math.abs(currTX - storage.x) <= 1 && Math.abs(currTY - storage.y) <= 1) {
+                                hobbit.state = 'depositing';
+                                hobbit.inventory = []; 
+                                hobbit.goal = 'gather';
+                                hobbit.state = 'idle';
+                            } else {
+                                const path = findPathToCoords(currTX, currTY, storage.x, storage.y, worldMatrix, roomMatrix);
+                                if (path) {
+                                    hobbit.path = path;
+                                    hobbit.state = 'walking';
+                                } else {
+                                    hobbit.path = [];
+                                    hobbit.state = 'idle';
+                                    hobbit.moveTimer = 5.0;
+                                }
+                            }
+                        } else {
+                            assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                            hobbit.state = 'walking';
+                        }
+                    }
+
+                    // --- GOAL: GATHER ---
+                    else if (hobbit.goal === 'gather') {
+                        const crop = findNearestMatureCrop(currTX, currTY);
+                        if (crop) {
+                            if (Math.abs(currTX - crop.gx) <= 1 && Math.abs(currTY - crop.gy) <= 1) {
+                                hobbit.state = 'harvesting';
+                                hobbit.inventory.push({ name: crop.type, seedType: `${crop.type}_item` });
+                                plants.delete(`${crop.gx}_${crop.gy}`);
+                                hobbit.state = 'idle';
+                            } else {
+                                const path = findPathToCoords(currTX, currTY, crop.gx, crop.gy, worldMatrix, roomMatrix);
+                                if (path) {
+                                    hobbit.path = path;
+                                    hobbit.state = 'walking';
+                                } else {
+                                    hobbit.path = [];
+                                    hobbit.state = 'idle';
+                                    hobbit.moveTimer = 5.0;
+                                }
+                            }
+                        } else {
+                            assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                            hobbit.state = 'walking';
+                        }
                     }
                 }
             }
 
             // ==========================================
-            // 👣 EXECUTE MOVEMENT Along Path
+            // 👣 EXECUTE MOVEMENT
             // ==========================================
             if (inViewport && hobbit.path && hobbit.path.length > 0 && hobbit.state === 'walking') {
                 const nextNode = hobbit.path[0];
@@ -306,6 +394,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     if (!moveEntity(hobbit, moveX, moveY, worldMatrix, roomMatrix)) {
                         hobbit.path = [];
                         hobbit.state = 'idle';
+                        hobbit.moveTimer = 2.0; 
                     }
                 } else {
                     hobbit.x = targetX;
@@ -316,8 +405,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 hobbit.animTimer += modifier * 8;
                 hobbit.frame = Math.floor(hobbit.animTimer) % 4;
             }
-            
-            // Offscreen teleportation movement (lightweight)
             else if (!inViewport && hobbit.path && hobbit.path.length > 0 && hobbit.state === 'walking') {
                 const nextNode = hobbit.path.shift();
                 hobbit.x = nextNode.x * 16;
