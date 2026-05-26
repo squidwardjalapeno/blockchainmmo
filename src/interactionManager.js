@@ -127,6 +127,19 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
     if (inputState.interact || inputState.action) {
         
         if (obj) {
+
+            // 🎯 THE FIX: Verify the player is in the same room as the object they are touching!
+            const playerRoom = getTileData(hero.x + 8, hero.y + 15, worldMatrix, roomMatrix).roomID;
+            const objRoom = obj.houseId || 0;
+            const roomRestrictedTypes = ['CHEST_STORAGE', 'BEDROLL', 'FOOD_STORAGE', 'HAY_STORAGE'];
+
+            if (roomRestrictedTypes.includes(obj.type) && playerRoom !== objRoom) {
+                console.log("🔒 You cannot reach this through the wall!");
+                inputState.interact = false;
+                inputState.action = false;
+                return; // Block interaction!
+            }
+            
             // Replaces the old openSmelterMenu
             if (obj.type === 'SMELTER') {
                 if (socket) socket.emit('requestSmelter', `smelter_${tx}_${ty}`);
