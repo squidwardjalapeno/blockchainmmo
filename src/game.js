@@ -25,6 +25,13 @@ import { getMasterBalance } from './blockchainManager.js';
 import { updateHobbits, hobbits } from './hobbits.js';
 // js/overworldGame.js
 
+// Near the top of src/game.js (with your other global declarations)
+export const worldTime = {
+    hour: 8,       // Start at 8:00 AM
+    minute: 0,
+    isNight: false
+};
+
 const DEBUG_FLAGS = {
     ENABLE_PHYSICS_AND_INPUT: true,
     ENABLE_COMBAT_AND_STATS: true, // Re-enabled for PC build
@@ -171,18 +178,32 @@ var update = function (modifier) {
     // ==========================================
     // 🐢 SLOW-TICK LOOP (Runs once per second)
     // ==========================================
+    // 🐢 SLOW-TICK LOOP (Runs once per second)
+    // ==========================================
     slowTickTimer += modifier;
     if (slowTickTimer >= 1.0) { 
-        
+
+        // 🕰️ Central clock: 1 real second = 10 in-game minutes
+        worldTime.minute += 10;
+        if (worldTime.minute >= 60) {
+            worldTime.minute = 0;
+            worldTime.hour++;
+            if (worldTime.hour >= 24) {
+                worldTime.hour = 0;
+            }
+        }
+        worldTime.isNight = (worldTime.hour >= 20 || worldTime.hour < 6); // Night is 8:00 PM to 6:00 AM
+
+        // 🌾 Run standard world simulations
         if (DEBUG_FLAGS.ENABLE_WORLD_SIM) {
             updatePlants(1.0, fertilityMatrix, worldMatrix, roomMatrix); 
             updateBacteria(worldMatrix, fertilityMatrix);
-            // 👇 THE FIX: Removed updateAnimals from here!
         }
 
-        // 🐟 TASK 4: Replenish the global fish population!
+        // 🐟 Replenish global fish population
         import('./fish.js').then(m => m.updateGlobalPopulation(1.0));
                 
+        // Reset slow tick timer
         slowTickTimer = 0; 
     }
 

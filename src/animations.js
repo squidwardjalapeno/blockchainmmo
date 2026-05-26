@@ -84,13 +84,26 @@ export function getAnimalAnimationData(animal, images) {
 
 // Add to the bottom of src/animations.js
 
+// Inside getHobbitAnimationData() in src/animations.js:
+
 export function getHobbitAnimationData(hobbit, images) {
     const srcW = 16;
     const srcH = 16;
 
     if (!hobbit.dir) hobbit.dir = 'South';
 
-    // 1. Attack / Lunge Sheet Selection
+    // 💤 1. SLEEPING STATE OVERRIDE (Rotate them on their side)
+    if (hobbit.state === 'sleeping') {
+        return { 
+            img: images.hobbitWalkSouth, // Use standing frame 0
+            srcX: 0, 
+            srcY: 0, 
+            srcW, srcH,
+            isSleeping: true // 👈 Flag for the renderer to rotate the sprite!
+        };
+    }
+
+    // 2. Attack / Lunge Sheet Selection
     if (hobbit.state === 'attacking') {
         const imgKey = `hobbitLunge${hobbit.dir}`;
         return { 
@@ -100,10 +113,10 @@ export function getHobbitAnimationData(hobbit, images) {
         };
     }
 
-    // 2. Standard Walk Sheet Selection
+    // 3. Standard Walk Sheet Selection
     const imgKey = `hobbitWalk${hobbit.dir}`;
     const isMoving = hobbit.state === 'walking';
-    const frame = isMoving ? hobbit.frame : 0; // Lock to standing frame 0 if still
+    const frame = isMoving ? hobbit.frame : 0;
 
     return { 
         img: images[imgKey] || images.hobbitWalkSouth, 
