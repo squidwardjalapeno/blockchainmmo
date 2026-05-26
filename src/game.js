@@ -9,7 +9,7 @@ import { drawHouse, drawTemple, drawGeneralStore, drawVillageHall, drawRootCella
 import { applyShorelineRules } from './terrainRules.js';
 import { inputState, initInput, handleHeroUpdate } from './input.js';
 import { viewport } from './viewport.js';
-import { ctx2, ctx3, canvas2, canvas3, drawMap, drawHobbits, drawStaticObjects, drawJoystick, drawProjectiles, drawTargetCircle, drawWorkingIndicator, drawHeroRange, drawHealthBar, drawEnergyBar, drawAbilityButtons, drawXPStatus, drawAimIndicator, initRenderer, clearAll, drawAnimals, drawPlants, drawHero, drawRemotePlayers, drawBobber, preRenderMinimap, drawDroppedItems, drawCanopy } from './renderer.js';
+import { ctx2, ctx3, canvas2, canvas3, drawMap, drawHobbits, drawStaticObjects, drawJoystick, drawProjectiles, drawTargetCircle, drawWorkingIndicator, drawHeroRange, drawHealthBar, drawEnergyBar, drawAbilityButtons, drawXPStatus, drawAimIndicator, initRenderer, clearAll, drawAnimals, drawPlants, drawHero, drawRemotePlayers, drawBobber, preRenderMinimap, drawDroppedItems, drawCanopy, drawNightTint } from './renderer.js';
 import { hero, resetEntities, gameState } from './entities.js';
 import { CONFIG } from './config.js'
 import { checkCollision, getTileData } from './physics.js'; 
@@ -23,14 +23,9 @@ import { handleInteractions, updateHeroStats, handlePvPCombat, handleFinancialAc
 import { initUI, updateHUD } from './uiManager.js';
 import { getMasterBalance } from './blockchainManager.js';
 import { updateHobbits, hobbits } from './hobbits.js';
-// js/overworldGame.js
+import { worldTime } from './clock.js'; // 👈 ADD THIS IMPORT
 
-// Near the top of src/game.js (with your other global declarations)
-export const worldTime = {
-    hour: 8,       // Start at 8:00 AM
-    minute: 0,
-    isNight: false
-};
+// js/overworldGame.js
 
 const DEBUG_FLAGS = {
     ENABLE_PHYSICS_AND_INPUT: true,
@@ -259,6 +254,9 @@ var render = function () {
     drawAnimals(); 
 
     drawHobbits(ctx2, hobbits);                // 👈 ADDED HERE
+
+    drawNightTint();                           // 👈 ADDED HERE to tint the screen!
+
 
 
     // 👇 MOBA FIX: Only draw the red circle when we are locked onto an enemy!

@@ -16,6 +16,7 @@ import { getHeroAnimationData, getPetAnimationData, getAnimalAnimationData } fro
 
 // Add this import to the top of src/renderer.js:
 import { getHobbitAnimationData } from './animations.js';
+import { worldTime } from './clock.js'; // 👈 ADD THIS IMPORT
 
 if (typeof window !== 'undefined') {
     logStep("renderer.js loaded");
@@ -106,6 +107,16 @@ export function initRenderer() {
 export function clearAll() {
     ctx2.clearRect(0, 0, canvas2.width, canvas2.height); // Game World
     ctx3.clearRect(0, 0, canvas3.width, canvas3.height); // UI/HUD Overlay
+}
+
+// Add this function to src/renderer.js:
+
+export function drawNightTint() {
+    if (worldTime.isNight) {
+        // Draws a highly atmospheric dark blue tint over the world
+        ctx2.fillStyle = "rgba(0, 0, 50, 0.25)"; 
+        ctx2.fillRect(0, 0, canvas2.width, canvas2.height);
+    }
 }
 
 export function drawMap(worldMatrix, roomMatrix) {
