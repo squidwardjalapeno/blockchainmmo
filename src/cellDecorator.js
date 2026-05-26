@@ -158,14 +158,16 @@ export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertility
     const zone = zoneLookup.get(cellKey);
     if (!zone) return;
 
-    // 🎯 CONSTANT-TIME LOOKUP (Replaced the heavy loop with a simple map query!)
     const zoneWell = zoneWellLookup.get(cellKey);
     if (!zoneWell) return;
 
-    // Check if this specific settlement has already been initialized
     const zoneKey = `${zoneWell.x}_${zoneWell.y}`;
     if (initializedZones.has(zoneKey)) return; 
     initializedZones.add(zoneKey);
+
+    // 🎯 THE FIX: Generate the spoke data BEFORE loading the chunks,
+    // so that isInsideVillagePolygon can read them during decorateCell!
+    generateWellSpokes(zoneWell);
 
     console.log(`🎪 LAZY INITIALIZING SETTLEMENT at Well [${zoneWell.x}, ${zoneWell.y}]`);
 
@@ -197,7 +199,6 @@ export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertility
 
 
 
-
 // js/cellDecorator.js
 const cellMemory = new Map();
 
@@ -220,6 +221,88 @@ function getInbound(i, j) {
 
 // js/cellDecorator.js
 
+// Add this helper function to src/cellDecorator.js
+
+export function generateWellSpokes(well) {
+    if (well.spokes && well.spokes.length > 0) return; // Already generated!
+
+    let boxes = [];
+    // Collect Bounding Boxes for normal buildings
+    plannedBuildings.forEach(b => {
+        const tx = b.args[0], ty = b.args[1];
+        if (Math.hypot(tx - well.x, ty - well.y) < 200) {
+            boxes.push({ minX: tx - 2, maxX: tx + 12, minY: ty - 12, maxY: ty + 2 });
+        }
+    });
+    
+    // Collect Bounding Boxes for Ranches
+    plannedRanches.forEach(r => {
+        if (r.wellX === well.x && r.wellY === well.y) {
+            boxes.push({ minX: r.gx, maxX: r.gx + r.w, minY: r.gy - r.h, maxY: r.gy + 1 });
+        }
+    });
+
+    const numSpokes = 128;
+    let rawRadii = new Array(numSpokes).fill(0);
+    
+    for (let i = 0; i < numSpokes; i++) {
+        let angle = (i / numSpokes) * Math.PI * 2;
+        let dx = Math.cos(angle);
+        let dy = Math.sin(angle);
+        
+        let maxR = 10; 
+        for (let r = 0; r < 350; r += 2) { 
+            let px = well.x + dx * r;
+            let py = well.y + dy * r;
+            
+            for (let b of boxes) {
+                if (px >= b.minX && px <= b.maxX && py >= b.minY && py <= b.maxY) {
+                    maxR = r; 
+                }
+            }
+        }
+        rawRadii[i] = maxR;
+    }
+
+    let smoothedRadii = new Array(numSpokes);
+    for(let passes = 0; passes < 4; passes++) { 
+        for (let i = 0; i < numSpokes; i++) {
+            let prev = rawRadii[(i - 1 + numSpokes) % numSpokes];
+            let curr = rawRadii[i];
+            let next = rawRadii[(i + 1) % numSpokes];
+            smoothedRadii[i] = (prev + curr * 2 + next) / 4; 
+        }
+        for(let i = 0; i < numSpokes; i++) rawRadii[i] = smoothedRadii[i];
+    }
+
+    well.spokes = [];
+    const ROAD_BUFFER = 18; 
+
+    for (let i = 0; i < numSpokes; i++) {
+        let angle = (i / numSpokes) * Math.PI * 2;
+        let dx = Math.cos(angle);
+        let dy = Math.sin(angle);
+        
+        let r = smoothedRadii[i] + 4; 
+        
+        let isSafe = false;
+        while (!isSafe && r < 500) { 
+            isSafe = true;
+            let px = well.x + dx * r;
+            let py = well.y + dy * r;
+            
+            for (let b of boxes) {
+                if (px >= b.minX - ROAD_BUFFER && px <= b.maxX + ROAD_BUFFER && 
+                    py >= b.minY - ROAD_BUFFER && py <= b.maxY + ROAD_BUFFER) {
+                    isSafe = false;
+                    r += 2; 
+                    break;
+                }
+            }
+        }
+        well.spokes.push({ angle, dx, dy, r }); 
+    }
+}
 
 
 
@@ -2571,102 +2654,26 @@ function isInsideVillagePolygon(gx, gy) {
 // ⭕ DYNAMIC PERIMETER ROADS (Organic & Safe)
 // ==========================================
 // ⭕ DYNAMIC PERIMETER ROADS (Organic & Safe)
-// ==========================================
+// Inside src/cellDecorator.js
+
 export function drawRingRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap, targetWell = null) {
     const wellsToProcess = targetWell ? [targetWell] : plannedWells;
 
     wellsToProcess.forEach(well => {
-        let boxes = [];
+        // Fallback safety check to guarantee spoke data exists
+        generateWellSpokes(well);
 
-        // 1. Collect Exact Bounding Boxes for normal buildings
-        plannedBuildings.forEach(b => {
-            const tx = b.args[0], ty = b.args[1];
-            if (Math.hypot(tx - well.x, ty - well.y) < 200) {
-                boxes.push({ minX: tx - 2, maxX: tx + 12, minY: ty - 12, maxY: ty + 2 });
-            }
-        });
+        if (!well.spokes) return;
 
-        // 2. Collect Exact Bounding Boxes for Ranches (Reverted back to strict ownership)
-        plannedRanches.forEach(r => {
-            if (r.wellX === well.x && r.wellY === well.y) {
-                // Ensure we cover the absolute bounds of the ranch fencing
-                boxes.push({ minX: r.gx, maxX: r.gx + r.w, minY: r.gy - r.h, maxY: r.gy + 1 });
-            }
-        });
-
-        // 3. Cast 128 Rays (High resolution)
-        const numSpokes = 128;
-        let rawRadii = new Array(numSpokes).fill(0);
-        
-        for (let i = 0; i < numSpokes; i++) {
-            let angle = (i / numSpokes) * Math.PI * 2;
-            let dx = Math.cos(angle);
-            let dy = Math.sin(angle);
-            
-            let maxR = 10; 
-            for (let r = 0; r < 350; r += 2) { 
-                let px = well.x + dx * r;
-                let py = well.y + dy * r;
-                
-                for (let b of boxes) {
-                    if (px >= b.minX && px <= b.maxX && py >= b.minY && py <= b.maxY) {
-                        maxR = r; 
-                    }
-                }
-            }
-            rawRadii[i] = maxR;
-        }
-
-        // 4. SMOOTHING (Averages the jagged jumps into a natural curve)
-        let smoothedRadii = new Array(numSpokes);
-        for(let passes = 0; passes < 4; passes++) { 
-            for (let i = 0; i < numSpokes; i++) {
-                let prev = rawRadii[(i - 1 + numSpokes) % numSpokes];
-                let curr = rawRadii[i];
-                let next = rawRadii[(i + 1) % numSpokes];
-                smoothedRadii[i] = (prev + curr * 2 + next) / 4; 
-            }
-            for(let i = 0; i < numSpokes; i++) rawRadii[i] = smoothedRadii[i];
-        }
-
-        // 5. THE SAFETY GUARANTEE
-        well.spokes = [];
         let waypoints = [];
-        
-        // 👈 INCREASED BUFFER: Massively thickened to force the curve outward!
-        // Must be less than WALL_BUFFER (18) so they don't crash.
-        const ROAD_BUFFER = 18; 
+        well.spokes.forEach(s => {
+            waypoints.push({ 
+                x: Math.floor(well.x + s.dx * s.r), 
+                y: Math.floor(well.y + s.dy * s.r) 
+            });
+        });
 
-        for (let i = 0; i < numSpokes; i++) {
-            let angle = (i / numSpokes) * Math.PI * 2;
-            let dx = Math.cos(angle);
-            let dy = Math.sin(angle);
-            
-            let r = smoothedRadii[i] + 4; // Start with the smoothed radius + a tiny base padding
-            
-            let isSafe = false;
-            // 👈 INCREASED LIMIT: Raised to 500 so the massive buffer has room to push!
-            while (!isSafe && r < 500) { 
-                isSafe = true;
-                let px = well.x + dx * r;
-                let py = well.y + dy * r;
-                
-                // If the organic curve cuts a corner into a building buffer, push it outward!
-                for (let b of boxes) {
-                    if (px >= b.minX - ROAD_BUFFER && px <= b.maxX + ROAD_BUFFER && 
-                        py >= b.minY - ROAD_BUFFER && py <= b.maxY + ROAD_BUFFER) {
-                        isSafe = false;
-                        r += 2; // Nudge it outward safely past the ranch fence
-                        break;
-                    }
-                }
-            }
-            
-            well.spokes.push({ angle, dx, dy, r }); 
-            waypoints.push({ x: Math.floor(well.x + dx * r), y: Math.floor(well.y + dy * r) });
-        }
-
-        // 6. Draw the organic dirt road connecting the safe waypoints
+        // Draw the ring road connecting the calculated waypoints
         for (let i = 0; i < waypoints.length; i++) {
             const p1 = waypoints[i];
             const p2 = waypoints[(i + 1) % waypoints.length];
