@@ -180,68 +180,73 @@ export function initRenderer() {
 // js/renderer.js
 
 // In src/renderer.js -> drawMap()
+// Inside src/renderer.js
+
 export function drawMap(worldMatrix, roomMatrix) {
     ctx2.clearRect(0, 0, canvas2.width, canvas2.height);
 
-    const w = canvas.width, h = canvas.height;
+    const w = canvas.width;
+    const h = canvas.height;
     
-    // The exact tile the camera is looking at
+    // 1. Fetch exact viewport boundaries calculated by viewport.js
+    const startX = viewport.startTile[0];
+    const endX = viewport.endTile[0];
+    const startY = viewport.startTile[1];
+    const endY = viewport.endTile[1];
+
+    // Calculate current coordinates for house ID lookup
     const hTX = Math.floor((hero.x + 8) / 16);
     const hTY = Math.floor((hero.y + 8) / 16);
-    const halfX = Math.ceil((w / 16) / 2) + 1;
-    const halfY = Math.ceil((h / 16) / 2) + 1;
 
     let hHouseId = 0;
     const hChunkR = roomMatrix[Math.floor(hTX / 100)]?.[Math.floor(hTY / 100)];
-    if (hChunkR) hHouseId = hChunkR[((hTY % 100 + 100) % 100 * 100) + ((hTX % 100 + 100) % 100)];
+    if (hChunkR) {
+        hHouseId = hChunkR[((hTY % 100 + 100) % 100 * 100) + ((hTX % 100 + 100) % 100)];
+    }
 
     const tileImg = images.worldTilesColor;
 
+    // ==========================================
+    // 🌍 OUTDOOR MODE (Cull Map Drawing to Viewport)
+    // ==========================================
     if (hHouseId === 0 || hHouseId === 9999) {
+        // Draw base green background
         ctx2.fillStyle = "rgb(0, 204, 0)";
         ctx2.fillRect(0, 0, w, h);
 
-        for (let k = hTX - halfX; k <= hTX + halfX; k++) {
+        for (let k = startX; k <= endX; k++) {
             const wCol = worldMatrix[Math.floor(k / 100)];
-            // 👇 Unified Master Offset calculation
-            const sX = Math.round(k * 16 + viewport.offset[0]);
             const lx = ((k % 100) + 100) % 100;
+            const sX = Math.floor((k * 16) + viewport.offset[0]);
 
-            for (let l = hTY - halfY; l <= hTY + halfY; l++) {
+            for (let l = startY; l <= endY; l++) {
                 const wChunk = wCol?.[Math.floor(l / 100)];
                 if (!wChunk) continue;
-                const tID = wChunk[(((l % 100) + 100) % 100 * 100) + lx];
 
+                const ly = ((l % 100) + 100) % 100;
+                const tID = wChunk[(ly * 100) + lx];
+
+                // Skip drawing plain grass tiles (covered by solid background fill)
                 if (tID === 63) continue; 
 
-                // 👇 THE FIX: Strict use of viewport variables
-                const sX = (k * 16) + viewport.offset[0];
-                const sY = (l * 16) + viewport.offset[1];
+                const sY = Math.floor((l * 16) + viewport.offset[1]);
 
-                // 🆕 NESTING BOX LOGIC
+                // Nesting Box Layer
                 if (tID === 44) {
-                    // 1. Draw Grass underneath
                     ctx2.drawImage(tileImg, (63 % 8) * 16, Math.floor(63 / 8) * 16, 16, 16, sX, sY, 16, 16);
-                    
-                    // 2. Draw the transparent Nesting Box (Tile 1 on a width-10 sheet)
                     const tImg = images.transparentTileset;
                     if (tImg && tImg.complete) {
                         ctx2.drawImage(tImg, (1 % 10) * 16, Math.floor(1 / 10) * 16, 16, 16, sX, sY, 16, 16);
                     }
-                    
-                    continue; // 👈 This completely bypasses the old drawing logic!
+                    continue; 
                 }
 
-                // 👇 NEW: WOODS TILESET 2 (IDs 300 to 499)
+                // Woods Tileset 2 (IDs 300 to 499)
                 if (tID >= 300 && tID < 500) {
                     const woodsImg = images.woodsTileset2;
                     if (woodsImg && woodsImg.complete) {
-                        
-                        // 🌟 DYNAMIC BACKGROUNDS FOR BORDERS
                         const roadBorders = [302, 303, 304, 313, 315, 331, 335, 350, 351, 353, 354, 367];
                         if (roadBorders.includes(tID)) {
-                            
-                            // PURE LOGIC FIX: Look 1 tile around us to see what base layer we are buffering!
                             let isBeach = false;
                             let isStone = false;
                             
@@ -254,12 +259,9 @@ export function drawMap(worldMatrix, roomMatrix) {
                                         const nLY = (((l + oy) % 100) + 100) % 100;
                                         const neighborID = worldMatrix[nCX][nCY][nLY * 100 + nLX];
                                         
-                                        // If touching Sand (0) or Water (10, 11, 17)
                                         if (neighborID === 0 || neighborID === 10 || neighborID === 11 || neighborID === 17) {
                                             isBeach = true;
-                                        } 
-                                        // If touching Paved Stone Road (208)
-                                        else if (neighborID === 208) {
+                                        } else if (neighborID === 208) {
                                             isStone = true;
                                         }
                                     }
@@ -267,90 +269,72 @@ export function drawMap(worldMatrix, roomMatrix) {
                             }
 
                             if (isBeach) {
-                                // Draw SAND (Tile 0 from worldTilesColor) underneath!
                                 ctx2.drawImage(tileImg, 0, 0, 16, 16, sX, sY, 16, 16);
                             } else if (isStone) {
-                                // Draw STONE (Tile 8 from mainTileset2) underneath!
                                 const roadImg = images.mainTileset2;
                                 if (roadImg && roadImg.complete) {
                                     ctx2.drawImage(roadImg, (8 % 8) * 16, Math.floor(8 / 8) * 16, 16, 16, sX, sY, 16, 16);
                                 }
                             } else {
-                                // Draw DIRT (Tile 337 from woodsTileset2) underneath!
                                 const dirtIdx = 337 - 300; 
                                 ctx2.drawImage(woodsImg, (dirtIdx % 12) * 16, Math.floor(dirtIdx / 12) * 16, 16, 16, sX, sY, 16, 16);
                             }
                         }
 
-                        // 🌲 THE SCATTERED TREE FIX (Trunks Only)
-
-                        // 🌲 THE SCATTERED TREE FIX (Trunks Only)
+                        // Split-trunk rendering
                         if (tID === 406) {
                             const drawPiece = (localId, offsetX, offsetY) => {
                                 const srcX = (localId % 12) * 16;
                                 const srcY = Math.floor(localId / 12) * 16;
                                 ctx2.drawImage(woodsImg, srcX, srcY, 16, 16, sX + offsetX, sY + offsetY, 16, 16);
                             };
-
-                            // Draw Bottom Trunks (106, 107) exactly where they are
                             drawPiece(106, 0, 0);
                             drawPiece(107, 16, 0);
-                            
                             continue;
                         }
-                        if (tID === 407) {
-                            continue; // Do nothing! 406 drew this side.
-                        }
+                        if (tID === 407) continue;
 
-                        // STANDARD TILES (Dirt, etc)
                         const localIdx = tID - 300; 
                         const srcX = (localIdx % 12) * 16;
                         const srcY = Math.floor(localIdx / 12) * 16;
-                        
                         ctx2.drawImage(woodsImg, srcX, srcY, 16, 16, sX, sY, 16, 16);
                     }
                     continue;
                 }
                 
-                // Check if this tile belongs to our new directional road sheet
+                // Directional Road Sheet (200 to 208)
                 if (tID >= 200 && tID <= 208) {
-    const roadImg = images.mainTileset2;
-    if (roadImg && roadImg.complete) {
-        const localIdx = tID - 200; // 0 to 8
-        
-        // 👇 UPDATED MATH: Correctly wraps to the next row for Tile 8!
-        const srcX = (localIdx % 8) * 16;
-        const srcY = Math.floor(localIdx / 8) * 16;
-        
-        ctx2.drawImage(roadImg, srcX, srcY, 16, 16, sX, sY, 16, 16);
-    }
-} 
-
-else {
-    // STANDARD TILES (worldTilesColor - 8 tiles wide)
-    ctx2.drawImage(tileImg, (tID % 8) * 16, Math.floor(tID / 8) * 16, 16, 16, sX, sY, 16, 16);
-}
+                    const roadImg = images.mainTileset2;
+                    if (roadImg && roadImg.complete) {
+                        const localIdx = tID - 200;
+                        const srcX = (localIdx % 8) * 16;
+                        const srcY = Math.floor(localIdx / 8) * 16;
+                        ctx2.drawImage(roadImg, srcX, srcY, 16, 16, sX, sY, 16, 16);
+                    }
+                } else {
+                    // Standard Tiles (worldTilesColor - 8 tiles wide)
+                    ctx2.drawImage(tileImg, (tID % 8) * 16, Math.floor(tID / 8) * 16, 16, 16, sX, sY, 16, 16);
+                }
             }
         }
-    } else {
-        // ==========================================
-        // 🏠 INSIDE MODE (Detailed Building Logic)
-        // ==========================================
-        ctx2.fillStyle = "#2d232e"; // Dark background for interiors
+    } 
+    // ==========================================
+    // 🏠 INDOOR MODE (Cull Indoor Drawing to Viewport)
+    // ==========================================
+    else {
+        ctx2.fillStyle = "#2d232e"; // Dark background boundary
         ctx2.fillRect(0, 0, w, h);
 
-        for (let k = hTX - halfX; k <= hTX + halfX; k++) {
-            const cx = (k / 100) | 0;
+        for (let k = startX; k <= endX; k++) {
+            const cx = Math.floor(k / 100);
             const lx = ((k % 100) + 100) % 100;
-            
-            // 👇 THE FIX: Use viewport.offset instead of centerX/hX
             const sX = Math.floor((k * 16) + viewport.offset[0]); 
             
             const wCol = worldMatrix[cx];
             const rCol = roomMatrix[cx];
 
-            for (let l = hTY - halfY; l <= hTY + halfY; l++) {
-                const cy = (l / 100) | 0;
+            for (let l = startY; l <= endY; l++) {
+                const cy = Math.floor(l / 100);
                 const wChunk = wCol?.[cy];
                 if (!wChunk) continue;
 
@@ -358,26 +342,22 @@ else {
                 const idx = (ly * 100) + lx;
                 const rID = rCol?.[cy]?.[idx] || 0;
 
-                // Only draw tiles that are part of the current house
                 if (rID === hHouseId) {
-                    
-                    // 👇 THE FIX: Use viewport.offset instead of centerY/hY
                     const sY = Math.floor((l * 16) + viewport.offset[1]); 
-                    
                     const meta = roomMetadata[rID];
-                    let drawID = wChunk[idx];
-                    let base = 42; // Interior Floor
+                    let base = 42; // Standard interior floor
 
-                    // --- 🚜 BARN LOGIC ---
+                    // Barn Layout rules
                     if (meta && meta.type === 'LARGE_BARN') {
-                        const ox = k - meta.frontX; const oy = l - meta.frontY;
+                        const ox = k - meta.frontX; 
+                        const oy = l - meta.frontY;
                         if (hero.floor === 1) { 
                             if (oy <= -6) base = 27; else if (oy === -5) base = 41; 
                         } else { 
                             if ((ox !== 2 && ox !== 3) || oy === 0 || oy === -1) base = 27; else if (oy === -7) base = 41; 
                         }
                     } 
-                    // --- 🏛️ TWO STORY LOGIC ---
+                    // Multilevel stairs rules
                     else if (meta && meta.type === 'TWO_STORY') {
                         const oy = l - meta.frontY;
                         if (hero.floor === 1) { 
@@ -386,15 +366,14 @@ else {
                             if (oy === 0) base = 27; else if (oy === meta.maxOffset) base = 41; 
                         }
                     } 
-                    // --- 🏠 STANDARD HOUSE WALLS ---
                     else {
                         if (ly > 0 && rCol[cy][idx - 100] !== rID) base = 41; 
                     }
                     
-                    // 1. ALWAYS draw the floor/wall first so it acts as a background
+                    // Draw base interior floor/wall tile
                     ctx2.drawImage(tileImg, (base % 8) * 16, Math.floor(base / 8) * 16, 16, 16, sX, sY, 16, 16);
 
-                    // 2. OVERLAY the object on top
+                    // Place static object overlays
                     const obj = getObjectAt(k, l);
                     if (obj) {
                         const transMap = {
@@ -405,12 +384,10 @@ else {
                         };
                         const oldMap = { 'SMELTER': 53, 'BEDROLL': 61, 'INT_WALL': 41, 'ANVIL': 54 }; 
 
-
                         if (transMap[obj.type] !== undefined) {
                             const tImg = images.transparentTileset;
                             const tid = transMap[obj.type];
                             if (tImg && tImg.complete) {
-                                // 👈 STRICTLY uses 10 for the width math
                                 ctx2.drawImage(tImg, (tid % 10) * 16, Math.floor(tid / 10) * 16, 16, 16, sX, sY, 16, 16);
                             }
                         } else if (oldMap[obj.type] !== undefined) {
@@ -418,9 +395,11 @@ else {
                             ctx2.drawImage(tileImg, (oid % 8) * 16, Math.floor(oid / 8) * 16, 16, 16, sX, sY, 16, 16);
                         }
                         else if (obj.type === 'CRAFTING_TABLE') {
-    const kImg = images.keyTileset;
-    if (kImg && kImg.complete) ctx2.drawImage(kImg, (100 % 16) * 16, Math.floor(100 / 16) * 16, 16, 16, sX, sY, 16, 16);
-}
+                            const kImg = images.keyTileset;
+                            if (kImg && kImg.complete) {
+                                ctx2.drawImage(kImg, (100 % 16) * 16, Math.floor(100 / 16) * 16, 16, 16, sX, sY, 16, 16);
+                            }
+                        }
                     }
                 }
             }
