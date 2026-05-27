@@ -356,22 +356,33 @@ export function initMultiplayer() {
             serverProjectiles = projectiles || []; 
         });
 
-        // --- Inside initMultiplayer() ---
-        socket.on('mapState', (data) => {
-            globalUnlockedSystems = data.unlockedSystems;
+        // Inside initMultiplayer() in src/multiplayer.js:
+
+        // A. Fishing cast confirmed by server (sets local visual timer)
+        socket.on('fishingCastConfirmed', (data) => {
+            hero.fishTimer = data.waitTime / 1000; // Translate ms to seconds
         });
 
-        socket.on('systemUnlocked', (data) => {
-            globalUnlockedSystems = data.unlockedSystems;
-            
-            // If we were the one who bought it, update our local UNI balance
-            if (data.heroId === myID) {
-                hero.inGameUni = data.newBalance;
-                import('./uiManager.js').then(m => m.updateHUD());
-            }
+        // B. Fishing finished confirmed by server
+        socket.on('fishingFinished', () => {
+            hero.isFishing = false;
+            hero.hasBite = false;
+        });
 
-            console.log(`☁️ The clouds have parted! A new system is unlocked!`);
-            // You can play a fanfare sound or display big text here later!
+        // C. Plant creation confirmed by server
+        socket.on('plantCreated', (data) => {
+            // Spawn the plant locally on all clients
+            import('./plants.js').then(m => {
+                m.createPlant(data.gx, data.gy, fertilityMatrix, data.growth, data.type);
+            });
+        });
+
+        // D. Plant removal confirmed by server
+        socket.on('plantRemoved', (data) => {
+            // Delete the plant locally on all clients
+            import('./plants.js').then(m => {
+                m.plants.delete(`${data.gx}_${data.gy}`);
+            });
         });
 
         socket.on('remoteAbility', (data) => {}); // Hidden for barebones
@@ -409,6 +420,17 @@ export function initChatListener() {
     }
 }
 // Paste this at the bottom of src/multiplayer.js
+
+// At the bottom of src/multiplayer.js:
+
+export function syncInventoryWithServer() {
+    if (socket && socket.connected) {
+        socket.emit('syncInventory', {
+            inventory: hero.inventory,
+            equipment: hero.equipment
+        });
+    }
+}
 
 // Add this at the bottom of src/multiplayer.js
 export function updateRemotePlayers(delta) {

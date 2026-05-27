@@ -1,6 +1,6 @@
 
 import { hero, getLevelInfo, gameState } from './entities.js';
-import { socket, remotePlayers, playerWallet, setPlayerWallet } from './multiplayer.js';
+import { socket, remotePlayers, playerWallet, setPlayerWallet, syncInventoryWithServer } from './multiplayer.js';
 import { CONFIG } from './config.js';
 import { ITEM_TYPES, createItem } from './items.js';
 import { getWaitModifier, getRandomFish, globalFishCount } from './fish.js';

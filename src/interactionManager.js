@@ -6,7 +6,7 @@ import { ITEM_TYPES, createItem } from './items.js';
 import { updatePlants, createPlant, plants, PLANT_DEFS } from './plants.js';
 import { getBacteriaData, seedBacteria, BACTERIA_TYPES } from './bacteria.js';
 import { inputState } from './input.js';
-import { socket, playerWallet, remotePlayers } from './multiplayer.js';
+import { socket, playerWallet, remotePlayers, syncInventoryWithServer } from './multiplayer.js';
 
 import { openChestMenu, openTempleMenu, openKitchenMenu, openMapTableMenu, openCellarMenu, openHayTableMenu, openHayStorageMenu, openWithdrawMenu, } from './uiManager.js'; 
 import { getObjectAt } from './staticObjects.js';
@@ -139,7 +139,7 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
                 inputState.action = false;
                 return; // Block interaction!
             }
-            
+
             // Replaces the old openSmelterMenu
             if (obj.type === 'SMELTER') {
                 if (socket) socket.emit('requestSmelter', `smelter_${tx}_${ty}`);
@@ -360,6 +360,8 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
         }
     }
 
+    // Inside handleInteractions() in src/interactionManager.js:
+
     // --- 7. PLANT SEED (V Key) ---
     if (inputState.keyV) {
         inputState.keyV = false;
@@ -367,20 +369,20 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
             const item = hero.equipment.mainHand;
 
             if (item.seedType && (item.seedType.includes("_seed") || item.seedType === "potato_item")) {
-                // 👇 Seeds are planted at the feet!
                 const cx = Math.floor(feetTX / 100); const cy = Math.floor(feetTY / 100);
                 const lx = ((feetTX % 100) + 100) % 100; const ly = ((feetTY % 100) + 100) % 100;
                 const tileID = worldMatrix[cx]?.[cy]?.[(ly * 100) + lx];
                 const roomID = roomMatrix[cx]?.[cy]?.[(ly * 100) + lx] || 0;
 
                 if (tileID === 63 && (roomID === 0 || roomID === 9999) && !plants.has(`${feetTX}_${feetTY}`)) {
-                    const plantType = item.seedType.replace("_seed", "").replace("_item", "");
-                    createPlant(feetTX, feetTY, fertilityMatrix, 0, plantType);
-                    item.count--;
-                    if (item.count <= 0) hero.equipment.mainHand = null;
-
-                                syncInventoryWithServer(); // 👈 Added here
-
+                    
+                    // 🎯 THE SECURE FIX: Request a seed-plant from the server!
+                    // We find the index of the held item inside the client's inventory array
+                    const index = hero.inventory.indexOf(item);
+                    
+                    if (socket) {
+                        socket.emit('requestPlantSeed', { tx: feetTX, ty: feetTY, index: index });
+                    }
                 }
             }
         }
@@ -513,12 +515,14 @@ function processAction(tx, ty, worldMatrix, roomMatrix) {
 /**
  * 🎣 CASTING LOGIC
  */
+// Inside processCasting() in src/interactionManager.js:
+
 function processCasting(tx, ty, world, room) {
     let bx = 0, by = 0;
-    if (hero.dir === 'North')    by = -1;
+    if (hero.dir === 'North')  by = -1;
     if (hero.dir === 'South')  by = 1;
-    if (hero.dir === 'West')  bx = -1;
-    if (hero.dir === 'East') bx = 1;
+    if (hero.dir === 'West')   bx = -1;
+    if (hero.dir === 'East')   bx = 1;
 
     const target = getTileData((tx + bx) * 16, (ty + by) * 16, world, room);
     if (target.tileID === 17) { // Water
@@ -527,10 +531,10 @@ function processCasting(tx, ty, world, room) {
         hero.bobberX = (tx + bx) * 16 + 8;
         hero.bobberY = (ty + by) * 16 + 8;
 
-        // 🆕 THE SCARCITY FIX:
-        // Base wait (2-5s) multiplied by the world's scarcity
-        const scarcityMod = getWaitModifier();
-        hero.fishTimer = (2 + Math.random() * 3) * scarcityMod;
+        // 🎯 THE SECURE FIX: Ask the server to cast the line securely!
+        if (socket) {
+            socket.emit('requestCastLine', { tx: tx + bx, ty: ty + by });
+        }
         
         inputState.action = false;
     }
@@ -539,22 +543,19 @@ function processCasting(tx, ty, world, room) {
 /**
  * 🎣 REELING LOGIC
  */
+// Inside processFishing() in src/interactionManager.js:
+
 function processFishing(modifier) {
     if (!hero.hasBite) {
         hero.fishTimer -= modifier;
-        if (hero.fishTimer <= 0) hero.hasBite = true;
+        if (hero.fishTimer <= 0) hero.hasBite = true; // Visual bite trigger
     } else if (inputState.action) {
-        if (hero.inventory.length < hero.maxSlots) {
-            
-            // 🆕 THE SCARCITY FIX:
-            // Don't just give a BASS; ask fish.js what we got!
-            const caughtFish = getRandomFish();
-            giveItemToHero(caughtFish);
-            
-            console.log(`🎣 Caught a ${caughtFish.name}! World Pop: ${Math.floor(globalFishCount)}`);
+        
+        // 🎯 THE SECURE FIX: Request to reel in from the server
+        if (socket) {
+            socket.emit('requestReelIn');
         }
-        hero.isFishing = false;
-        hero.hasBite = false;
+        
         inputState.action = false;
     }
 }
@@ -606,6 +607,8 @@ function processPickup(tx, ty) {
     }
     // ... (rest of your plant harvesting is unchanged) ...
 
+    // Inside processPickup() in src/interactionManager.js:
+
     // ==========================================
     // PRIORITY 2: GROWING PLANTS (Crops, Flowers, Grass)
     // ==========================================
@@ -614,68 +617,21 @@ function processPickup(tx, ty) {
         const plant = plants.get(plantKey);
         const def = PLANT_DEFS[plant.type];
         const stagesArray = def.stages;
-        
-        // Calculate the current visual stage index (0 to length-1)
         const currentStageIdx = Math.min(stagesArray.length - 1, Math.floor(plant.growth / (100 / stagesArray.length)));
         
-        // 🍅 Only the Tomato has a harvestWindow of 3. Everything else defaults to 1 (the final stage).
         const harvestWindow = def.harvestWindow || 1;
         const isMature = currentStageIdx >= (stagesArray.length - harvestWindow);
         
         if (isMature) {
-            // FULL HARVEST DICTIONARY
-            const yieldMap = {
-                // Crops
-                'turnip': ITEM_TYPES.TURNIP_ITEM, 
-                'tomato': ITEM_TYPES.TOMATO_ITEM,
-                'eggplant': ITEM_TYPES.EGGPLANT_ITEM, 
-                'strawberry': ITEM_TYPES.STRAWBERRY_ITEM,
-                'pumpkin': ITEM_TYPES.PUMPKIN_ITEM, 
-                'watermelon': ITEM_TYPES.WATERMELON_ITEM,
-                'corn': ITEM_TYPES.CORN_ITEM, 
-                'pineapple': ITEM_TYPES.PINEAPPLE_ITEM,
-                'potato': ITEM_TYPES.POTATO_ITEM, 
-                'wheat': ITEM_TYPES.WHEAT_ITEM,
-                
-                // Flowers and Grass yield Plant Matter
-                'grass': ITEM_TYPES.PLANT_MATTER,
-                'rose': ITEM_TYPES.PLANT_MATTER,
-                'violet': ITEM_TYPES.PLANT_MATTER,
-                'sunflower': ITEM_TYPES.PLANT_MATTER
-            };
-            
-            giveItemToHero(createItem(yieldMap[plant.type] || ITEM_TYPES.PLANT_MATTER));    
-            
-            // Yield Seeds (Dynamically checks ITEM_TYPES for ANY matching seed)
-            const seedConstName = `${plant.type.toUpperCase()}_SEED`;
-            const seedCount = Math.floor(Math.random() * 2) + 1; 
-            for (let i = 0; i < seedCount; i++) {
-                if (ITEM_TYPES[seedConstName]) {
-                    giveItemToHero(createItem(ITEM_TYPES[seedConstName]));
-                }
-
+            // 🎯 THE SECURE FIX: Request a harvest from the server instead of doing it locally
+            if (socket) {
+                socket.emit('requestHarvest', { tx: tx, ty: ty });
             }
-
-            // 🔄 CYCLICAL REVERT LOGIC
-            const def = PLANT_DEFS[plant.type];
-            if (def.isCyclical) {
-                plant.growth = def.resetGrowth; // Revert to vegetative stage (e.g., 26%)
-                plant.hasFlowered = false;      // Reset flower flag so it drains fertility next cycle
-                plant.seedsRemaining = Math.floor(Math.random() * 2) + 3; // Reset seeds
-                console.log(`🍅 Harvested cyclical ${plant.type}! Reverting to vegetative stage.`);
-                return true; 
-            }
-
-
         } else {
-            // Picked too early -> becomes ruined Plant Matter
+            // Picked too early, client fallback (No secure economic value, so simple deletion is fine)
             giveItemToHero(createItem(ITEM_TYPES.PLANT_MATTER));
+            plants.delete(plantKey);
         }
-
-        // 🗑️ STANDARD DELETION (Only runs for non-cyclical plants or immature picks)
-        plants.delete(plantKey);
-        const plantBac = getBacteriaData(plant.gx, plant.gy);
-        if (plantBac && plantBac.data) plantBac.data[plantBac.idx] = 0;
         return true;
     }
 

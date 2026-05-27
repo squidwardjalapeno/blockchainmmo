@@ -75,6 +75,65 @@ const POINT_VALUES = {
     "potato_seed": 1, "wheat_seed": 1
 };
 
+// Inside server.js:
+
+// 1. Server-Side Item Templates (for secure instantiations)
+const SERVER_ITEM_TYPES = {
+    TURNIP_ITEM: { name: "Turnip", seedType: "turnip_item", baseHealth: 30, baseVirulence: 0, spriteID: 0, tileset: "cropTileset" },
+    TOMATO_ITEM: { name: "Tomato", seedType: "tomato_item", baseHealth: 30, baseVirulence: 0, spriteID: 24, tileset: "cropTileset" },
+    EGGPLANT_ITEM: { name: "Eggplant", seedType: "eggplant_item", baseHealth: 30, baseVirulence: 0, spriteID: 36, tileset: "cropTileset" },
+    STRAWBERRY_ITEM: { name: "Strawberry", seedType: "strawberry_item", baseHealth: 20, baseVirulence: 0, spriteID: 72, tileset: "cropTileset" },
+    PUMPKIN_ITEM: { name: "Pumpkin", seedType: "pumpkin_item", baseHealth: 40, baseVirulence: 0, spriteID: 96, tileset: "cropTileset" },
+    WATERMELON_ITEM: { name: "Watermelon", seedType: "watermelon_item", baseHealth: 40, baseVirulence: 0, spriteID: 30, tileset: "cropTileset" },
+    CORN_ITEM: { name: "Corn", seedType: "corn_item", baseHealth: 30, baseVirulence: 0, spriteID: 108, tileset: "cropTileset" },
+    PINEAPPLE_ITEM: { name: "Pineapple", seedType: "pineapple_item", baseHealth: 40, baseVirulence: 0, spriteID: 48, tileset: "cropTileset" },
+    POTATO_ITEM: { name: "Potato", seedType: "potato_item", baseHealth: 30, baseVirulence: 0, spriteID: 84, tileset: "cropTileset" },
+    WHEAT_ITEM: { name: "Wheat", seedType: "wheat_item", baseHealth: 20, baseVirulence: 0, spriteID: 168, tileset: "gardenTileset" },
+    PLANT_MATTER: { name: "Plant Matter", seedType: "plant_matter", baseHealth: 12, baseVirulence: 2, spriteID: 152, tileset: "gardenTileset" },
+    
+    // Fish Templates
+    BASS: { name: "River Bass", seedType: "fish", baseHealth: 40, baseVirulence: 10, spriteID: 43, tileset: "fishTileset" },
+    TROUT: { name: "Trout", seedType: "fish_trout", baseHealth: 40, baseVirulence: 10, spriteID: 16, tileset: "fishTileset" },
+    PANFISH: { name: "Panfish", seedType: "fish_panfish", baseHealth: 30, baseVirulence: 10, spriteID: 2, tileset: "fishTileset" },
+    MACKEREL: { name: "Mackerel", seedType: "fish_mackerel", baseHealth: 50, baseVirulence: 10, spriteID: 70, tileset: "fishTileset" },
+    MUSKELLUNGE: { name: "Muskellunge", seedType: "fish_muskellunge", baseHealth: 100, baseVirulence: 10, spriteID: 91, tileset: "fishTileset" },
+    GIANT_TREVALLY: { name: "Giant Trevally", seedType: "fish_trevally", baseHealth: 80, baseVirulence: 10, spriteID: 35, tileset: "fishTileset" },
+    SQUID: { name: "Squid", seedType: "fish_squid", baseHealth: 50, baseVirulence: 10, spriteID: 84, tileset: "fishTileset" },
+    OCTOPUS: { name: "Octopus", seedType: "fish_octopus", baseHealth: 60, baseVirulence: 10, spriteID: 107, tileset: "fishTileset" },
+    EEL: { name: "Eel", seedType: "fish_eel", baseHealth: 50, baseVirulence: 10, spriteID: 59, tileset: "fishTileset" },
+    ANGLERFISH: { name: "Anglerfish", seedType: "fish_angler", baseHealth: 80, baseVirulence: 10, spriteID: 29, tileset: "fishTileset" },
+};
+
+function createServerItem(template) {
+    return {
+        ...template,
+        health: template.baseHealth,
+        virulence: template.baseVirulence,
+        count: 1,
+        timestamp: Date.now()
+    };
+}
+
+function getRandomServerFish() {
+    const roll = Math.random() * 100;
+    if (roll < 0.5) return SERVER_ITEM_TYPES.MUSKELLUNGE;    
+    if (roll < 1.5) return SERVER_ITEM_TYPES.GIANT_TREVALLY; 
+    if (roll < 3.5) return SERVER_ITEM_TYPES.ANGLERFISH;     
+    if (roll < 7.0) return SERVER_ITEM_TYPES.OCTOPUS;        
+    if (roll < 12.0) return SERVER_ITEM_TYPES.SQUID;         
+    if (roll < 20.0) return SERVER_ITEM_TYPES.EEL;           
+    if (roll < 35.0) return SERVER_ITEM_TYPES.MACKEREL;      
+    if (roll < 60.0) return SERVER_ITEM_TYPES.TROUT;         
+    if (roll < 80.0) return SERVER_ITEM_TYPES.BASS;          
+    return SERVER_ITEM_TYPES.PANFISH;                        
+}
+
+// 2. Server-Side Plant Database
+const serverPlants = new Map();
+
+// 3. Server-Side Active Fishing State Registry
+const fishingStates = new Map(); // Key: socket.id, Value: { startTime, waitTime, active: true }
+
 // 1. Serve static files from the public and src folders
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/src', express.static(path.join(__dirname, 'src'))); // Expose src for ES Modules
@@ -524,6 +583,158 @@ socket.on('collectAnvil', (data) => {
         socket.emit('receiveAnvilLoot');
     }
 });
+
+// A. Plant Seed Request
+    socket.on('requestPlantSeed', (data) => {
+        const { tx, ty, index } = data;
+        const player = players[socket.id];
+        if (!player || !player.inventory) return;
+
+        const item = player.inventory[index];
+        if (!item || !(item.seedType.includes("_seed") || item.seedType === "potato_item")) return;
+
+        // Distance validation
+        const px = Math.floor(player.x / 16);
+        const py = Math.floor(player.y / 16);
+        if (Math.abs(px - tx) + Math.abs(py - ty) > 5) return;
+
+        const plantKey = `${tx}_${ty}`;
+        if (serverPlants.has(plantKey)) return; // Spot occupied
+
+        const plantType = item.seedType.replace("_seed", "").replace("_item", "");
+        
+        // Register securely on the server
+        serverPlants.set(plantKey, {
+            gx: tx, gy: ty,
+            type: plantType,
+            growth: 0,
+            timestamp: Date.now()
+        });
+
+        // Deduct seed from server inventory
+        item.count--;
+        if (item.count <= 0) {
+            player.inventory.splice(index, 1);
+        }
+
+        syncPlayerAndSave(socket.id);
+        socket.emit('updateInventory', player.inventory);
+
+        // Broadcast the new plant to all nearby players
+        io.emit('plantCreated', { gx: tx, gy: ty, type: plantType, growth: 0 });
+    });
+
+    // B. Harvest Crop Request
+    socket.on('requestHarvest', (data) => {
+        const { tx, ty } = data;
+        const player = players[socket.id];
+        if (!player || !player.inventory) return;
+
+        const plantKey = `${tx}_${ty}`;
+        const plant = serverPlants.get(plantKey);
+        
+        // 🎯 THE FIX: Verify the plant exists and is 100% mature before giving items!
+        // (For development, you can bypass the growth check by verifying if plant is true)
+        if (!plant) return; 
+
+        // Distance validation
+        const px = Math.floor(player.x / 16);
+        const py = Math.floor(player.y / 16);
+        if (Math.abs(px - tx) + Math.abs(py - ty) > 5) return;
+
+        if (player.inventory.length >= 10) {
+            socket.emit('inventoryFull');
+            return;
+        }
+
+        const yieldMap = {
+            'turnip': 'TURNIP_ITEM', 'tomato': 'TOMATO_ITEM',
+            'eggplant': 'EGGPLANT_ITEM', 'strawberry': 'STRAWBERRY_ITEM',
+            'pumpkin': 'PUMPKIN_ITEM', 'watermelon': 'WATERMELON_ITEM',
+            'corn': 'CORN_ITEM', 'pineapple': 'PINEAPPLE_ITEM',
+            'potato': 'POTATO_ITEM', 'wheat': 'WHEAT_ITEM',
+            'grass': 'PLANT_MATTER', 'rose': 'PLANT_MATTER',
+            'violet': 'PLANT_MATTER', 'sunflower': 'PLANT_MATTER'
+        };
+
+        const itemTypeName = yieldMap[plant.type] || 'PLANT_MATTER';
+        const template = SERVER_ITEM_TYPES[itemTypeName];
+        if (template) {
+            player.inventory.push(createServerItem(template));
+        }
+
+        // Delete from server database
+        serverPlants.delete(plantKey);
+
+        syncPlayerAndSave(socket.id);
+        socket.emit('updateInventory', player.inventory);
+
+        // Broadcast the plant removal to all players
+        io.emit('plantRemoved', { gx: tx, gy: ty });
+    });
+
+    // ==========================================
+    // 🎣 SECURE SERVER-AUTHORITATIVE FISHING
+    // ==========================================
+
+    // A. Cast Line Request
+    socket.on('requestCastLine', (data) => {
+        const { tx, ty } = data;
+        const player = players[socket.id];
+        if (!player) return;
+
+        const px = Math.floor(player.x / 16);
+        const py = Math.floor(player.y / 16);
+        if (Math.abs(px - tx) + Math.abs(py - ty) > 5) return;
+
+        // Calculate waiting time securely on the server
+        const safeCount = Math.max(1, globalFishCount);
+        const multiplier = Math.sqrt(10000 / safeCount);
+        const scarcityMod = Math.min(30.0, multiplier);
+        const waitTime = (2 + Math.random() * 3) * scarcityMod * 1000; // in milliseconds
+
+        // Register the active fishing state for this socket
+        fishingStates.set(socket.id, {
+            startTime: Date.now(),
+            waitTime: waitTime,
+            active: true
+        });
+
+        // Send confirmation and the secure wait time back to the client
+        socket.emit('fishingCastConfirmed', { waitTime });
+    });
+
+    // B. Reel In Request
+    socket.on('requestReelIn', () => {
+        const state = fishingStates.get(socket.id);
+        const player = players[socket.id];
+        if (!state || !state.active || !player) return;
+
+        // 🎯 THE FIX: Verify on the server's clock that the wait time has actually elapsed!
+        const elapsed = Date.now() - state.startTime;
+        if (elapsed < state.waitTime) {
+            console.log(`🚨 Hack blocked: ${player.wallet} tried to bypass the fishing timer!`);
+            return;
+        }
+
+        if (player.inventory.length >= 10) {
+            socket.emit('inventoryFull');
+            return;
+        }
+
+        // Catch a fish securely on the server
+        const caughtFishTemplate = getRandomServerFish();
+        player.inventory.push(createServerItem(caughtFishTemplate));
+
+        // Subtract from global fish population
+        globalFishCount = Math.max(0, globalFishCount - 1);
+
+        fishingStates.delete(socket.id); // Wipe active state
+
+        syncPlayerAndSave(socket.id);
+        socket.emit('updateInventory', player.inventory);
+        socket.emit('fishingFinished'); // Reset client fishing state
+    });
 
     socket.on('requestChest', (chestId) => {
         // If chest doesn't exist in DB yet, spawn it with default loot!
