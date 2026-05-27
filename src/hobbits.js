@@ -2,7 +2,7 @@
 import { viewport } from './viewport.js';
 import { moveEntity, getTileData } from './physics.js'; 
 import { hero } from './entities.js'; 
-import { worldTime } from './clock.js'; // 👈 Central Clock
+import { worldTime } from './clock.js'; 
 import { getObjectAt, staticObjects, solidTiles } from './staticObjects.js'; 
 import { plants } from './plants.js';
 import { bacteriaCells } from './bacteria.js'; 
@@ -43,6 +43,7 @@ export function spawnHobbit(gx, gy) {
     });
 }
 
+// 🧠 HELPER: Scans active 3x3 chunks for a dropped key matching the target house ID (Centered around Hobbit)
 function findKeyOnGround(hobbitCX, hobbitCY, houseId) {
     for (let ox = -1; ox <= 1; ox++) {
         for (let oy = -1; oy <= 1; oy++) {
@@ -70,6 +71,7 @@ function findKeyOnGround(hobbitCX, hobbitCY, houseId) {
     return null;
 }
 
+// 🧠 HELPER: Scans active 3x3 chunks for ANY available key lying on the ground (Centered around Hobbit)
 function findAnyKeyOnGround(hobbitCX, hobbitCY) {
     for (let ox = -1; ox <= 1; ox++) {
         for (let oy = -1; oy <= 1; oy++) {
@@ -83,7 +85,7 @@ function findAnyKeyOnGround(hobbitCX, hobbitCY) {
                 if (traits === 0) continue;
                 
                 const typeID = (traits >> 20) & 0xFF;
-                if (typeID === 61) { 
+                if (typeID === 61) { // It's a key!
                     return {
                         gx: (targetCX * 100) + (idx % 100),
                         gy: (targetCY * 100) + Math.floor(idx / 100)
@@ -152,7 +154,7 @@ function isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix, hobbit) {
     const data = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix);
     if (!data || data.tileID === undefined) return false;
 
-    // 🎯 THE FIX: Closed doors (49, 12) block pathfinding ONLY if we don't have the key!
+    // Closed doors (49, 12) block pathfinding ONLY if we don't have the key!
     if (data.tileID === 49 || data.tileID === 12) {
         const hasKey = hobbit.inventory.some(i => i.isKey && i.houseId === data.roomID);
         if (!hasKey) return false; // Blocked! We cannot open this door yet.
@@ -163,7 +165,7 @@ function isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix, hobbit) {
     return true;
 }
 
-// 🧠 THE FIX: Finds a walkable floor tile strictly INSIDE the same room/house
+// Finds a walkable floor tile strictly INSIDE the same room/house
 function findWalkableNeighborInRoom(targetX, targetY, targetRoomID, worldMatrix, roomMatrix, hobbit) {
     const dirs = [[0,1], [0,-1], [1,0], [-1,0]];
     for (let d of dirs) {
@@ -171,13 +173,12 @@ function findWalkableNeighborInRoom(targetX, targetY, targetRoomID, worldMatrix,
         const ty = targetY + d[1];
         if (isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix, hobbit)) {
             const rData = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix);
-            // Accept the neighbor ONLY if its roomID matches the target chest/bed roomID
             if (rData && rData.roomID === targetRoomID) {
                 return { x: tx, y: ty };
             }
         }
     }
-    return { x: targetX, y: targetY }; // Fallback
+    return { x: targetX, y: targetY }; 
 }
 
 // Simple legacy neighbor for crops/keys (which don't have rooms)
@@ -290,7 +291,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             const currTX = Math.floor((hobbit.x + 8) / 16);
             const currTY = Math.floor((hobbit.y + 8) / 16);
 
-            // Fetch current roomID directly from feet physics
             const currentRoomID = getTileData(hobbit.x + 8, hobbit.y + 15, worldMatrix, roomMatrix).roomID;
 
             // ==========================================
@@ -310,7 +310,11 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 }
             } else {
                 hobbit.stamina = Math.min(100, hobbit.stamina + 5);
-                hobbit.targetKeyCoords = null;
+                
+                // 🎯 THE FIX: Only clear the targetKeyCoords when NOT getting a key!
+                if (hobbit.goal !== 'get_key') {
+                    hobbit.targetKeyCoords = null;
+                }
                 
                 if (hobbit.inventory.length >= hobbit.maxSlots) {
                     const hasMyKey = hobbit.assignedHouseId && hobbit.inventory.some(i => i.isKey && i.houseId === hobbit.assignedHouseId);
@@ -369,7 +373,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             hobbit.goal = 'gather';
                             hobbit.state = 'idle';
                         } else {
-                            // 🎯 THE FIX: Pass "hobbit" to pathfinder!
                             const path = findPathToCoords(currTX, currTY, tk.gx, tk.gy, worldMatrix, roomMatrix, hobbit);
                             if (path) {
                                 hobbit.path = path;
@@ -391,7 +394,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             if (Math.abs(currTX - bed.x) <= 1 && Math.abs(currTY - bed.y) <= 1 && currentRoomID === bed.houseId) {
                                 hobbit.state = 'sleeping';
                             } else {
-                                // 🎯 THE FIX: Pass "hobbit" to neighbor search!
                                 const target = findWalkableNeighborInRoom(bed.x, bed.y, bed.houseId, worldMatrix, roomMatrix, hobbit);
                                 const path = findPathToCoords(currTX, currTY, target.x, target.y, worldMatrix, roomMatrix, hobbit);
                                 if (path) {
@@ -444,7 +446,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 hobbit.goal = 'gather';
                                 hobbit.state = 'idle';
                             } else {
-                                // 🎯 THE FIX: Pass "hobbit" to neighbor search!
                                 const target = findWalkableNeighborInRoom(chest.x, chest.y, hobbit.assignedHouseId, worldMatrix, roomMatrix, hobbit);
                                 const path = findPathToCoords(currTX, currTY, target.x, target.y, worldMatrix, roomMatrix, hobbit);
                                 if (path) {
