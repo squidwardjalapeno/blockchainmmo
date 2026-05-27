@@ -164,8 +164,6 @@ var update = function (modifier) {
         // 👇 THE FIX: Let chickens run smoothly here (Removed the 'false' arg)
         if (DEBUG_FLAGS.ENABLE_WORLD_SIM) {
             updateAnimals(modifier * 3, worldMatrix, roomMatrix); 
-            updateHobbits(modifier * 3, worldMatrix, roomMatrix); // 👈 ADDED HERE
-
         }
     }
 
