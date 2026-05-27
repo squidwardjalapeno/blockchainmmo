@@ -311,9 +311,24 @@ export function initMultiplayer() {
             }
         });
 
+        
+
         socket.on('playerRespawn', (data) => {
             const p = (data.id === myID) ? hero : remotePlayers.get(data.id);
             if (p) p.hp = data.hp;
+        });
+
+        // Add this socket listener inside initMultiplayer() in src/multiplayer.js:
+
+        // Receive cyclical plant resets from server
+        socket.on('plantReset', (data) => {
+            import('./plants.js').then(m => {
+                const plant = m.plants.get(`${data.gx}_${data.gy}`);
+                if (plant) {
+                    plant.growth = data.growth;
+                    plant.hasFlowered = false; // Reset the flower flag locally
+                }
+            });
         });
 
         socket.on('position', (data) => {
