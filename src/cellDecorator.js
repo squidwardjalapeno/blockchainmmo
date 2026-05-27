@@ -192,10 +192,6 @@ export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertility
     drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell.x, zoneWell.y);
     drawTownWalls(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell);
 
-    // 🎯 4. SPAWN EXACTLY 1 HOBBIT (Spawns on the walkable ground right next to the central well)
-    const spawnX = zoneWell.x + 2;
-    const spawnY = zoneWell.y + 2;
-    import('./hobbits.js').then(m => m.spawnHobbit(spawnX, spawnY));
 }
 
 

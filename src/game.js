@@ -9,7 +9,7 @@ import { drawHouse, drawTemple, drawGeneralStore, drawVillageHall, drawRootCella
 import { applyShorelineRules } from './terrainRules.js';
 import { inputState, initInput, handleHeroUpdate } from './input.js';
 import { viewport } from './viewport.js';
-import { ctx2, ctx3, canvas2, canvas3, drawMap, drawHobbits, drawStaticObjects, drawJoystick, drawProjectiles, drawTargetCircle, drawWorkingIndicator, drawHeroRange, drawHealthBar, drawEnergyBar, drawAbilityButtons, drawXPStatus, drawAimIndicator, initRenderer, clearAll, drawAnimals, drawPlants, drawHero, drawRemotePlayers, drawBobber, preRenderMinimap, drawDroppedItems, drawCanopy, drawNightTint } from './renderer.js';
+import { ctx2, ctx3, canvas2, canvas3, drawMap, drawStaticObjects, drawJoystick, drawProjectiles, drawTargetCircle, drawWorkingIndicator, drawHeroRange, drawHealthBar, drawEnergyBar, drawAbilityButtons, drawXPStatus, drawAimIndicator, initRenderer, clearAll, drawAnimals, drawPlants, drawHero, drawRemotePlayers, drawBobber, preRenderMinimap, drawDroppedItems, drawCanopy, drawNightTint } from './renderer.js';
 import { hero, resetEntities, gameState } from './entities.js';
 import { CONFIG } from './config.js'
 import { checkCollision, getTileData } from './physics.js'; 
@@ -22,7 +22,6 @@ import { socket, initMultiplayer, playerWallet, remotePlayers, serverProjectiles
 import { handleInteractions, updateHeroStats, handlePvPCombat, handleFinancialActions } from './interactionManager.js';
 import { initUI, updateHUD } from './uiManager.js';
 import { getMasterBalance } from './blockchainManager.js';
-import { updateHobbits, hobbits } from './hobbits.js';
 import { worldTime } from './clock.js'; // 👈 ADD THIS IMPORT
 
 // js/overworldGame.js
@@ -253,7 +252,6 @@ var render = function () {
     // 👇 ADD THIS LINE to actually draw the flock to the screen!
     drawAnimals(); 
 
-    drawHobbits(ctx2, hobbits);                // 👈 ADDED HERE
 
     drawNightTint();                           // 👈 ADDED HERE to tint the screen!
 

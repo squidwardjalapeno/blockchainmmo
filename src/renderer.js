@@ -15,7 +15,6 @@ import { PALADIN_SKILLS } from './uiManager.js';
 import { getHeroAnimationData, getPetAnimationData, getAnimalAnimationData } from './animations.js';
 
 // Add this import to the top of src/renderer.js:
-import { getHobbitAnimationData } from './animations.js';
 import { worldTime } from './clock.js'; // 👈 ADD THIS IMPORT
 
 if (typeof window !== 'undefined') {
@@ -400,45 +399,6 @@ export function drawPlants(roomMatrix) {
 }
 
 // Inside drawHobbits() in src/renderer.js:
-
-export function drawHobbits(ctx2, activeHobbits) {
-    const w = canvas2.width;
-    const h = canvas2.height;
-
-    activeHobbits.forEach(hobbit => {
-        const screenX = Math.floor(hobbit.x + viewport.offset[0]);
-        const screenY = Math.floor(hobbit.y + viewport.offset[1]);
-
-        if (screenX < -32 || screenX > w + 32 || screenY < -32 || screenY > h + 32) return;
-
-        const animData = getHobbitAnimationData(hobbit, images);
-
-        if (animData.img && animData.img.complete) {
-            ctx2.save();
-            
-            if (animData.isSleeping) {
-                // 💤 SLEEPING: Rotate the sprite 90 degrees onto their side
-                ctx2.translate(screenX + 8, screenY + 8);
-                ctx2.rotate(90 * Math.PI / 180);
-                ctx2.drawImage(animData.img, animData.srcX, animData.srcY, animData.srcW, animData.srcH, -6, -6, 12, 12);
-            } else {
-                // STANDARD: Draw standing upright
-                ctx2.drawImage(animData.img, animData.srcX, animData.srcY, animData.srcW, animData.srcH, screenX + 2, screenY + 4, 12, 12);
-            }
-            
-            ctx2.restore();
-        }
-
-        // Draw HUD / Health bar only if awake
-        if (hobbit.state !== 'sleeping') {
-            const hpPct = hobbit.hp / hobbit.maxHp;
-            ctx2.fillStyle = "black";
-            ctx2.fillRect(screenX + 2, screenY, 12, 1);
-            ctx2.fillStyle = "green";
-            ctx2.fillRect(screenX + 2, screenY, 12 * Math.max(0, hpPct), 1);
-        }
-    });
-}
 
 const renderCache = {};
 
