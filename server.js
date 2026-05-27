@@ -746,6 +746,8 @@ socket.on('collectAnvil', (data) => {
 
     // Replace the requestHarvest socket listener inside server.js with this:
 
+    // Replace the requestHarvest socket listener inside server.js with this:
+
     socket.on('requestHarvest', (data) => {
         const { tx, ty } = data;
         const player = players[socket.id];
@@ -755,13 +757,22 @@ socket.on('collectAnvil', (data) => {
         const plant = serverPlants.get(plantKey);
         if (!plant) return; 
 
-        // 🎯 On-the-fly growth calculation based on elapsed real-time seconds
-        const elapsedSeconds = (Date.now() - plant.timestamp) / 1000;
-        const currentGrowth = plant.growth + (plant.growthRate * 0.1 * elapsedSeconds);
+        // 🎯 THE FIX: Robust, foolproof isNaN checks to block legacy corrupted database values
+        let startGrowth = plant.growth !== undefined ? parseFloat(plant.growth) : 0;
+        if (isNaN(startGrowth)) startGrowth = 0; // Clean if corrupted
 
-        // 🎯 THE FIX: Verify against the exact client-side visual stage and window math
-        if (!isServerPlantMature(plant, currentGrowth)) {
-            console.log(`🔒 Crop at [${tx}, ${ty}] is not mature on server yet (${currentGrowth.toFixed(2)}%)`);
+        let gRate = plant.growthRate !== undefined ? parseFloat(plant.growthRate) : 0.4;
+        if (isNaN(gRate)) gRate = 0.4; // Clean if corrupted
+
+        const elapsedSeconds = plant.timestamp ? (Date.now() - plant.timestamp) / 1000 : 0;
+
+        const currentGrowth = startGrowth + (gRate * 0.1 * elapsedSeconds);
+
+        const def = SERVER_PLANT_DEFS[plant.type];
+        const threshold = def ? def.harvestThreshold : 100;
+        
+        if (currentGrowth < threshold) {
+            console.log(`🔒 Crop at [${tx}, ${ty}] is not mature on server yet (${currentGrowth.toFixed(2)}% / ${threshold}%)`);
             return; 
         }
 
@@ -804,12 +815,9 @@ socket.on('collectAnvil', (data) => {
         }
 
         // Cyclical check
-        const def = SERVER_PLANT_DEFS[plant.type];
         if (def && def.isCyclical) {
-            // Reset growth and the starting timestamp
             plant.growth = def.resetGrowth;
             plant.timestamp = Date.now(); 
-            
             io.emit('plantReset', { gx: tx, gy: ty, growth: def.resetGrowth }); 
         } else {
             serverPlants.delete(plantKey);
