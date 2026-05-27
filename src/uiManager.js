@@ -1168,13 +1168,15 @@ export function openTempleMenu() {
 
 // Inside renderTempleUI() in src/uiManager.js:
 
+// Replace your renderTempleUI function in src/uiManager.js with this:
+
 export function renderTempleUI() {
     const heroInv = document.getElementById('temple-hero-inv');
     const altarSlot = document.getElementById('temple-slot');
 
     // Draw backpack items inside the Temple Altar window
     heroInv.innerHTML = hero.inventory.map((item, i) => `
-        <div class="inv-item click-sacrifice-item" data-index="${i}">
+        <div class="inv-item click-sacrifice-item" data-index="${i}" data-source="hero"> <!-- 👈 🎯 THE FIX: Added data-source="hero" -->
             <div class="item-icon" style="font-size: 24px;">${getItemIcon(item)}</div>
             <strong>${item.name}</strong>
             ${item.count > 1 ? `<span style="color:var(--banana-dark); font-size:8px;">(x${item.count})</span>` : ''}
@@ -1199,7 +1201,6 @@ export function renderTempleUI() {
 
             if (confirm(`Do you want to sacrifice ${inventoryItem.count}x ${inventoryItem.name} for UNI?`)) {
                 if (socket) {
-                    // Send index of item to sacrifice directly
                     socket.emit('sacrificeItem', { index: index });
                 }
             }
@@ -1680,6 +1681,9 @@ function showTooltip(itemEl, x, y) {
 }
 
 function getItemFromDOM(source, index) {
+    // 🎯 THE FOOLPROOF FIX: Instantly exit if source is missing to prevent crashes
+    if (!source) return null; 
+
     if (source === 'hero' || source.startsWith('hero-')) return hero.inventory[index];
     if (source === 'chest') return activeChestItems[index];
     if (source === 'cellar') return activeCellarItems[index];
