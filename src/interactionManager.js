@@ -15,7 +15,6 @@ import { CC_RESTRICT } from './entities.js'; // 👈 Import the restriction mask
 
 import { animals } from './animals.js';
 
-import { syncInventoryWithServer } from './uiManager.js';
 
 
 // To this:
