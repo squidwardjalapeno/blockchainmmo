@@ -26,6 +26,8 @@ export function getTileData(pxX, pxY, worldMatrix, roomMatrix) {
 
 // src/physics.js
 
+// src/physics.js
+
 export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     let target = getTileData(x, y, worldMatrix, roomMatrix);
     const current = getTileData(entity.x + 8, entity.y + 15, worldMatrix, roomMatrix); 
@@ -41,24 +43,27 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     const tx = target.gx;
     const ty = target.gy;
 
-    // Scan the current tile and the tile to its left (since the tree is 2 tiles wide)
     for (let ox = -1; ox <= 0; ox++) {
         const anchorX = tx + ox;
         const obj = getObjectAt(anchorX, ty);
         
         if (obj && obj.type === 'FOREST_TREE') {
-            const treeMinX = (anchorX * 16) + 8;  // Left trunk boundary (8px buffer)
-            const treeMaxX = (anchorX * 16) + 24; // Right trunk boundary (8px buffer)
+            const treeMinX = (anchorX * 16) + 8;  
+            const treeMaxX = (anchorX * 16) + 24; 
+            const treeMinY = ty * 16;
+            const treeMaxY = (ty * 16) + 16;
 
-            // 🎯 THE FIX: Verify if the exact tested coordinate falls inside the trunk
-            if (x >= treeMinX && x <= treeMaxX) {
-                return false; // Collision detected! Block movement
+            const overlapX = (pxMin < treeMaxX) && (pxMax > treeMinX);
+            const overlapY = (pyMin < treeMaxY) && (pyMax > treeMinY);
+
+            if (overlapX && overlapY) {
+                return false; 
             }
         }
     }
 
     // ==========================================
-    // 🚪 DOOR & GATE LOGIC
+    // 🚪 3. DOOR & GATE LOGIC
     // ==========================================
     if (entity.floor === 1) {
         const isNearClosedDoor = (
@@ -86,6 +91,9 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
                     }
                 }
             }
+
+            // 🎯 THE FIX: Re-evaluate target in case we just opened a door!
+            target = getTileData(x, y, worldMatrix, roomMatrix);
         }
 
         const doorCheckX = entity.x + 8;
@@ -109,6 +117,7 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
             }
         }
 
+        // Allow room-boundary bypass for open doors
         if ([35, 13, 23, 20, 54, 55].includes(target.tileID) || [35, 13, 23, 20, 54, 55].includes(current.tileID)) return true;
     }
 
