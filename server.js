@@ -1051,6 +1051,24 @@ socket.on('requestActivityLog', () => {
 
     // Inside io.on('connection', (socket) => { ... }) in server.js:
 
+    // Inside io.on('connection', (socket) => { ... }) in server.js:
+
+    // C. Register Wild Plant Request (Client-notified procedural spawner)
+    socket.on('registerWildPlant', (data) => {
+        const { gx, gy, type, growth } = data;
+        const plantKey = `${gx}_${gy}`;
+        
+        // Register the plant if it is not already tracked by the server
+        if (!serverPlants.has(plantKey)) {
+            serverPlants.set(plantKey, {
+                gx: gx, gy: gy,
+                type: type,
+                growth: growth || 0,
+                timestamp: Date.now()
+            });
+        }
+    });
+
     // ==========================================
     // 🎒 SECURE SERVER-AUTHORITATIVE INVENTORY
     // ==========================================
@@ -1804,6 +1822,18 @@ function broadcastEffectiveTGV() {
     const effectiveTGV = Math.max(0, currentTVL - globalDebt);
     io.emit('tgvUpdate', { tgv: effectiveTGV });
 }
+
+// Add this interval to the bottom of server.js:
+
+// 🕰️ Server-side Plant Growth Tick (Runs once per second)
+setInterval(() => {
+    for (let [key, plant] of serverPlants) {
+        if (plant.growth < 100) {
+            // Standard average growth rate: 0.3% per second
+            plant.growth = Math.min(100, plant.growth + 0.3);
+        }
+    }
+}, 1000);
 
 // --- Replace your setInterval at the bottom of server.js ---
 

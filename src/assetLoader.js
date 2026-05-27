@@ -46,7 +46,7 @@ const imageSources = {
     hobbitLungeWest:      "images/hobbitLungeWest.png",
     hobbitLungeSouthWest: "images/hobbitLungeSouthWest.png",
 
-    hobbit: "hobbit.png",
+    hobbit: "images/hobbit.png",
 
     // 🆕 ZENITH GUARDIAN IDLE (8 Frames - 1 for each direction)
     zenithGuardianIdle: "images/zenithGuardianIdle.png",

@@ -3,6 +3,8 @@ import { seedBacteria } from './bacteria.js';
 import { ITEM_TYPES } from './items.js';
 import { hero } from './entities.js'; 
 import { viewport } from './viewport.js'; // 👈 IMPORTED: Allows viewport boundary checks
+import { socket } from './multiplayer.js'; // 👈 ADD THIS IMPORT
+
 
 if (typeof window !== 'undefined') {
     logStep("plants.js");
@@ -122,6 +124,11 @@ export function createPlant(gx, gy, fertilityMatrix, startingGrowth = 0, type = 
     });
 
     import('./bacteria.js').then(m => m.seedBacteria(gx, gy, "organic_plant", maxHP, 0));
+
+    // 🎯 THE FIX: Automatically register this wild plant in the server's master database!
+    if (socket && socket.connected) {
+        socket.emit('registerWildPlant', { gx, gy, type, growth: startingGrowth });
+    }
 }
 
 export function updatePlants(modifier, fertilityMatrix, worldMatrix, roomMatrix) {
