@@ -838,6 +838,252 @@ socket.on('requestActivityLog', () => {
         console.log(`📦 Saved ${newItem.name} (House #${itemData.houseId || 'None'}) to ${player.wallet}'s database record.`);
     });
 
+    // Inside io.on('connection', (socket) => { ... }) in server.js:
+
+    // ==========================================
+    // 🎒 SECURE SERVER-AUTHORITATIVE INVENTORY
+    // ==========================================
+
+    // 1. Equip Item Request
+    socket.on('requestEquip', (data) => {
+        const { index } = data;
+        const player = players[socket.id];
+        if (!player || !player.inventory) return;
+
+        if (!player.equipment) player.equipment = { mainHand: null };
+        const itemToEquip = player.inventory[index];
+        if (!itemToEquip) return;
+
+        if (player.equipment.mainHand) {
+            const currentInHand = player.equipment.mainHand;
+            player.equipment.mainHand = itemToEquip;
+            player.inventory[index] = currentInHand;
+        } else {
+            player.equipment.mainHand = itemToEquip;
+            player.inventory.splice(index, 1);
+        }
+
+        // Recalculate stats server-side
+        player.ad = CONFIG.HERO_ATTACK;
+        if (player.equipment.mainHand && player.equipment.mainHand.isWeapon) {
+            player.ad += (player.equipment.mainHand.ad || 0);
+        }
+
+        syncPlayerAndSave(socket.id);
+        socket.emit('updateInventory', player.inventory);
+        socket.emit('restoreHero', player); // Updates active stats on HUD
+    });
+
+    // 2. Unequip Item Request
+    socket.on('requestUnequip', () => {
+        const player = players[socket.id];
+        if (!player || !player.inventory || !player.equipment || !player.equipment.mainHand) return;
+
+        if (player.inventory.length >= 10) {
+            socket.emit('inventoryFull');
+            return;
+        }
+
+        player.inventory.push(player.equipment.mainHand);
+        player.equipment.mainHand = null;
+
+        // Reset stats
+        player.ad = CONFIG.HERO_ATTACK;
+
+        syncPlayerAndSave(socket.id);
+        socket.emit('updateInventory', player.inventory);
+        socket.emit('restoreHero', player);
+    });
+
+    // 3. Drop Item Request
+    socket.on('requestDrop', (data) => {
+        const { index, amount, tx, ty } = data;
+        const player = players[socket.id];
+        if (!player || !player.inventory) return;
+
+        const item = player.inventory[index];
+        if (!item || item.count < amount) return;
+
+        // Validate player is near the drop coordinate (Anti-vacuum/teleport)
+        const px = Math.floor(player.x / 16);
+        const py = Math.floor(player.y / 16);
+        if (Math.abs(px - tx) + Math.abs(py - ty) > 5) {
+            console.log(`🚨 Hack blocked: ${player.wallet} tried to drop item too far away.`);
+            return; 
+        }
+
+        // Securely pack traits on the server
+        const typeId = BACTERIA_TYPES[item.seedType] || 0;
+        let packedTraits = 0;
+        if (typeId === 61) {
+            packedTraits = ((item.houseId & 0xFFFF) | ((typeId & 0xFF) << 20)) >>> 0;
+        } else {
+            packedTraits = ((Math.floor(item.health) & 0xFF) | ((Math.floor(item.virulence) & 0xFF) << 8) | ((2 & 0x0F) << 16) | ((typeId & 0xFF) << 20)) >>> 0;
+        }
+
+        // Broadcast the new item drop on the ground to all clients
+        io.emit('syncTile', { gx: tx, gy: ty, traits: packedTraits });
+
+        // Subtract from server inventory
+        item.count -= amount;
+        if (item.count <= 0) {
+            player.inventory.splice(index, 1);
+        }
+
+        syncPlayerAndSave(socket.id);
+        socket.emit('updateInventory', player.inventory);
+    });
+
+    // 4. Chest Transfer Request
+    socket.on('requestChestTransfer', (data) => {
+        const { chestId, index, direction } = data;
+        const player = players[socket.id];
+        if (!player || !player.inventory) return;
+
+        // Validate distance to chest
+        const cx = Math.floor(player.x / 16);
+        const cy = Math.floor(player.y / 16);
+        const coords = chestId.split('_');
+        const tx = parseInt(coords[1]);
+        const ty = parseInt(coords[2]);
+        if (Math.abs(cx - tx) + Math.abs(cy - ty) > 5) return; 
+
+        if (!chestDb[chestId]) chestDb[chestId] = [];
+        const chestItems = chestDb[chestId];
+
+        if (direction === 'to_chest') {
+            const item = player.inventory[index];
+            if (!item) return;
+
+            player.inventory.splice(index, 1);
+            chestItems.push(item);
+        } else if (direction === 'to_hero') {
+            if (player.inventory.length >= 10) {
+                socket.emit('inventoryFull');
+                return;
+            }
+            const item = chestItems[index];
+            if (!item) return;
+
+            chestItems.splice(index, 1);
+            player.inventory.push(item);
+        }
+
+        fs.writeFileSync('chests.json', JSON.stringify(chestDb, null, 2));
+        syncPlayerAndSave(socket.id);
+
+        socket.emit('updateInventory', player.inventory);
+        io.emit('chestUpdated', { chestId, items: chestItems });
+    });
+
+    // 5. Root Cellar Transfer Request
+    socket.on('requestCellarTransfer', (data) => {
+        const { cellarId, index, direction } = data;
+        const player = players[socket.id];
+        if (!player || !player.inventory) return;
+
+        if (!cellarDb[cellarId]) cellarDb[cellarId] = [];
+        const cellarItems = cellarDb[cellarId];
+
+        if (direction === 'to_cellar') {
+            const item = player.inventory[index];
+            if (!item || !["fish", "cooked_fish", "grass_item"].includes(item.seedType)) return;
+
+            player.inventory.splice(index, 1);
+            cellarItems.push(item);
+        } else if (direction === 'to_hero') {
+            if (player.inventory.length >= 10) {
+                socket.emit('inventoryFull');
+                return;
+            }
+            const item = cellarItems[index];
+            if (!item) return;
+
+            cellarItems.splice(index, 1);
+            player.inventory.push(item);
+        }
+
+        fs.writeFileSync('cellars.json', JSON.stringify(cellarDb, null, 2));
+        syncPlayerAndSave(socket.id);
+
+        socket.emit('updateInventory', player.inventory);
+        io.emit('cellarUpdated', { cellarId, items: cellarItems });
+    });
+
+    // 6. Hay Storage Transfer Request
+    socket.on('requestHayTransfer', (data) => {
+        const { hayStorageId, index, direction } = data;
+        const player = players[socket.id];
+        if (!player || !player.inventory) return;
+
+        if (!hayDb[hayStorageId]) hayDb[hayStorageId] = [];
+        const hayItems = hayDb[hayStorageId];
+
+        if (direction === 'to_storage') {
+            const item = player.inventory[index];
+            if (!item || item.seedType !== 'hay') return;
+
+            player.inventory.splice(index, 1);
+            hayItems.push(item);
+        } else if (direction === 'to_hero') {
+            if (player.inventory.length >= 10) {
+                socket.emit('inventoryFull');
+                return;
+            }
+            const item = hayItems[index];
+            if (!item) return;
+
+            hayItems.splice(index, 1);
+            player.inventory.push(item);
+        }
+
+        fs.writeFileSync('hay.json', JSON.stringify(hayDb, null, 2));
+        syncPlayerAndSave(socket.id);
+
+        socket.emit('updateInventory', player.inventory);
+        io.emit('hayStorageUpdated', { hayStorageId, items: hayItems });
+    });
+
+    // 7. Secure Altar Sacrifice (Index-based)
+    socket.on('sacrificeItem', (data) => {
+        const { index } = data;
+        const player = players[socket.id];
+        if (!player || !player.inventory) return;
+
+        const item = player.inventory[index];
+        if (!item) return;
+
+        const isValidSeed = POINT_VALUES[item.seedType];
+        if (!isValidSeed) return;
+
+        const count = Math.min(64, Math.max(1, item.count || 1));
+
+        // Calculate Payout securely on server
+        const effectiveTGV = Math.max(0.00000001, currentTVL - globalDebt);
+        const pointsPerSeed = effectiveTGV / 640000;
+        const totalPoints = pointsPerSeed * count;
+
+        // Deduct item from server inventory
+        player.inventory.splice(index, 1);
+
+        // Apply Points and Debt
+        player.inGameUni = (parseFloat(player.inGameUni) || 0.0) + totalPoints;
+        globalDebt = (parseFloat(globalDebt) || 0.0) + totalPoints;
+        
+        saveDebt();
+        syncPlayerAndSave(socket.id); 
+        
+        socket.emit('balanceUpdated', { inGameUni: player.inGameUni });
+        socket.emit('updateInventory', player.inventory); // Sync changes to client
+        
+        if (typeof broadcastEffectiveTGV === 'function') broadcastEffectiveTGV();
+        if (typeof logActivity === 'function') {
+            logActivity('SACRIFICE', socket.wallet || socket.id, `Sacrificed ${count}x ${item.seedType} for ${totalPoints.toFixed(8)} UNI`);
+        }
+
+        console.log(`💎 ${socket.wallet || socket.id} sacrificed ${count}x ${item.seedType} securely`);
+    });
+
 
 // --- ⚔️ UPDATED: LOGARITHMIC ARMOR SCALING ---
 socket.on('pvpAttack', (data) => {

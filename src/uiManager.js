@@ -51,14 +51,6 @@ export function openCraftingTableMenu() {
     document.getElementById('workshop-menu').classList.remove('hidden');
 }
 
-export function syncInventoryWithServer() {
-    if (socket) {
-        socket.emit('syncInventory', {
-            inventory: hero.inventory,
-            equipment: hero.equipment
-        });
-    }
-}
 
 function renderSmelterUI() {
     if (!activeSmelterData) return;
@@ -908,26 +900,15 @@ function handleDrop(e, targetSource) {
     }
 }
 
+// Inside src/uiManager.js:
+
 function transferItem(index, source) {
     if (source === 'hero') {
-        const item = hero.inventory.splice(index, 1)[0];
-        activeChestItems.push(item);
+        // 🎯 THE SECURE FIX: Send secure chest-transfer requests
+        if (socket) socket.emit('requestChestTransfer', { chestId: activeChestId, index: index, direction: 'to_chest' });
     } else {
-        if (hero.inventory.length >= hero.maxSlots) {
-            alert("Backpack is full!");
-            return;
-        }
-        const item = activeChestItems.splice(index, 1)[0];
-        hero.inventory.push(item);
+        if (socket) socket.emit('requestChestTransfer', { chestId: activeChestId, index: index, direction: 'to_hero' });
     }
-
-    if (socket) {
-        socket.emit('updateChest', { chestId: activeChestId, items: activeChestItems });
-    }
-
-    renderChestUI();
-        syncInventoryWithServer(); // 👈 Sync changes to server
-
 }
 
 // ==========================================
@@ -1185,37 +1166,44 @@ export function openTempleMenu() {
     renderTempleUI();
 }
 
+// Inside renderTempleUI() in src/uiManager.js:
+
 function renderTempleUI() {
     const heroInv = document.getElementById('temple-hero-inv');
     const altarSlot = document.getElementById('temple-slot');
 
+    // Draw backpack items inside the Temple Altar window
     heroInv.innerHTML = hero.inventory.map((item, i) => `
-        <div class="inv-item draggable-item" draggable="true" data-index="${i}" data-source="hero-temple">
+        <div class="inv-item click-sacrifice-item" data-index="${i}">
             <div class="item-icon" style="font-size: 24px;">${getItemIcon(item)}</div>
             <strong>${item.name}</strong>
             ${item.count > 1 ? `<span style="color:var(--banana-dark); font-size:8px;">(x${item.count})</span>` : ''}
         </div>
     `).join('');
 
-    if (altarItem) {
-        altarSlot.innerHTML = `
-            <div class="inv-item draggable-item" draggable="true" data-index="0" data-source="altar" style="border: none; background: transparent;">
-                <div class="item-icon" style="font-size: 32px;">${getItemIcon(altarItem)}</div>
-                <strong>${altarItem.name}</strong>
-                ${altarItem.count > 1 ? `<span style="color:var(--banana-dark); font-size:10px;">(x${altarItem.count})</span>` : ''}
-            </div>
-        `;
-    } else {
-        altarSlot.innerHTML = `<div style="color:#666; font-size: 12px; text-align: center;">Drag Seed<br>Here</div>`;
-    }
+    // Clear the redundant drag slot
+    altarSlot.innerHTML = `<div style="color: var(--banana-dark); font-size: 10px; text-align: center; padding: 20px;">CLICK BACKPACK<br>SEED TO<br>SACRIFICE</div>`;
 
-    const items = document.querySelectorAll('#temple-menu .draggable-item');
+    // Click to Sacrifice directly (highly secure and foolproof)
+    const items = document.querySelectorAll('#temple-menu .click-sacrifice-item');
     items.forEach(item => {
-        item.addEventListener('dragstart', (e) => {
-            e.dataTransfer.setData('index', item.dataset.index);
-            e.dataTransfer.setData('source', item.dataset.source);
+        item.addEventListener('click', () => {
+            const index = parseInt(item.dataset.index);
+            const inventoryItem = hero.inventory[index];
+            
+            // Check if it's a seed
+            if (!inventoryItem.seedType.includes("_seed")) {
+                alert("The Gods reject this offering! They only accept Seeds.");
+                return;
+            }
+
+            if (confirm(`Do you want to sacrifice ${inventoryItem.count}x ${inventoryItem.name} for UNI?`)) {
+                if (socket) {
+                    // Send index of item to sacrifice directly
+                    socket.emit('sacrificeItem', { index: index });
+                }
+            }
         });
-        item.addEventListener('click', () => transferTempleItem(item.dataset.index, item.dataset.source));
     });
 }
 
@@ -1343,6 +1331,8 @@ function handleCellarDrop(e, targetSource) {
     if (source && source !== targetSource) transferCellarItem(index, source);
 }
 
+// Inside src/uiManager.js:
+
 function transferCellarItem(index, source) {
     if (source === 'hero-cellar') {
         const item = hero.inventory[index];
@@ -1350,21 +1340,11 @@ function transferCellarItem(index, source) {
             alert("The Root Cellar is for food only!");
             return;
         }
-        hero.inventory.splice(index, 1);
-        activeCellarItems.push(item);
+        // 🎯 THE SECURE FIX: Send cellar-transfer requests
+        if (socket) socket.emit('requestCellarTransfer', { cellarId: activeCellarId, index: index, direction: 'to_cellar' });
     } else {
-        if (hero.inventory.length >= hero.maxSlots) {
-            alert("Backpack is full!");
-            return;
-        }
-        const item = activeCellarItems.splice(index, 1)[0];
-        hero.inventory.push(item);
+        if (socket) socket.emit('requestCellarTransfer', { cellarId: activeCellarId, index: index, direction: 'to_hero' });
     }
-
-    if (socket) socket.emit('updateCellar', { cellarId: activeCellarId, items: activeCellarItems });
-    renderCellarUI();
-        syncInventoryWithServer(); // 👈 Sync changes to server
-
 }
 
 // ==========================================
@@ -1424,6 +1404,8 @@ function handleHayStorageDrop(e, targetSource) {
     if (source && source !== targetSource) transferHayStorageItem(index, source);
 }
 
+// Inside src/uiManager.js:
+
 function transferHayStorageItem(index, source) {
     if (source === 'hero-hay') {
         const item = hero.inventory[index];
@@ -1431,21 +1413,11 @@ function transferHayStorageItem(index, source) {
             alert("Only Dried Hay can be stored here!");
             return;
         }
-        hero.inventory.splice(index, 1);
-        activeHayStorageItems.push(item);
+        // 🎯 THE SECURE FIX: Send hay-transfer requests
+        if (socket) socket.emit('requestHayTransfer', { hayStorageId: activeHayStorageId, index: index, direction: 'to_storage' });
     } else {
-        if (hero.inventory.length >= hero.maxSlots) {
-            alert("Backpack is full!");
-            return;
-        }
-        const item = activeHayStorageItems.splice(index, 1)[0];
-        hero.inventory.push(item);
+        if (socket) socket.emit('requestHayTransfer', { hayStorageId: activeHayStorageId, index: index, direction: 'to_hero' });
     }
-    if (socket) socket.emit('updateHayStorage', { hayStorageId: activeHayStorageId, items: activeHayStorageItems });
-    renderHayStorageUI();
-
-        syncInventoryWithServer(); // 👈 Sync changes to server
-
 }
 
 // ==========================================
@@ -1600,50 +1572,16 @@ export function updateHUD() {
 // src/uiManager.js
 
 window.equipItem = (invIndex) => {
-    // 🛠️ CRITICAL FIX: Explicitly ensure the equipment object exists on the hero
-    if (!hero.equipment) hero.equipment = { mainHand: null };
-    
-    // Safety check: is there actually an item in this backpack slot?
-    const itemToEquip = hero.inventory[invIndex];
-    if (!itemToEquip) return;
-
-    console.log(`Holding: ${itemToEquip.name}`);
-
-    if (hero.equipment.mainHand) {
-        // 🔄 SWAP: Hand -> Backpack, Backpack -> Hand
-        const currentInHand = hero.equipment.mainHand;
-        hero.equipment.mainHand = itemToEquip;
-        hero.inventory[invIndex] = currentInHand;
-    } else {
-        // ✋ EQUIP: Move from Backpack to empty Hand
-        hero.equipment.mainHand = itemToEquip;
-        hero.inventory.splice(invIndex, 1);
+    // 🎯 THE SECURE FIX: Send an equip request to the server instead of doing it locally
+    if (socket) {
+        socket.emit('requestEquip', { index: invIndex });
     }
-    
-    // Immediately update stats and refresh the UI
-    import('./interactionManager.js').then(m => {
-        m.recalculateStats();
-        renderTabContent(); // Refresh to show the border/new counts
-    });
-
-        syncInventoryWithServer(); // 👈 Sync changes to server
-
 };
 
 window.unequipMainHand = () => {
-    if (hero.equipment.mainHand) {
-        if (hero.inventory.length >= hero.maxSlots) {
-            alert("Backpack is full!");
-            return;
-        }
-        hero.inventory.push(hero.equipment.mainHand);
-        hero.equipment.mainHand = null;
-        
-        import('./interactionManager.js').then(m => m.recalculateStats());
-        renderTabContent(); 
-
-            syncInventoryWithServer(); // 👈 Sync changes to server
-
+    // 🎯 THE SECURE FIX: Send an unequip request to the server instead of doing it locally
+    if (socket) {
+        socket.emit('requestUnequip');
     }
 };
 
@@ -1697,60 +1635,16 @@ document.getElementById('cancel-split-btn').onclick = () => {
 
 // In src/uiManager.js
 
+// Inside src/uiManager.js:
+
 function dropItemToWorld(index, amount) {
-    const item = hero.inventory[index];
     const originTX = Math.floor((hero.x + 8) / 16);
     const originTY = Math.floor((hero.y + 15) / 16); // Feet
 
-    let droppedCount = 0;
-
-    import('./bacteria.js').then(m => {
-        
-        let dropHealth = item.health;
-        let dropVirulence = item.virulence;
-
-        // 👇 THE FIX: Pass the raw 16-bit ID directly! No bit-splitting!
-        if (item.isKey) {
-            dropHealth = item.houseId; 
-            dropVirulence = 0;
-        } else if (item.seedType === "egg") {
-            dropHealth = 1; // Drop 1 egg per tile scattered
-        }
-
-        // If dropping 1 item, put it directly at feet
-        if (amount === 1) {
-            const bac = m.getBacteriaData(originTX, originTY);
-            if (bac && bac.data[bac.idx] === 0) {
-                m.seedBacteria(originTX, originTY, item.seedType, dropHealth, dropVirulence);
-                droppedCount++;
-            }
-        }
-
-        // Scatter grid if feet are blocked or dropping a stack
-        if (droppedCount < amount) {
-            for (let dx = -1; dx <= 1 && droppedCount < amount; dx++) {
-                for (let dy = -1; dy <= 1 && droppedCount < amount; dy++) {
-                    const targetTX = originTX + dx;
-                    const targetTY = originTY + dy;
-                    
-                    const bac = m.getBacteriaData(targetTX, targetTY);
-                    if (bac && bac.data[bac.idx] === 0) {
-                        m.seedBacteria(targetTX, targetTY, item.seedType, dropHealth, dropVirulence);
-                        droppedCount++;
-                    }
-                }
-            }
-        }
-
-        item.count -= droppedCount;
-        if (item.count <= 0) {
-            hero.inventory.splice(index, 1);
-        }
-        
-        renderTabContent();
-            syncInventoryWithServer(); // 👈 Sync changes to server
-
-    });
+    // 🎯 THE SECURE FIX: Ask the server to drop the item coordinate securely
+    if (socket) {
+        socket.emit('requestDrop', { index: index, amount: amount, tx: originTX, ty: originTY });
+    }
 }
 
 
