@@ -88,13 +88,42 @@ export function initMultiplayer() {
              });
         });
 
+        // Replace the updateInventory socket listener inside src/multiplayer.js with this:
+
         socket.on('updateInventory', (serverInventory) => {
-    import('./entities.js').then(m => {
-        m.hero.inventory = serverInventory;
-        // Refresh the UI if the bag is open
-        import('./uiManager.js').then(ui => ui.renderTabContent());
-    });
-});
+            import('./entities.js').then(m => {
+                m.hero.inventory = serverInventory;
+                
+                // Refresh standard menu tabs (if open)
+                import('./uiManager.js').then(ui => {
+                    ui.renderTabContent();
+                    
+                    // 🎯 THE FIX: If the Temple Altar menu is open, redraw it instantly!
+                    const templeMenu = document.getElementById('temple-menu');
+                    if (templeMenu && !templeMenu.classList.contains('hidden')) {
+                        ui.renderTempleUI();
+                    }
+                    
+                    // 🎯 THE FIX: If the Chest storage menu is open, redraw it!
+                    const chestMenu = document.getElementById('chest-menu');
+                    if (chestMenu && !chestMenu.classList.contains('hidden')) {
+                        ui.renderChestUI();
+                    }
+                    
+                    // 🎯 THE FIX: If the Root Cellar menu is open, redraw it!
+                    const cellarMenu = document.getElementById('cellar-menu');
+                    if (cellarMenu && !cellarMenu.classList.contains('hidden')) {
+                        ui.renderCellarUI();
+                    }
+
+                    // 🎯 THE FIX: If the Hay Storage menu is open, redraw it!
+                    const hayMenu = document.getElementById('hay-storage-menu');
+                    if (hayMenu && !hayMenu.classList.contains('hidden')) {
+                        ui.renderHayStorageUI();
+                    }
+                });
+            });
+        });
 
         socket.on('restoreHero', (data) => {
             hero.xp = data.xp || 0;

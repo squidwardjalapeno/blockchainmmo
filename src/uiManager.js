@@ -858,7 +858,7 @@ export function handleRemoteChestUpdate(chestId, items) {
     }
 }
 
-function renderChestUI() {
+export function renderChestUI() {
     if (!activeChestId) return;
 
     const heroInv = document.getElementById('chest-hero-inv');
@@ -1168,7 +1168,7 @@ export function openTempleMenu() {
 
 // Inside renderTempleUI() in src/uiManager.js:
 
-function renderTempleUI() {
+export function renderTempleUI() {
     const heroInv = document.getElementById('temple-hero-inv');
     const altarSlot = document.getElementById('temple-slot');
 
@@ -1295,7 +1295,7 @@ export function handleRemoteCellarUpdate(cellarId, items) {
     }
 }
 
-function renderCellarUI() {
+export function renderCellarUI() {
     if (!activeCellarId) return;
 
     const heroInv = document.getElementById('cellar-hero-inv');
@@ -1368,7 +1368,7 @@ export function handleRemoteHayStorageUpdate(hayStorageId, items) {
     }
 }
 
-function renderHayStorageUI() {
+export function renderHayStorageUI() {
     if (!activeHayStorageId) return;
 
     const heroInv = document.getElementById('hay-storage-hero-inv');
