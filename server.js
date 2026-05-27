@@ -77,6 +77,52 @@ const POINT_VALUES = {
 
 // Inside server.js:
 
+
+// Add this definition to server.js:
+
+const BACTERIA_TYPES = {
+    "organic_drop": 1, "fish": 1, "organic_plant": 2, "grass": 2,
+    "plant_matter": 3, "chicken_poop": 4, "cooked_fish": 5,
+    "turnip_item": 6, "tomato_item": 7, "eggplant_item": 8,
+    "strawberry_item": 9, "pumpkin_item": 10, "watermelon_item": 11,
+    "corn_item": 12, "pineapple_item": 13, "potato_item": 14,
+    "wheat_item": 15, "egg": 16,
+    
+    "grass_seed": 20, "turnip_seed": 21, "tomato_seed": 22, "eggplant_seed": 23,
+    "strawberry_seed": 24, "pumpkin_seed": 25, "watermelon_seed": 26, "corn_seed": 27,
+    "pineapple_seed": 28, "potato_seed": 29, "wheat_seed": 30,
+    "rose_seed": 31, "violet_seed": 32, "sunflower_seed": 33,
+
+    "fish_trout": 40, "fish_panfish": 41, "fish_mackerel": 42, 
+    "fish_muskellunge": 43, "fish_trevally": 44, "fish_squid": 45, 
+    "fish_octopus": 46, "fish_eel": 47, "fish_angler": 48,
+
+    "raw_chicken": 50, 
+    "weapon_dagger": 60,
+    "key": 61,
+};
+
+// Add this definition map to server.js:
+
+// Replace the SERVER_PLANT_DEFS block in server.js with this:
+
+const SERVER_PLANT_DEFS = {
+    'grass':     { growthRate: 0.5,  stages: 5, window: 1 },
+    'rose':      { growthRate: 0.25, stages: 5, window: 1 },
+    'violet':    { growthRate: 0.25, stages: 5, window: 1 },
+    'sunflower': { growthRate: 0.25, stages: 5, window: 1 },
+    'turnip':    { growthRate: 0.4,  stages: 4, window: 1 },
+    'tomato':    { growthRate: 0.2,  stages: 12, window: 3, isCyclical: true, resetGrowth: 26 },
+    'eggplant':  { growthRate: 0.15, stages: 10, window: 1, isCyclical: true, resetGrowth: 31 },
+    'strawberry':{ growthRate: 0.24, stages: 10, window: 1, isCyclical: true, resetGrowth: 31 },
+    'pumpkin':   { growthRate: 0.35, stages: 4, window: 1 },
+    'watermelon':{ growthRate: 0.35, stages: 4, window: 1 },
+    'corn':      { growthRate: 0.35, stages: 4, window: 1 },
+    'wheat':     { growthRate: 0.4,  stages: 4, window: 1 },
+    'pineapple': { growthRate: 0.05, stages: 5, window: 1 },
+    'potato':    { growthRate: 0.15, stages: 5, window: 1 }
+};
+
 // Inside server.js:
 
 const SERVER_ITEM_TYPES = {
@@ -124,6 +170,8 @@ const SERVER_ITEM_TYPES = {
     ANGLERFISH: { name: "Anglerfish", seedType: "fish_angler", baseHealth: 80, baseVirulence: 10, spriteID: 29, tileset: "fishTileset", maxStack: 8 },
 };
 
+
+
 function createServerItem(template) {
     return {
         ...template,
@@ -164,6 +212,23 @@ function giveItemToServerInventory(player, newItem) {
 
     return false; // Backpack full
 }
+
+// Add this helper function to server.js:
+
+function isServerPlantMature(plant, currentGrowth) {
+    const def = SERVER_PLANT_DEFS[plant.type];
+    if (!def) return false;
+
+    const stagesLength = def.stages;
+    const harvestWindow = def.window || 1;
+
+    // Calculate current stage index exactly like the client
+    const currentStageIdx = Math.min(stagesLength - 1, Math.floor(currentGrowth / (100 / stagesLength)));
+    
+    // Is mature if current stage index is within the mature window
+    return currentStageIdx >= (stagesLength - harvestWindow);
+}
+
 
 function getRandomServerFish() {
     const roll = Math.random() * 100;
@@ -679,6 +744,8 @@ socket.on('collectAnvil', (data) => {
 
     // Replace the requestHarvest socket listener inside server.js with this:
 
+    // Replace the requestHarvest socket listener inside server.js with this:
+
     socket.on('requestHarvest', (data) => {
         const { tx, ty } = data;
         const player = players[socket.id];
@@ -686,14 +753,29 @@ socket.on('collectAnvil', (data) => {
 
         const plantKey = `${tx}_${ty}`;
         const plant = serverPlants.get(plantKey);
-        if (!plant || plant.growth < 100) return; 
+        if (!plant) return; 
+
+        // 🎯 On-the-fly growth calculation based on elapsed real-time seconds
+        const elapsedSeconds = (Date.now() - plant.timestamp) / 1000;
+        const currentGrowth = plant.growth + (plant.growthRate * 0.1 * elapsedSeconds);
+
+        // 🎯 THE FIX: Verify against the exact client-side visual stage and window math
+        if (!isServerPlantMature(plant, currentGrowth)) {
+            console.log(`🔒 Crop at [${tx}, ${ty}] is not mature on server yet (${currentGrowth.toFixed(2)}%)`);
+            return; 
+        }
 
         // Distance validation
         const px = Math.floor(player.x / 16);
         const py = Math.floor(player.y / 16);
         if (Math.abs(px - tx) + Math.abs(py - ty) > 5) return;
 
-        // 1. Determine Yields
+        if (player.inventory.length >= 10) {
+            socket.emit('inventoryFull');
+            return;
+        }
+
+        // Yield Map
         const yieldMap = {
             'turnip': 'TURNIP_ITEM', 'tomato': 'TOMATO_ITEM',
             'eggplant': 'EGGPLANT_ITEM', 'strawberry': 'STRAWBERRY_ITEM',
@@ -708,35 +790,30 @@ socket.on('collectAnvil', (data) => {
         const cropTemplate = SERVER_ITEM_TYPES[itemTypeName];
         
         if (cropTemplate) {
-            // Securely stack the crop in the player's inventory
             giveItemToServerInventory(player, createServerItem(cropTemplate));
         }
 
-        // 2. 🎯 THE SEED DROP: Award 1 to 2 seeds of the harvested plant type
+        // Seed Drop
         const seedConstName = `${plant.type.toUpperCase()}_SEED`;
         const seedTemplate = SERVER_ITEM_TYPES[seedConstName];
         if (seedTemplate) {
-            const seedCount = Math.floor(Math.random() * 2) + 1; // 1 or 2 seeds
+            const seedCount = Math.floor(Math.random() * 2) + 1; 
             const seedItem = createServerItem(seedTemplate);
             seedItem.count = seedCount;
             giveItemToServerInventory(player, seedItem);
         }
 
-        // 3. 🎯 CYCLICAL RESET: Tomatoes, Eggplants, & Strawberries reset instead of dying
-        const SERVER_PLANT_DEFS = {
-            'tomato': { isCyclical: true, resetGrowth: 26 },
-            'eggplant': { isCyclical: true, resetGrowth: 31 },
-            'strawberry': { isCyclical: true, resetGrowth: 31 }
-        };
-
+        // Cyclical check
         const def = SERVER_PLANT_DEFS[plant.type];
         if (def && def.isCyclical) {
-            plant.growth = def.resetGrowth; // Reset growth state
-            io.emit('plantReset', { gx: tx, gy: ty, growth: def.resetGrowth }); // Broadcast to all clients
+            // Reset growth and the starting timestamp
+            plant.growth = def.resetGrowth;
+            plant.timestamp = Date.now(); 
+            
+            io.emit('plantReset', { gx: tx, gy: ty, growth: def.resetGrowth }); 
         } else {
-            // Non-cyclical: Delete from server database
             serverPlants.delete(plantKey);
-            io.emit('plantRemoved', { gx: tx, gy: ty }); // Broadcast to all clients
+            io.emit('plantRemoved', { gx: tx, gy: ty }); 
         }
 
         syncPlayerAndSave(socket.id);
@@ -1194,7 +1271,8 @@ socket.on('requestActivityLog', () => {
         socket.emit('restoreHero', player);
     });
 
-    // 3. Drop Item Request
+    // Replace the requestDrop socket listener inside server.js with this:
+
     socket.on('requestDrop', (data) => {
         const { index, amount, tx, ty } = data;
         const player = players[socket.id];
@@ -1211,13 +1289,17 @@ socket.on('requestActivityLog', () => {
             return; 
         }
 
-        // Securely pack traits on the server
-        const typeId = BACTERIA_TYPES[item.seedType] || 0;
+        const typeId = BACTERIA_TYPES[item.seedType] || 0; 
         let packedTraits = 0;
+        
         if (typeId === 61) {
             packedTraits = ((item.houseId & 0xFFFF) | ((typeId & 0xFF) << 20)) >>> 0;
         } else {
-            packedTraits = ((Math.floor(item.health) & 0xFF) | ((Math.floor(item.virulence) & 0xFF) << 8) | ((2 & 0x0F) << 16) | ((typeId & 0xFF) << 20)) >>> 0;
+            // Apply safe numerical defaults in case properties are missing
+            const hVal = item.health !== undefined ? item.health : (item.baseHealth || 100);
+            const vVal = item.virulence !== undefined ? item.virulence : (item.baseVirulence || 0);
+
+            packedTraits = ((Math.floor(hVal) & 0xFF) | ((Math.floor(vVal) & 0xFF) << 8) | ((2 & 0x0F) << 16) | ((typeId & 0xFF) << 20)) >>> 0;
         }
 
         // Broadcast the new item drop on the ground to all clients
@@ -1895,15 +1977,6 @@ function broadcastEffectiveTGV() {
 
 // Add this interval to the bottom of server.js:
 
-// 🕰️ Server-side Plant Growth Tick (Runs once per second)
-setInterval(() => {
-    for (let [key, plant] of serverPlants) {
-        if (plant.growth < 100) {
-            // Standard average growth rate: 0.3% per second
-            plant.growth = Math.min(100, plant.growth + 0.3);
-        }
-    }
-}, 1000);
 
 // --- Replace your setInterval at the bottom of server.js ---
 
