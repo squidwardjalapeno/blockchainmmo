@@ -373,17 +373,16 @@ export function initMultiplayer() {
             });
         });
 
-        // Inside initMultiplayer() in src/multiplayer.js:
+        // Update the chunkPlantsData socket listener inside src/multiplayer.js:
 
-        // 🎯 THE FIX: Receive synchronized chunk plants from the server
-        socket.on('chunkPlantsData', (data) => {
-            import('./plants.js').then(m => {
-                data.plants.forEach(p => {
-                    // Spawns the plant locally with matching types and growth
-                    m.createPlant(p.gx, p.gy, fertilityMatrix, p.growth, p.type);
+            // 🎯 THE FIX: Pass "null" as the fertilityMatrix argument to bypass soil deductions safely
+            socket.on('chunkPlantsData', (data) => {
+                import('./plants.js').then(m => {
+                    data.plants.forEach(p => {
+                        m.createPlant(p.gx, p.gy, null, p.growth, p.type); // 👈 Updated here
+                    });
                 });
             });
-        });
 
         // Inside socket.on('position'...) in src/multiplayer.js:
 

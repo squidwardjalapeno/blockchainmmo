@@ -84,7 +84,9 @@ function witherPlant(plant, key, fertilityMatrix) {
     plants.delete(key);
 }
 
-export function createPlant(gx, gy, fertilityMatrix, startingGrowth = 0, type = 'grass', leftoverTime = 0) {
+// Replace createPlant() in src/plants.js with this:
+
+export function createPlant(gx, gy, fertilityMatrix = null, startingGrowth = 0, type = 'grass', leftoverTime = 0) {
     const key = `${gx}_${gy}`;
     if (plants.has(key)) return; 
 
@@ -94,14 +96,15 @@ export function createPlant(gx, gy, fertilityMatrix, startingGrowth = 0, type = 
     const ly = ((gy % 100) + 100) % 100;
     const idx = (ly * 100) + lx; 
 
-    const cell = fertilityMatrix[cx]?.[cy];
-    if (!cell) return;
-
-    const soilF = cell[idx] || 0;
-    const required = PLANT_DEFS[type].fertilityReq;
-    if (soilF < required) return; 
-
-    cell[idx] -= required;
+    // 🎯 THE FIX: Only attempt soil deductions if fertilityMatrix is physically passed!
+    if (fertilityMatrix) {
+        const cell = fertilityMatrix[cx]?.[cy];
+        if (cell) {
+            const required = PLANT_DEFS[type].fertilityReq;
+            // Deduct fertility from the soil safely, capping at 0
+            cell[idx] = Math.max(0, cell[idx] - required); 
+        }
+    }
 
     const maxHP = (type === 'grass') ? 60 : 40;
     let initialStage = 0;
@@ -125,9 +128,14 @@ export function createPlant(gx, gy, fertilityMatrix, startingGrowth = 0, type = 
 
     import('./bacteria.js').then(m => m.seedBacteria(gx, gy, "organic_plant", maxHP, 0));
 
-    // 🎯 THE FIX: Automatically register this wild plant in the server's master database!
     if (socket && socket.connected) {
-        socket.emit('registerWildPlant', { gx, gy, type, growth: startingGrowth });
+        socket.emit('registerWildPlant', { 
+            gx: gx, 
+            gy: gy, 
+            type: type, 
+            growth: startingGrowth,
+            growthRate: PLANT_DEFS[type].growthRate
+        });
     }
 }
 
