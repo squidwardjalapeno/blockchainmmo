@@ -757,19 +757,34 @@ export function drawHero() {
     }
 }
 
+// Inside src/renderer.js:
+
 export function drawRemotePlayers(ctx2, remotePlayersData) {
     remotePlayersData.forEach(p => {
+        // Calculate screen positions using standard camera offsets
         let sx = Math.floor(p.x + viewport.offset[0]);
         let sy = Math.floor(p.y + viewport.offset[1]);
 
+        // Viewport culling bounds
         if (sx < -32 || sx > canvas2.width + 32 || sy < -32 || sy > canvas2.height + 32) return;
         
         if (p.isOffline) ctx2.globalAlpha = 0.5; 
         
-        const imgKey = `heroWalk${p.dir || 'South'}`;
+        const isMoving = p.isMoving;
+        const isLunge = p.isLunge; // 👈 🎯 THE FIX: Read the lunge flag
+
+        // 🎯 THE FIX: Choose the lunge sheet if they are attacking, otherwise default to walk
+        let imgKey = `heroWalk${p.dir || 'South'}`;
+        if (isLunge) {
+            imgKey = `heroLunge${p.dir || 'South'}`; 
+        }
+        
         const img = images[imgKey] || images.heroWalkSouth;
         if (!img || !img.complete) return;
 
+        // ==========================================
+        // 1. VISUAL EFFECTS (Behind Hero)
+        // ==========================================
         if (p.bulwarkTimer && p.bulwarkTimer > 0) {
             ctx2.strokeStyle = "rgba(100, 200, 255, 0.8)"; 
             ctx2.lineWidth = 2;
@@ -807,10 +822,19 @@ export function drawRemotePlayers(ctx2, remotePlayersData) {
             ctx2.stroke();
         }
 
-        ctx2.drawImage(img, (p.animFrame || 0) * 16, 0, 16, 16, sx, sy, 16, 16);
+        // ==========================================
+        // 2. DRAW HERO SPRITE
+        // ==========================================
+        // 🎯 THE FIX: Lock to Frame 1 (Sword extended) during the lunge, otherwise draw standard walk frames
+        const frame = isLunge ? 1 : (p.animFrame || 0);
+
+        ctx2.drawImage(img, frame * 16, 0, 16, 16, sx, sy, 16, 16);
         ctx2.shadowBlur = 0;
         ctx2.globalAlpha = 1.0; 
 
+        // ==========================================
+        // 3. VISUAL EFFECTS (In Front of Hero)
+        // ==========================================
         if (p.cc && p.cc.hasResonance) {
             ctx2.fillStyle = "#FF1493"; 
             ctx2.beginPath();
@@ -821,6 +845,9 @@ export function drawRemotePlayers(ctx2, remotePlayersData) {
             ctx2.fill();
         }
 
+        // ==========================================
+        // 4. UI: NAMEPLATE & HEALTH BARS
+        // ==========================================
         ctx2.fillStyle = p.isOffline ? "#888888" : "white"; 
         ctx2.font = "8px Arial";
         ctx2.textAlign = "center";
@@ -840,6 +867,9 @@ export function drawRemotePlayers(ctx2, remotePlayersData) {
         ctx2.fillStyle = "#FF0000"; 
         ctx2.fillRect(sx, sy - 4, barW * (p.hp / (p.maxHp || 100)), barH);
 
+        // ==========================================
+        // 5. 🤖 DRAW REMOTE ZENITH GUARDIANS
+        // ==========================================
         if (p.pet && p.pet.active) {
             const petSx = Math.floor(p.pet.x + viewport.offset[0]);
             const petSy = Math.floor(p.pet.y + viewport.offset[1]);

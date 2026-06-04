@@ -373,13 +373,26 @@ export function initMultiplayer() {
             });
         });
 
-        socket.on('position', (data) => {
-            const { playerbase, projectiles } = data; 
+        // Inside initMultiplayer() in src/multiplayer.js:
 
-            // 👇 THE FIX: Purge ghosts from our local map!
+        // 🎯 THE FIX: Receive synchronized chunk plants from the server
+        socket.on('chunkPlantsData', (data) => {
+            import('./plants.js').then(m => {
+                data.plants.forEach(p => {
+                    // Spawns the plant locally with matching types and growth
+                    m.createPlant(p.gx, p.gy, fertilityMatrix, p.growth, p.type);
+                });
+            });
+        });
+
+        // Inside socket.on('position'...) in src/multiplayer.js:
+
+        socket.on('position', (data) => {
+            const { playerbase, projectiles, animals: serverAnimals } = data; // 👈 Accept animals list
+
             for (const localId of remotePlayers.keys()) {
                 if (!playerbase[localId]) {
-                    remotePlayers.delete(localId); // Player disconnected, delete them
+                    remotePlayers.delete(localId); 
                 }
             }
             
@@ -389,12 +402,10 @@ export function initMultiplayer() {
                     let localP = remotePlayers.get(id);
 
                     if (!localP) {
-                        // New player: Initialize them exactly where the server says
                         serverP.targetX = serverP.x;
                         serverP.targetY = serverP.y;
                         remotePlayers.set(id, serverP);
                     } else {
-                        // Existing player: Update target destination, stats, and anim frame
                         localP.targetX = serverP.x;
                         localP.targetY = serverP.y;
                         localP.dir = serverP.dir;
@@ -406,11 +417,20 @@ export function initMultiplayer() {
                         localP.ccFlags = serverP.ccFlags;
                         localP.bulwarkTimer = serverP.bulwarkTimer;
                         localP.isInvincible = serverP.isInvincible;
+                        localP.isLunge = serverP.isLunge; // 👈 Save the lunge flag!
                         if (serverP.pet) localP.pet = serverP.pet;
                     }
                 }
             }
             serverProjectiles = projectiles || []; 
+
+            // 🎯 THE FIX: Sync local chickens array with the server's master list
+            if (serverAnimals) {
+                import('./animals.js').then(m => {
+                    m.animals.length = 0; // Clear local array
+                    m.animals.push(...serverAnimals); // Insert synchronized positions!
+                });
+            }
         });
 
         // Inside initMultiplayer() in src/multiplayer.js:

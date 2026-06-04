@@ -1826,38 +1826,6 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
                 }
             }
         }
-
-        // ==========================================
-        // 🌻 FLORA SPAWNER
-        // ==========================================
-        setWorldSeed((window.worldSeed || 1) + (cx * 1000) + cy + 999);
-        
-        for (let ly = 0; ly < 100; ly++) {
-            for (let lx = 0; lx < 100; lx++) {
-                const idx = (ly * 100) + lx;
-                const rID = roomMatrix[cx][cy][idx];
-
-                if (worldMatrix[cx][cy][idx] === 63 && (rID === 0 || rID === 9999)) {
-                    if (seededRandom() > 0.50) {
-                        const initialAge = Math.floor(seededRandom() * 100);
-                        const roll = seededRandom();
-
-                        let plantType = 'grass'; 
-                        if (roll > 0.95) plantType = 'sunflower'; 
-                        else if (roll > 0.85) plantType = 'rose'; 
-                        else if (roll > 0.70) plantType = 'violet'; 
-
-                        let requiredFertility = 3; 
-                        if (plantType === 'sunflower') requiredFertility = 12;
-                        if (plantType === 'rose' || plantType === 'violet') requiredFertility = 8;
-
-                        if (fertilityMatrix[cx][cy][idx] >= requiredFertility) {
-                            createPlant((cx * 100) + lx, (cy * 100) + ly, fertilityMatrix, initialAge, plantType);
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -2106,6 +2074,8 @@ function promotePath(startNode, endNode, adj, tileID, thickness, maxRangeSq, wor
 
 const decoratedCells = new Set(); 
 
+// Inside ensureLocalCells() in src/cellDecorator.js:
+
 export function ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     const heroCX = Math.floor(hero.x / 1600);
     const heroCY = Math.floor(hero.y / 1600);
@@ -2124,20 +2094,16 @@ export function ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix,
             // 🎪 STEP 1: LAZY LOADING / STRUCTURE STAMPING
             // ==========================================
             if (zone) {
-                const zoneWell = zoneWellLookup.get(cellKey);
-                if (zoneWell) {
-                    const zoneKey = `${zoneWell.x}_${zoneWell.y}`;
-                    
-                    // 🎯 CONSTANT-TIME GATE: Only call init if this zone is brand new!
-                    if (!initializedZones.has(zoneKey)) {
-                        ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-                    }
-                }
+                ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
             } else {
-                // WILDERNESS LOADING: Load this single chunk normally
                 if (!decoratedCells.has(cellKey)) {
                     decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
                     decoratedCells.add(cellKey);
+
+                    // 🎯 THE FIX: Query the server for the synchronized plant list for this wilderness chunk!
+                    if (socket && socket.connected) {
+                        socket.emit('requestChunkPlants', { cx, cy });
+                    }
                 }
             }
 

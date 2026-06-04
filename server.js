@@ -14,6 +14,8 @@ import fs from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+
+
 // 3. Initialize App & Socket
 const app = express();
 const http = createServer(app);
@@ -267,6 +269,11 @@ const serverPlants = new Map();
 // 3. Server-Side Active Fishing State Registry
 const fishingStates = new Map(); // Key: socket.id, Value: { startTime, waitTime, active: true }
 
+// Add these declarations near the top of server.js (with your other global arrays):
+
+const chunkPlantsGenerated = new Set(); // Tracks generated chunk coordinate strings
+const serverAnimals = [];              // Master server-side chicken database
+
 // 1. Serve static files from the public and src folders
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/src', express.static(path.join(__dirname, 'src'))); // Expose src for ES Modules
@@ -360,6 +367,58 @@ if (fs.existsSync('stores.json')) {
 }
 if (fs.existsSync('cellars.json')) { try { fs.unlinkSync('cellars.json'); } catch(err){} }
 if (fs.existsSync('hay.json')) { try { fs.unlinkSync('hay.json'); console.log("🗑️ Hay Storage file deleted."); } catch(err){} }
+
+
+// Spawn 15 chickens globally near the village center at startup
+function initServerAnimals() {
+    for (let i = 0; i < 15; i++) {
+        serverAnimals.push({
+            id: 'animal_' + Math.random().toString(36).substr(2, 9),
+            x: 1550 + Math.random() * 100, 
+            y: 1550 + Math.random() * 100,
+            speed: 20,
+            hp: 30,
+            maxHp: 30,
+            state: 'idle',
+            dir: 'East',
+            moveTimer: Math.random() * 3,
+            targetX: null,
+            targetY: null
+        });
+    }
+}
+initServerAnimals(); // Execute startup spawn
+
+// Add this helper function to server.js:
+
+function generateServerFloraForChunk(cx, cy) {
+    const density = 0.04; // 4% of the chunk's tiles will spawn flora
+    for (let i = 0; i < 10000; i++) {
+        if (Math.random() < density) {
+            const lx = i % 100;
+            const ly = Math.floor(i / 100);
+            const gx = cx * 100 + lx;
+            const gy = cy * 100 + ly;
+
+            const roll = Math.random();
+            let plantType = 'grass';
+            if (roll > 0.95) plantType = 'sunflower';
+            else if (roll > 0.85) plantType = 'rose';
+            else if (roll > 0.70) plantType = 'violet';
+
+            const gRate = SERVER_PLANT_DEFS[plantType]?.growthRate || 0.4;
+            const initialAge = Math.floor(Math.random() * 100);
+
+            serverPlants.set(`${gx}_${gy}`, {
+                gx, gy,
+                type: plantType,
+                growth: initialAge,
+                growthRate: gRate,
+                timestamp: Date.now()
+            });
+        }
+    }
+}
 
 // Add these near your other global variables (like players = {})
 const projectiles = [];
@@ -1086,7 +1145,41 @@ socket.on('collectAnvil', (data) => {
 
 
 
-    // A. Handle Movement & Animation States
+    // Inside io.on('connection', (socket) => { ... }) in server.js:
+
+    // 🎯 DYNAMIC CHUNK PLANT SYSTEM
+    socket.on('requestChunkPlants', (data) => {
+        const { cx, cy } = data;
+        const chunkKey = `${cx}_${cy}`;
+
+        // If this chunk has never been populated on the server, spawn it now!
+        if (!chunkPlantsGenerated.has(chunkKey)) {
+            chunkPlantsGenerated.add(chunkKey);
+            generateServerFloraForChunk(cx, cy);
+        }
+
+        // Gather all active plants inside this chunk
+        const chunkPlants = [];
+        for (let [key, plant] of serverPlants) {
+            const pCX = Math.floor(plant.gx / 100);
+            const pCY = Math.floor(plant.gy / 100);
+            if (pCX === cx && pCY === cy) {
+                const elapsed = (Date.now() - plant.timestamp) / 1000;
+                const currentGrowth = Math.min(100, plant.growth + (plant.growthRate * 0.1 * elapsed));
+                
+                chunkPlants.push({
+                    gx: plant.gx,
+                    gy: plant.gy,
+                    type: plant.type,
+                    growth: currentGrowth
+                });
+            }
+        }
+
+        socket.emit('chunkPlantsData', { cx, cy, plants: chunkPlants });
+    });
+
+    // 🎯 UPDATE MOVEMENT (Includes isLunge)
     socket.on('movement', (data) => {
         if (players[socket.id]) {
             players[socket.id].x = data.x;
@@ -1094,14 +1187,11 @@ socket.on('collectAnvil', (data) => {
             players[socket.id].dir = data.dir;
             players[socket.id].animFrame = data.animFrame;
             players[socket.id].isMoving = data.isMoving;
-            players[socket.id].isWindingUp = data.isWindingUp; // New: Sync the punch wind-up
+            players[socket.id].isWindingUp = data.isWindingUp;
+            players[socket.id].isLunge = data.isLunge; // 👈 Save the lunge flag
             players[socket.id].currentTileID = data.currentTileID;
-
-            // 👈 NEW: Sync Pet
-            players[socket.id].pet = data.pet; 
+            players[socket.id].pet = data.pet;
         }
-
-        
     });
 
 
@@ -2025,7 +2115,8 @@ function broadcastEffectiveTGV() {
 
 // ==========================================
 // THE HEARTBEAT (50ms Physics Loop)
-// ==========================================
+// Update the 50ms heartbeat loop in server.js:
+
 setInterval(() => {
     const delta = 0.05; // 50ms in seconds
 
@@ -2040,21 +2131,46 @@ setInterval(() => {
         }
     }
 
-    // 2. UPDATE FLYING PROJECTILES
+    // 🎯 2. UPDATE SERVER-SIDE CHICKENS (Smooth, synchronized movement AI)
+    serverAnimals.forEach(a => {
+        a.moveTimer -= delta;
+        if (a.moveTimer <= 0) {
+            a.moveTimer = 2 + Math.random() * 3;
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 30 + Math.random() * 50;
+            a.targetX = a.x + Math.cos(angle) * dist;
+            a.targetY = a.y + Math.sin(angle) * dist;
+            a.state = 'walking';
+        }
+
+        if (a.state === 'walking' && a.targetX !== null) {
+            const dx = a.targetX - a.x;
+            const dy = a.targetY - a.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist > 2) {
+                a.x += (dx / dist) * a.speed * delta;
+                a.y += (dy / dist) * a.speed * delta;
+                a.dir = dx > 0 ? 'East' : 'West';
+            } else {
+                a.state = 'idle';
+                a.targetX = null;
+            }
+        }
+    });
+
+    // 3. UPDATE FLYING PROJECTILES
     for (let i = projectiles.length - 1; i >= 0; i--) {
         let p = projectiles[i];
 
-        // 🎯 HOMING LOGIC
         if (p.targetId) {
             const target = players[p.targetId];
             if (target && target.hp > 0) {
-                // Adjust dx/dy every frame to perfectly track the target
                 const tx = (target.x + 8) - p.x;
                 const ty = (target.y + 8) - p.y;
                 const dist = Math.sqrt(tx*tx + ty*ty);
                 if (dist > 0) { p.dx = tx/dist; p.dy = ty/dist; }
             } else {
-                p.life = 0; // Target died/logged off, fizzle the spell
+                p.life = 0; 
             }
         }
 
@@ -2064,10 +2180,9 @@ setInterval(() => {
 
         let hit = false;
 
-        // Check collision (If Homing, ONLY collide with the target!)
         for (let vid in players) {
             if (vid === p.ownerId) continue; 
-            if (p.targetId && vid !== p.targetId) continue; // 👈 Bypass other players if homing
+            if (p.targetId && vid !== p.targetId) continue; 
             
             const victim = players[vid];
             if (victim.hp <= 0) continue; 
@@ -2075,49 +2190,27 @@ setInterval(() => {
             const dx = (victim.x + 8) - p.x;
             const dy = (victim.y + 8) - p.y;
             const distSq = (dx * dx) + (dy * dy);
-            const hitRadius = p.radius || 8 + 8;
+            const hitRadius = p.radius || 16;
 
             if (distSq <= hitRadius * hitRadius) {
                 hit = true;
                 const attacker = players[p.ownerId];
                 if (attacker) {
-                    
-                    // --- p12: ZEPHYR IMPACT ---
                     if (p.type === 'zephyr') {
-                        // 🌟 THE SYNERGY CHECK!
                         if (victim.resonanceTimer > 0) {
-                            console.log(`💨 Zephyr consumed Resonance on ${vid}! Refunding Cooldown.`);
-                            // Send a private message back to the caster to refund 80% of the 12s cooldown (9.6s)
                             io.to(p.ownerId).emit('refundCooldown', { index: p.skillIndex, amount: 9.6 });
-                            
-                            // If they DON'T have fever, we must manually clear the resonance
-                            // (If they DO have fever, applyMagicSpellDamage will handle consuming it and adding the execute damage!)
                             if (!attacker.passives || !attacker.passives.hasFever) {
                                 victim.resonanceTimer = 0;
                                 io.emit('playerCC', { victimId: vid, ccType: 'resonanceFade' });
                             }
                         }
-                        
                         applyMagicSpellDamage(attacker, victim, p.damage);
                     }
-
-                    // --- p13: VANGUARD IMPACT ---
                     if (p.type === 'vanguard') {
-                        
-                        // 1. Apply RAPTURE CC (Mask: 1 + 2 + 8 + 16 = 27)
-                        // MOVE(1) | ATTACK(2) | NON_MOVE(8) | CLEANSE(16)
                         const RAPTURE_MASK = 1 | 2 | 8 | 16; 
-                        
-                        io.emit('playerCC', { 
-                            victimId: vid, 
-                            ccMask: RAPTURE_MASK, 
-                            duration: 2.0 
-                        });
-
-                        // 2. Apply Unified Magic Damage
+                        io.emit('playerCC', { victimId: vid, ccMask: RAPTURE_MASK, duration: 2.0 });
                         applyMagicSpellDamage(attacker, victim, p.damage);
                     }
-                    // --- p9: FLARE IMPACT ---
                     else if (p.type === 'flare') {
                         applyMagicSpellDamage(attacker, victim, p.damage);
                     }
@@ -2129,10 +2222,11 @@ setInterval(() => {
         if (hit || p.life <= 0) projectiles.splice(i, 1); 
     }
 
-    // 3. BROADCAST POSITIONS
+    // 🎯 4. BROADCAST ALL ENTITIES (Includes the fully synced chickens!)
     io.emit('position', { 
         playerbase: players,
-        projectiles: projectiles
+        projectiles: projectiles,
+        animals: serverAnimals // 👈 Added here
     });
 }, 50);
 

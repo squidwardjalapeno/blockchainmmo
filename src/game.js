@@ -152,18 +152,29 @@ var update = function (modifier) {
 
         if (DEBUG_FLAGS.ENABLE_MULTIPLAYER_EMIT) {
             const tileInfo = getTileData(hero.x + 8, hero.y + 8, worldMatrix, roomMatrix);
+            // Inside update() in src/game.js (inside the socket.emit('movement'...) block):
+
             if (socket && socket.connected) {
                 socket.emit('movement', {
-                    x: hero.x, y: hero.y, dir: hero.dir, animFrame: hero.frame,
-                    isMoving: hero.isMoving, isWindingUp: hero.isWindingUp,
-                    currentTileID: tileInfo.tileID, pet: hero.pet
+                    x: hero.x,
+                    y: hero.y,
+                    dir: hero.dir,
+                    animFrame: hero.frame,
+                    isMoving: hero.isMoving,
+                    isWindingUp: hero.isWindingUp,
+                    
+                    // 🎯 THE FIX: Send the active lunge state to the server
+                    isLunge: (hero.attackTimer < 0 && hero.attackTimer < -1.5), 
+                    
+                    currentTileID: tileInfo.tileID,
+                    pet: hero.pet
                 });
             }
         }
         
         // 👇 THE FIX: Let chickens run smoothly here (Removed the 'false' arg)
         if (DEBUG_FLAGS.ENABLE_WORLD_SIM) {
-            updateAnimals(modifier * 3, worldMatrix, roomMatrix); 
+            //updateAnimals(modifier * 3, worldMatrix, roomMatrix); 
         }
     }
 
