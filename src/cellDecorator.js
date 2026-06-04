@@ -1743,9 +1743,7 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
     if (!ecoGenerated.has(cellKey)) {
         ecoGenerated.add(cellKey);
 
-        // 🏗️ LAZY STRUCTURE STAMPING (Constructs buildings for this chunk only)
-        stampStructuresForChunk(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-
+    
         // ==========================================
         // 🌲 TREE SPAWNER (Forests, Coastlines, & Settlements)
         // ==========================================
