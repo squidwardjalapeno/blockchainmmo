@@ -173,7 +173,7 @@ export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertility
 
     console.log(`🎪 LAZY INITIALIZING SETTLEMENT at Well [${zoneWell.x}, ${zoneWell.y}]`);
 
-    // 1. Force-load / decorate all chunks in the zone first
+    // 🎯 STEP 1: Force-load and decorate background terrain first (No buildings drawn yet)
     zone.forEach(c => {
         const chunkKey = `${c.cx}_${c.cy}`;
         if (!decoratedCells.has(chunkKey)) {
@@ -182,16 +182,15 @@ export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertility
         }
     });
 
-    // 2. Stamp all buildings, ranches, and wells for all chunks in the zone
-    zone.forEach(c => {
-        stampStructuresForChunk(c.cx, c.cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-    });
-
-    // 3. Draw the regional roads and walls (highly optimized)
+    // 🎯 STEP 2: Draw the regional roads and walls (Drawn over grass, under buildings)
     drawRingRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell);
     drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell.x, zoneWell.y);
     drawTownWalls(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell);
 
+    // 🎯 STEP 3: Stamp buildings, ranches, and wells ON TOP of completed roads and walls
+    zone.forEach(c => {
+        stampStructuresForChunk(c.cx, c.cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+    });
 }
 
 
@@ -1730,7 +1729,6 @@ function paintLandCorner(cellData, fertilityData, hWidth, vWidth, type) {
 
 
 // ... scroll down to decorateCell ...
-
 export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     if (!fertilityMatrix) return;
     if (cx < 0 || cx >= CONFIG.MAP_SIZE || cy < 0 || cy >= CONFIG.MAP_SIZE) return; 
@@ -1740,44 +1738,16 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
     const isLand = cellType >= CONFIG.LAND_THRESHOLD || cellType >= 100;
     const cellKey = `${cx}_${cy}`;
 
-    // ECOSYSTEM GENERATION (Runs EXACTLY ONCE when the player arrives at this chunk)
+    // ECOSYSTEM GENERATION (No structural stamping occurs here anymore)
     if (!ecoGenerated.has(cellKey)) {
         ecoGenerated.add(cellKey);
-
-        // 🏗️ LAZY STRUCTURE STAMPING (Constructs buildings for this chunk only)
-        stampStructuresForChunk(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
 
         // ==========================================
         // 🌲 TREE SPAWNER (Forests, Coastlines, & Settlements)
         // ==========================================
-        
-        // 1. Determine if this cell belongs to a Forest region
-        let isForestRegion = (cellType === 104 || !isLand);
-
-        // 2. If it's a settlement or camp, check its neighbors to see what biome it sits inside!
-        if (cellType === 101 || cellType === 102 || cellType === 103 || cellType === 107) {
-            for (let oy = -1; oy <= 1; oy++) {
-                for (let ox = -1; ox <= 1; ox++) {
-                    const nx = cx + ox, ny = cy + oy;
-                    if (nx >= 0 && nx < CONFIG.MAP_SIZE && ny >= 0 && ny < CONFIG.MAP_SIZE) {
-                        const neighborType = worldMap[ny * CONFIG.MAP_SIZE + nx];
-                        // If it touches a Forest or Water, it gets trees!
-                        if (neighborType === 104 || neighborType < CONFIG.LAND_THRESHOLD) {
-                            isForestRegion = true;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Inside decorateCell() in src/cellDecorator.js (under the tree spawner section):
-
-        // Inside decorateCell() in src/cellDecorator.js:
-
         if (isForestRegion) {
             setWorldSeed((window.worldSeed || 1) + (cx * 1000) + cy + 777);
             
-            // Original high-frequency forest density (45% chance per tile)
             const spawnThreshold = (cellType === 104 || cellType === 101 || cellType === 102 || cellType === 103 || cellType === 107) ? 0.55 : 0.80;
             
             for (let ly = 0; ly < 100; ly++) { 
@@ -1792,12 +1762,7 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
                             
                             if (typeof isInsideVillagePolygon === 'function' && isInsideVillagePolygon(gx, gy)) continue;
                             
-                            // 🎯 THE FIX: 2x1 Trunk-Only Spacing.
-                            // We only check if an existing tree is anchored at gx-1, gx, or gx+1 on the same row.
-                            // This permits 0-tile vertical gaps and 0-tile horizontal gaps, allowing
-                            // trees to group shoulder-to-shoulder while preventing identical duplicate overlays.
                             let isClear = true;
-                            
                             for (let ox = -1; ox <= 1; ox++) {
                                 if (getObjectAt(gx + ox, gy)) {
                                     isClear = false;
@@ -1805,7 +1770,6 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
                                 }
                             }
 
-                            // Verify both trunk tiles sit on natural grass and avoid roads, water, or buildings
                             if (isClear) {
                                 for (let ox = 0; ox <= 1; ox++) {
                                     const checkGX = gx + ox;
@@ -1826,7 +1790,7 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
                                             }
                                         }
                                     } else {
-                                        isClear = false; // Out of bounds safety
+                                        isClear = false; 
                                         break;
                                     }
                                 }
@@ -1851,7 +1815,6 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
                 const idx = (ly * 100) + lx;
                 const rID = roomMatrix[cx][cy][idx];
 
-                // ONLY spawn plants on natural grass (63) and outdoors
                 if (worldMatrix[cx][cy][idx] === 63 && (rID === 0 || rID === 9999)) {
                     if (seededRandom() > 0.50) {
                         const initialAge = Math.floor(seededRandom() * 100);
@@ -2342,7 +2305,7 @@ export function autoTileLayerChunk(cx, cy, worldMatrix, baseIds, fillTileId, lay
 // Inside src/cellDecorator.js
 
 export function stampStructuresForChunk(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
-    // 1. Construct standard buildings (Halls, Temples, Shops, etc.)
+    // 1. Construct standard buildings
     plannedBuildings.forEach(b => {
         const bCX = Math.floor(b.args[0] / 100);
         const bCY = Math.floor(b.args[1] / 100);
@@ -2362,7 +2325,7 @@ export function stampStructuresForChunk(cx, cy, worldMatrix, roomMatrix, fertili
         }
     });
 
-    // 3. Construct Wells (🎯 UPDATED: Pure overlay registration with no tile-overwriting)
+    // 3. Construct Wells
     plannedWells.forEach(w => {
         const wCX = Math.floor(w.x / 100);
         const wCY = Math.floor(w.y / 100);
@@ -2371,14 +2334,6 @@ export function stampStructuresForChunk(cx, cy, worldMatrix, roomMatrix, fertili
             registerObject(w.x, w.y + 1, 'WELL_OBJECT');
         }
     });
-
-    // Inside stampStructuresForChunk() in src/cellDecorator.js:
-
-    // 3. Construct Wells
-    plannedWells.forEach(w => {
-        // ... (existing well registration stays unchanged) ...
-    });
-
 }
 
 // ==========================================

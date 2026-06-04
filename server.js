@@ -168,6 +168,10 @@ const SERVER_ITEM_TYPES = {
     OCTOPUS: { name: "Octopus", seedType: "fish_octopus", baseHealth: 60, baseVirulence: 10, spriteID: 107, tileset: "fishTileset", maxStack: 8 },
     EEL: { name: "Eel", seedType: "fish_eel", baseHealth: 50, baseVirulence: 10, spriteID: 59, tileset: "fishTileset", maxStack: 8 },
     ANGLERFISH: { name: "Anglerfish", seedType: "fish_angler", baseHealth: 80, baseVirulence: 10, spriteID: 29, tileset: "fishTileset", maxStack: 8 },
+
+    // 🎯 THE FIX: Add missing templates with correct maxStack limits
+    EGG: { name: "Farm Egg", seedType: "egg", baseHealth: 30, baseVirulence: 0, spriteID: 60, tileset: "foodTileset", maxStack: 8, drawSize: 4 },
+    RAW_CHICKEN: { name: "Raw Chicken", seedType: "raw_chicken", baseHealth: 50, baseVirulence: 10, spriteID: 15, tileset: "foodTileset", maxStack: 8, drawSize: 8 },
 };
 
 
@@ -1091,23 +1095,20 @@ socket.on('collectAnvil', (data) => {
 
 
 
+// Inside socket.on('updateStats') in server.js:
+
 socket.on('updateStats', (data) => {
     const p = players[socket.id];
     if (!p) return;
 
-    // 🛡️ SECURITY: Prevent the client from ever overwriting the server's inventory
     if (data.inventory) delete data.inventory;
 
-    // 1. Update the live RAM object
     Object.assign(p, data);
     
-    // 2. PERSISTENCE: If logged in, update the DB record
     if (socket.wallet) {
-        // We only update stats, we DO NOT replace the whole object
-        // This ensures the saved 'inventory' array stays safe!
         userDb[socket.wallet] = {
-            ...userDb[socket.wallet], // Keep existing data (like inventory!)
-            ...data,                  // Layer on the new stats
+            ...userDb[socket.wallet], 
+            ...data, // 🎯 Writes the active energy updates to persistence.json
             id: undefined,
             target: null
         };

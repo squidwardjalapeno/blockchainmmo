@@ -90,6 +90,16 @@ export function initMultiplayer() {
 
         // Replace the updateInventory socket listener inside src/multiplayer.js with this:
 
+        // Inside initMultiplayer() in src/multiplayer.js:
+
+        // 🎯 THE FIX: Sync equipment updates from server to update paperdoll renders
+        socket.on('updateEquipment', (serverEquipment) => {
+            import('./entities.js').then(m => {
+                m.hero.equipment = serverEquipment;
+                import('./uiManager.js').then(ui => ui.renderTabContent()); // Refresh HUD/Bag
+            });
+        });
+
         socket.on('updateInventory', (serverInventory) => {
             import('./entities.js').then(m => {
                 m.hero.inventory = serverInventory;
@@ -141,6 +151,9 @@ export function initMultiplayer() {
             
             // 🛡️ RESTORE INVENTORY
             hero.inventory = data.inventory || []; 
+
+            // 🎯 THE FIX: Restore equipped weapon state at login
+            hero.equipment = data.equipment || { mainHand: null };
 
             if(data.x !== undefined) hero.x = data.x;
             if(data.y !== undefined) hero.y = data.y;
