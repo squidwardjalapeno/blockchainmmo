@@ -1572,17 +1572,19 @@ export function updateHUD() {
 
 // src/uiManager.js
 
+// Replace these two functions inside src/uiManager.js:
+
 window.equipItem = (invIndex) => {
-    // 🎯 THE SECURE FIX: Send an equip request to the server instead of doing it locally
     if (socket) {
-        socket.emit('requestEquip', { index: invIndex });
+        // 🎯 THE FIX: Pass active energy in the payload
+        socket.emit('requestEquip', { index: invIndex, currentEnergy: hero.energy });
     }
 };
 
 window.unequipMainHand = () => {
-    // 🎯 THE SECURE FIX: Send an unequip request to the server instead of doing it locally
     if (socket) {
-        socket.emit('requestUnequip');
+        // 🎯 THE FIX: Pass active energy in the payload
+        socket.emit('requestUnequip', { currentEnergy: hero.energy });
     }
 };
 

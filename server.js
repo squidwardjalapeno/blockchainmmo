@@ -1179,41 +1179,51 @@ socket.on('requestActivityLog', () => {
 
 // Inside socket.on('requestPickup'...) in server.js:
 
+     // 1. Secure Server-Authoritative Pickup
     socket.on('requestPickup', (itemData) => {
         const player = players[socket.id];
-        if (!player) return;
+        if (!player || !player.inventory) return;
 
+        // Distance validation (Anti-teleport/vacuum)
         const px = Math.floor(player.x / 16);
         const py = Math.floor(player.y / 16);
-        const dist = Math.abs(px - itemData.tx) + Math.abs(py - itemData.ty);
+        if (Math.abs(px - itemData.tx) + Math.abs(py - itemData.ty) > 5) return;
 
-        if (dist > 5) {
-            console.log(`🚨 HACK BLOCKED: ${player.wallet} tried to vacuum an item!`);
-            return;
+        // 🎯 THE FIX: Map seedType to template keys to load secure properties (maxStack, drawSize)
+        const seedTypeToKeyMap = {};
+        for (let key in SERVER_ITEM_TYPES) {
+            seedTypeToKeyMap[SERVER_ITEM_TYPES[key].seedType] = key;
         }
-
-        if (!player.inventory) player.inventory = [];
-        if (player.inventory.length >= 10) {
-            socket.emit('inventoryFull');
-            return;
-        }
-
-        // 🎯 THE FIX: Preserve isKey and houseId on the server database record
-        const newItem = {
-            name: itemData.name,
-            seedType: itemData.seedType,
-            count: Math.min(64, itemData.count || 1),
-            spriteID: itemData.spriteID,
-            tileset: itemData.tileset,
-            isKey: itemData.houseId ? true : undefined,
-            houseId: itemData.houseId 
-        };
-
-        player.inventory.push(newItem);
-        syncPlayerAndSave(socket.id);
         
-        socket.emit('updateInventory', player.inventory);
-        console.log(`📦 Saved ${newItem.name} (House #${itemData.houseId || 'None'}) to ${player.wallet}'s database record.`);
+        const templateKey = seedTypeToKeyMap[itemData.seedType];
+        const template = SERVER_ITEM_TYPES[templateKey];
+
+        if (!template) {
+            console.log(`❌ Secure template not found for: ${itemData.seedType}`);
+            return;
+        }
+
+        // Create item using the trusted server-side template
+        const newItem = createServerItem(template);
+        
+        // If it's a key, apply the specific houseId
+        if (template.isKey) {
+            newItem.houseId = itemData.houseId;
+            newItem.name = `Key to House #${itemData.houseId}`;
+        }
+
+        // 🎯 THE FIX: Use our secure stacking helper!
+        const success = giveItemToServerInventory(player, newItem);
+
+        if (success) {
+            // Wipe the ground tile
+            io.emit('syncTile', { gx: itemData.tx, gy: itemData.ty, traits: 0 });
+            
+            syncPlayerAndSave(socket.id);
+            socket.emit('updateInventory', player.inventory);
+        } else {
+            socket.emit('inventoryFull');
+        }
     });
 
     // Inside io.on('connection', (socket) => { ... }) in server.js:
@@ -1240,11 +1250,16 @@ socket.on('requestActivityLog', () => {
     // 🎒 SECURE SERVER-AUTHORITATIVE INVENTORY
     // ==========================================
 
-    // 1. Equip Item Request
+    // 2. Secure Equip Request
     socket.on('requestEquip', (data) => {
-        const { index } = data;
+        const { index, currentEnergy } = data; // 👈 🎯 THE FIX: Accept currentEnergy
         const player = players[socket.id];
         if (!player || !player.inventory) return;
+
+        // Update the server's record with the active stamina value
+        if (currentEnergy !== undefined) {
+            player.energy = parseFloat(currentEnergy) || 100;
+        }
 
         if (!player.equipment) player.equipment = { mainHand: null };
         const itemToEquip = player.inventory[index];
@@ -1267,11 +1282,13 @@ socket.on('requestActivityLog', () => {
 
         syncPlayerAndSave(socket.id);
         socket.emit('updateInventory', player.inventory);
-        socket.emit('restoreHero', player); // Updates active stats on HUD
+        socket.emit('updateEquipment', player.equipment);
+        socket.emit('restoreHero', player); // Safely restores active stamina
     });
 
-    // 2. Unequip Item Request
-    socket.on('requestUnequip', () => {
+    // 3. Secure Unequip Request
+    socket.on('requestUnequip', (data) => {
+        const { currentEnergy } = data || {}; // 👈 🎯 THE FIX: Accept currentEnergy
         const player = players[socket.id];
         if (!player || !player.inventory || !player.equipment || !player.equipment.mainHand) return;
 
@@ -1280,16 +1297,22 @@ socket.on('requestActivityLog', () => {
             return;
         }
 
+        // Update the server's record with the active stamina value
+        if (currentEnergy !== undefined) {
+            player.energy = parseFloat(currentEnergy) || 100;
+        }
+
         player.inventory.push(player.equipment.mainHand);
         player.equipment.mainHand = null;
 
-        // Reset stats
         player.ad = CONFIG.HERO_ATTACK;
 
         syncPlayerAndSave(socket.id);
         socket.emit('updateInventory', player.inventory);
-        socket.emit('restoreHero', player);
+        socket.emit('updateEquipment', player.equipment);
+        socket.emit('restoreHero', player); // Safely restores active stamina
     });
+
 
     // Replace the requestDrop socket listener inside server.js with this:
 
