@@ -1747,7 +1747,7 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
         ecoGenerated.add(cellKey);
 
         // Stamp static buildings/wells
-        stampStructuresForChunk(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        //stampStructuresForChunk(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
 
         // Spawns trees
         let isForestRegion = (cellType === 104 || !isLand);
