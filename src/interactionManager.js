@@ -561,9 +561,15 @@ function processFishing(modifier) {
 
 // Inside processPickup() in src/interactionManager.js:
 
+// Inside src/interactionManager.js:
+
 function processPickup(tx, ty) {
+    // Client-side safety: Stop early if the local UI bag is full
     if (hero.inventory.length >= hero.maxSlots) return false;
 
+    // ==========================================
+    // PRIORITY 1: DROPPED ITEMS (Keys, Weapons, Eggs, Dropped Crops)
+    // ==========================================
     const bac = getBacteriaData(tx, ty);
     const traits = bac ? bac.data[bac.idx] : 0;
 
@@ -577,66 +583,49 @@ function processPickup(tx, ty) {
         if (matchedSeedType) {
             const template = Object.values(ITEM_TYPES).find(t => t.seedType === matchedSeedType);
             if (template) {
-                
-                // 🎯 THE FIX: If picking up a key, extract the houseId from the bottom 16 bits!
                 let extractedHouseId = undefined;
                 let itemName = template.name;
 
-                if (typeID === 61) { // 61 is the Key type ID
-                    extractedHouseId = traits & 0xFFFF; // Extract 16-bit ID
+                // If it is a key (typeID 61), extract the unique 16-bit houseId from the ground traits
+                if (typeID === 61) { 
+                    extractedHouseId = traits & 0xFFFF; // Extract bottom 16 bits
                     itemName = `Key to House #${extractedHouseId}`;
                 }
 
+                // Request the item pickup securely from the server
                 if (socket) {
                     socket.emit('requestPickup', {
                         tx: tx, ty: ty,
                         name: itemName,
                         seedType: template.seedType,
-                        count: 1, 
+                        count: 1,
                         spriteID: template.spriteID,
                         tileset: template.tileset,
-                        houseId: extractedHouseId // 👈 Send the extracted ID to the server
+                        houseId: extractedHouseId
                     });
                 }
 
-                bac.data[bac.idx] = 0; // Clear locally
+                bac.data[bac.idx] = 0; // Clear locally so it disappears instantly from the screen
                 return true;
             }
         }
     }
-    // ... (rest of your plant harvesting is unchanged) ...
-
-    // Inside processPickup() in src/interactionManager.js:
 
     // ==========================================
     // PRIORITY 2: GROWING PLANTS (Crops, Flowers, Grass)
     // ==========================================
     const plantKey = `${tx}_${ty}`;
     if (plants.has(plantKey)) {
-        const plant = plants.get(plantKey);
-        const def = PLANT_DEFS[plant.type];
-        const stagesArray = def.stages;
-        const currentStageIdx = Math.min(stagesArray.length - 1, Math.floor(plant.growth / (100 / stagesArray.length)));
-        
-        const harvestWindow = def.harvestWindow || 1;
-        const isMature = currentStageIdx >= (stagesArray.length - harvestWindow);
-        
-        if (isMature) {
-            // 🎯 THE SECURE FIX: Request a harvest from the server instead of doing it locally
-            if (socket) {
-                socket.emit('requestHarvest', { tx: tx, ty: ty });
-            }
-        } else {
-            // Picked too early, client fallback (No secure economic value, so simple deletion is fine)
-            giveItemToHero(createItem(ITEM_TYPES.PLANT_MATTER));
-            plants.delete(plantKey);
+        // 🎯 THE SECURE FIX: Send the harvest request for ALL plants (mature or immature).
+        // The server will decide the correct yields and handle removals for everyone.
+        if (socket) {
+            socket.emit('requestHarvest', { tx: tx, ty: ty });
         }
         return true;
     }
 
     return false; // Nothing found directly under feet
 }
-
 // js/interactionManager.js
 
 export function updateHeroStats(modifier, hero) {

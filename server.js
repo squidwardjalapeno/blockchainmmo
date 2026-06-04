@@ -835,25 +835,6 @@ socket.on('collectAnvil', (data) => {
         const plant = serverPlants.get(plantKey);
         if (!plant) return; 
 
-        // 🎯 THE FIX: Robust, foolproof isNaN checks to block legacy corrupted database values
-        let startGrowth = plant.growth !== undefined ? parseFloat(plant.growth) : 0;
-        if (isNaN(startGrowth)) startGrowth = 0; // Clean if corrupted
-
-        let gRate = plant.growthRate !== undefined ? parseFloat(plant.growthRate) : 0.4;
-        if (isNaN(gRate)) gRate = 0.4; // Clean if corrupted
-
-        const elapsedSeconds = plant.timestamp ? (Date.now() - plant.timestamp) / 1000 : 0;
-
-        const currentGrowth = startGrowth + (gRate * 0.1 * elapsedSeconds);
-
-        const def = SERVER_PLANT_DEFS[plant.type];
-        const threshold = def ? def.harvestThreshold : 100;
-        
-        if (currentGrowth < threshold) {
-            console.log(`🔒 Crop at [${tx}, ${ty}] is not mature on server yet (${currentGrowth.toFixed(2)}% / ${threshold}%)`);
-            return; 
-        }
-
         // Distance validation
         const px = Math.floor(player.x / 16);
         const py = Math.floor(player.y / 16);
@@ -864,40 +845,75 @@ socket.on('collectAnvil', (data) => {
             return;
         }
 
-        // Yield Map
-        const yieldMap = {
-            'turnip': 'TURNIP_ITEM', 'tomato': 'TOMATO_ITEM',
-            'eggplant': 'EGGPLANT_ITEM', 'strawberry': 'STRAWBERRY_ITEM',
-            'pumpkin': 'PUMPKIN_ITEM', 'watermelon': 'WATERMELON_ITEM',
-            'corn': 'CORN_ITEM', 'pineapple': 'PINEAPPLE_ITEM',
-            'potato': 'POTATO_ITEM', 'wheat': 'WHEAT_ITEM',
-            'grass': 'PLANT_MATTER', 'rose': 'PLANT_MATTER',
-            'violet': 'PLANT_MATTER', 'sunflower': 'PLANT_MATTER'
-        };
-
-        const itemTypeName = yieldMap[plant.type] || 'PLANT_MATTER';
-        const cropTemplate = SERVER_ITEM_TYPES[itemTypeName];
+        const def = SERVER_PLANT_DEFS[plant.type];
+        const threshold = def ? def.harvestThreshold : 100;
         
-        if (cropTemplate) {
-            giveItemToServerInventory(player, createServerItem(cropTemplate));
-        }
+        // Calculate growth securely
+        const elapsedSeconds = plant.timestamp ? (Date.now() - plant.timestamp) / 1000 : 0;
+        let startGrowth = plant.growth !== undefined ? parseFloat(plant.growth) : 0;
+        if (isNaN(startGrowth)) startGrowth = 0;
+        let gRate = plant.growthRate !== undefined ? parseFloat(plant.growthRate) : 0.4;
+        if (isNaN(gRate)) gRate = 0.4;
 
-        // Seed Drop
-        const seedConstName = `${plant.type.toUpperCase()}_SEED`;
-        const seedTemplate = SERVER_ITEM_TYPES[seedConstName];
-        if (seedTemplate) {
-            const seedCount = Math.floor(Math.random() * 2) + 1; 
-            const seedItem = createServerItem(seedTemplate);
-            seedItem.count = seedCount;
-            giveItemToServerInventory(player, seedItem);
-        }
+        const currentGrowth = startGrowth + (gRate * 0.1 * elapsedSeconds);
 
-        // Cyclical check
-        if (def && def.isCyclical) {
-            plant.growth = def.resetGrowth;
-            plant.timestamp = Date.now(); 
-            io.emit('plantReset', { gx: tx, gy: ty, growth: def.resetGrowth }); 
-        } else {
+        // Determine if the plant has hit its mature visual threshold
+        const isMature = currentGrowth >= threshold;
+
+        if (isMature) {
+            // ==========================================
+            // 🍇 1. SECURE MATURE HARVEST
+            // ==========================================
+            const yieldMap = {
+                'turnip': 'TURNIP_ITEM', 'tomato': 'TOMATO_ITEM',
+                'eggplant': 'EGGPLANT_ITEM', 'strawberry': 'STRAWBERRY_ITEM',
+                'pumpkin': 'PUMPKIN_ITEM', 'watermelon': 'WATERMELON_ITEM',
+                'corn': 'CORN_ITEM', 'pineapple': 'PINEAPPLE_ITEM',
+                'potato': 'POTATO_ITEM', 'wheat': 'WHEAT_ITEM',
+                'grass': 'PLANT_MATTER', 'rose': 'PLANT_MATTER',
+                'violet': 'PLANT_MATTER', 'sunflower': 'PLANT_MATTER'
+            };
+
+            const itemTypeName = yieldMap[plant.type] || 'PLANT_MATTER';
+            const cropTemplate = SERVER_ITEM_TYPES[itemTypeName];
+            
+            if (cropTemplate) {
+                giveItemToServerInventory(player, createServerItem(cropTemplate));
+            }
+
+            // Seed Drop
+            const seedConstName = `${plant.type.toUpperCase()}_SEED`;
+            const seedTemplate = SERVER_ITEM_TYPES[seedConstName];
+            if (seedTemplate) {
+                const seedCount = Math.floor(Math.random() * 2) + 1; 
+                const seedItem = createServerItem(seedTemplate);
+                seedItem.count = seedCount;
+                giveItemToServerInventory(player, seedItem);
+            }
+
+            // Cyclical check
+            if (def && def.isCyclical) {
+                plant.growth = def.resetGrowth;
+                plant.timestamp = Date.now(); 
+                io.emit('plantReset', { gx: tx, gy: ty, growth: def.resetGrowth }); 
+            } else {
+                serverPlants.delete(plantKey);
+                io.emit('plantRemoved', { gx: tx, gy: ty }); 
+            }
+        } 
+        else {
+            // ==========================================
+            // 🍂 2. SECURE IMMATURE EARLY HARVEST (Wither/Destroy)
+            // ==========================================
+            console.log(`🍂 Early Pick! ${player.wallet} pulled immature ${plant.type} at [${tx}, ${ty}]`);
+            
+            // Give exactly 1x ruined Plant Matter securely
+            const template = SERVER_ITEM_TYPES.PLANT_MATTER;
+            if (template) {
+                giveItemToServerInventory(player, createServerItem(template));
+            }
+
+            // Early-picked plants are always permanently deleted (never cyclical)
             serverPlants.delete(plantKey);
             io.emit('plantRemoved', { gx: tx, gy: ty }); 
         }
@@ -905,7 +921,6 @@ socket.on('collectAnvil', (data) => {
         syncPlayerAndSave(socket.id);
         socket.emit('updateInventory', player.inventory);
     });
-
     // ==========================================
     // 🎣 SECURE SERVER-AUTHORITATIVE FISHING
     // ==========================================
