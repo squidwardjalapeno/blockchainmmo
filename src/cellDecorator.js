@@ -8,6 +8,9 @@ import { seededRandom, setWorldSeed } from "./mapGenerator.js";
 import { registerObject, getObjectAt } from './staticObjects.js';
 import { getTileData } from './physics.js';
 import { seedBacteria } from './bacteria.js'; // 👈 ADD THIS LINE
+// At the top of src/cellDecorator.js (Line 1 or 2):
+
+import { socket } from './multiplayer.js'; // 👈 ADD THIS IMPORT
 
 
 
@@ -1728,7 +1731,7 @@ function paintLandCorner(cellData, fertilityData, hWidth, vWidth, type) {
 // src/cellDecorator.js
 
 
-// Replace decorateCell() in src/cellDecorator.js with this:
+// src/cellDecorator.js
 
 export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     if (!fertilityMatrix) return;
@@ -1743,15 +1746,12 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
     if (!ecoGenerated.has(cellKey)) {
         ecoGenerated.add(cellKey);
 
-    
-        // ==========================================
-        // 🌲 TREE SPAWNER (Forests, Coastlines, & Settlements)
-        // ==========================================
-        
-        // 🎯 THE FIX: Restore the calculation block for isForestRegion
+        // Stamp static buildings/wells
+        stampStructuresForChunk(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+
+        // Spawns trees
         let isForestRegion = (cellType === 104 || !isLand);
 
-        // If it's a settlement or camp, check neighbors to see what biome it sits inside
         if (cellType === 101 || cellType === 102 || cellType === 103 || cellType === 107) {
             for (let oy = -1; oy <= 1; oy++) {
                 for (let ox = -1; ox <= 1; ox++) {
@@ -1766,7 +1766,6 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
             }
         }
 
-        // Only spawn trees if we confirmed we are in a forest region
         if (isForestRegion) {
             setWorldSeed((window.worldSeed || 1) + (cx * 1000) + cy + 777);
             
@@ -1826,8 +1825,14 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
                 }
             }
         }
+
+        // 🎯 THE CENTRALIZED FIX: Query the server for wild flora whenever ANY chunk is initialized!
+        if (socket && socket.connected) {
+            socket.emit('requestChunkPlants', { cx, cy });
+        }
     }
 }
+
 
 
 
@@ -2096,14 +2101,10 @@ export function ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix,
             if (zone) {
                 ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
             } else {
+                // WILDERNESS LOADING: Load this single chunk normally (Stamping query now handled inside decorateCell)
                 if (!decoratedCells.has(cellKey)) {
                     decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
                     decoratedCells.add(cellKey);
-
-                    // 🎯 THE FIX: Query the server for the synchronized plant list for this wilderness chunk!
-                    if (socket && socket.connected) {
-                        socket.emit('requestChunkPlants', { cx, cy });
-                    }
                 }
             }
 
@@ -2116,6 +2117,7 @@ export function ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix,
         }
     }
 }
+
 
 // A simple function to physically carve a 3-tile wide river of water (Tile 17)
 function drawRiverPath(startX, startY, endX, endY, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
