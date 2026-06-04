@@ -392,7 +392,7 @@ initServerAnimals(); // Execute startup spawn
 // Add this helper function to server.js:
 
 function generateServerFloraForChunk(cx, cy) {
-    const density = 0.04; // 4% of the chunk's tiles will spawn flora
+    const density = 0.50; // 50% of the chunk's tiles will spawn flora
     for (let i = 0; i < 10000; i++) {
         if (Math.random() < density) {
             const lx = i % 100;
