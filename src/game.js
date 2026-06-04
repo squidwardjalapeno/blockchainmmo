@@ -48,9 +48,9 @@ if (window.updateDebug) window.updateDebug("2. JS PARSED. STARTING INIT...");
 
 let worldMap = [];
 
-let worldMatrix = [];
-let roomMatrix = []; 
-let fertilityMatrix = [];
+export let worldMatrix = [];
+export let roomMatrix = []; 
+export let fertilityMatrix = [];
 
 let bacteriaTimer = 0; // Tracks time until the next tick
 

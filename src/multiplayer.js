@@ -375,11 +375,28 @@ export function initMultiplayer() {
 
         // Update the chunkPlantsData socket listener inside src/multiplayer.js:
 
-            // 🎯 THE FIX: Pass "null" as the fertilityMatrix argument to bypass soil deductions safely
+            // Replace the chunkPlantsData socket listener inside src/multiplayer.js with this:
+
+            // 🎯 THE FIX: Secure Client-Side Filtration
+            // Verify each plant sits on natural open grass (63) and outdoors (Room 0) before spawning
             socket.on('chunkPlantsData', (data) => {
-                import('./plants.js').then(m => {
+                Promise.all([
+                    import('./plants.js'),
+                    import('./physics.js'),
+                    import('./game.js')
+                ]).then(([plantsMod, physMod, gameMod]) => {
+                    
                     data.plants.forEach(p => {
-                        m.createPlant(p.gx, p.gy, null, p.growth, p.type); // 👈 Updated here
+                        const tx = p.gx;
+                        const ty = p.gy;
+                        
+                        // Retrieve the physical tile metadata for these coordinates on the client's map
+                        const tileData = physMod.getTileData(tx * 16 + 8, ty * 16 + 8, gameMod.worldMatrix, gameMod.roomMatrix);
+                        
+                        // Spawn ONLY if the ground is grass (63) and outdoors (Room 0 / 9999)
+                        if (tileData && tileData.tileID === 63 && (tileData.roomID === 0 || tileData.roomID === 9999)) {
+                            plantsMod.createPlant(tx, ty, null, p.growth, p.type);
+                        }
                     });
                 });
             });
