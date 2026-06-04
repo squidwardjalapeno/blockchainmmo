@@ -266,6 +266,10 @@ function getRandomServerFish() {
 // 2. Server-Side Plant Database
 const serverPlants = new Map();
 
+// Near the top of server.js:
+
+const registeredServerRanches = new Set(); // 👈 🎯 THE FIX: Tracks registered ranch coordinates
+
 // 3. Server-Side Active Fishing State Registry
 const fishingStates = new Map(); // Key: socket.id, Value: { startTime, waitTime, active: true }
 
@@ -1144,15 +1148,25 @@ socket.on('collectAnvil', (data) => {
 
     // Inside io.on('connection', (socket) => { ... }) in server.js:
 
+    // Replace the registerRanch socket listener inside server.js with this:
+
     // 🎯 SECURE RANCH CHICKEN REGISTRATION
     socket.on('registerRanch', (data) => {
         const { gx, gy, w, h } = data;
-        
+        const ranchKey = `${gx}_${gy}`;
+
+        // 🎯 THE FIX: If this ranch has already been registered on the server, abort spawning!
+        if (registeredServerRanches.has(ranchKey)) {
+            return; 
+        }
+        registeredServerRanches.add(ranchKey);
+
+        console.log(`🐓 Registering new Server Ranch at [${gx}, ${gy}]. Spawning pasture chickens.`);
+
         // Spawn 2 to 3 chickens inside this ranch's internal pasture area
         const numChickens = Math.floor(Math.random() * 2) + 2; 
         
         for (let i = 0; i < numChickens; i++) {
-            // Calculate a random coordinate strictly inside the fence boundary
             const rx = (gx + 1 + Math.random() * (w - 2)) * 16;
             const ry = (gy - h + 2 + Math.random() * (h - 2)) * 16;
 
@@ -1169,7 +1183,6 @@ socket.on('collectAnvil', (data) => {
                 targetX: null,
                 targetY: null,
                 
-                // 🎯 THE FIX: Store fence coordinates to lock chicken movements inside the pasture
                 ranchBounds: { 
                     minX: (gx + 1) * 16, 
                     maxX: (gx + w - 2) * 16, 
