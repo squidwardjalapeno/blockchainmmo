@@ -2575,7 +2575,8 @@ export function buildPlannedWells(worldMatrix, roomMatrix, fertilityMatrix, worl
 // 🌲 POINT-IN-POLYGON HELPER (Ray-Casting)
 // ==========================================
 // 🌲 TREE CULLING HELPER (Radial Ray-Casting)
-// ==========================================
+// Replace isInsideVillagePolygon() in src/cellDecorator.js with this:
+
 function isInsideVillagePolygon(gx, gy) {
     for (let i = 0; i < plannedWells.length; i++) {
         const well = plannedWells[i];
@@ -2597,9 +2598,9 @@ function isInsideVillagePolygon(gx, gy) {
             const index = Math.round((angle / (Math.PI * 2)) * numSpokes) % numSpokes;
             const spoke = well.spokes[index];
 
-            // If the tree's distance is LESS than the road's radius, it is inside town. Cull it!
-            // (If dist > spoke.r, it's outside the road, so we keep the tree!)
-            if (dist < spoke.r) return true;
+            // 🎯 THE FIX: Add a 2.0 tile buffer (32px) to the road's radius.
+            // This culls all trees on the road itself and creates a clean 2-tile gap outside the road.
+            if (dist < spoke.r + 2.0) return true;
             continue;
         }
 
