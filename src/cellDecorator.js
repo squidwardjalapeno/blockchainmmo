@@ -1728,7 +1728,8 @@ function paintLandCorner(cellData, fertilityData, hWidth, vWidth, type) {
 // src/cellDecorator.js
 
 
-// ... scroll down to decorateCell ...
+// Replace decorateCell() in src/cellDecorator.js with this:
+
 export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     if (!fertilityMatrix) return;
     if (cx < 0 || cx >= CONFIG.MAP_SIZE || cy < 0 || cy >= CONFIG.MAP_SIZE) return; 
@@ -1738,13 +1739,36 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
     const isLand = cellType >= CONFIG.LAND_THRESHOLD || cellType >= 100;
     const cellKey = `${cx}_${cy}`;
 
-    // ECOSYSTEM GENERATION (No structural stamping occurs here anymore)
+    // ECOSYSTEM GENERATION
     if (!ecoGenerated.has(cellKey)) {
         ecoGenerated.add(cellKey);
+
+        // 🏗️ LAZY STRUCTURE STAMPING (Constructs buildings for this chunk only)
+        stampStructuresForChunk(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
 
         // ==========================================
         // 🌲 TREE SPAWNER (Forests, Coastlines, & Settlements)
         // ==========================================
+        
+        // 🎯 THE FIX: Restore the calculation block for isForestRegion
+        let isForestRegion = (cellType === 104 || !isLand);
+
+        // If it's a settlement or camp, check neighbors to see what biome it sits inside
+        if (cellType === 101 || cellType === 102 || cellType === 103 || cellType === 107) {
+            for (let oy = -1; oy <= 1; oy++) {
+                for (let ox = -1; ox <= 1; ox++) {
+                    const nx = cx + ox, ny = cy + oy;
+                    if (nx >= 0 && nx < CONFIG.MAP_SIZE && ny >= 0 && ny < CONFIG.MAP_SIZE) {
+                        const neighborType = worldMap[ny * CONFIG.MAP_SIZE + nx];
+                        if (neighborType === 104 || neighborType < CONFIG.LAND_THRESHOLD) {
+                            isForestRegion = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Only spawn trees if we confirmed we are in a forest region
         if (isForestRegion) {
             setWorldSeed((window.worldSeed || 1) + (cx * 1000) + cy + 777);
             
