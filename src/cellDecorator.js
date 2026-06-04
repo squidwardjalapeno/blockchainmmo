@@ -1766,8 +1766,7 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
             }
         }
 
-        // Inside decorateCell() in src/cellDecorator.js (under the tree spawner loop):
-
+        // Only spawn trees if we confirmed we are in a forest region
         if (isForestRegion) {
             setWorldSeed((window.worldSeed || 1) + (cx * 1000) + cy + 777);
             
@@ -1786,8 +1785,6 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
                             if (typeof isInsideVillagePolygon === 'function' && isInsideVillagePolygon(gx, gy)) continue;
                             
                             let isClear = true;
-                            
-                            // 1. Check if another tree is already registered at this immediate coordinate
                             for (let ox = -1; ox <= 1; ox++) {
                                 if (getObjectAt(gx + ox, gy)) {
                                     isClear = false;
@@ -1795,36 +1792,6 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
                                 }
                             }
 
-                            // 🎯 2. THE FIX: Road-Clearing Buffer
-                            // Scans a safe boundary around the planned coordinates.
-                            // If a road tile (337 or 208) is found within this range, abort spawning
-                            // to keep pathways clear and walkable.
-                            if (isClear) {
-                                for (let ox = -2; ox <= 3; ox++) {
-                                    for (let oy = -2; oy <= 2; oy++) {
-                                        const checkGX = gx + ox;
-                                        const checkGY = gy + oy;
-                                        
-                                        const tCX = Math.floor(checkGX / 100);
-                                        const tCY = Math.floor(checkGY / 100);
-                                        if (tCX >= 0 && tCX < CONFIG.MAP_SIZE && tCY >= 0 && tCY < CONFIG.MAP_SIZE) {
-                                            if (worldMatrix[tCX] && worldMatrix[tCX][tCY]) {
-                                                const tLX = ((checkGX % 100) + 100) % 100;
-                                                const tLY = ((checkGY % 100) + 100) % 100;
-                                                const tID = worldMatrix[tCX][tCY][tLY * 100 + tLX];
-                                                
-                                                if (tID === 337 || tID === 208) {
-                                                    isClear = false;
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    }
-                                    if (!isClear) break;
-                                }
-                            }
-
-                            // 3. Keep standard terrain and building boundary checks
                             if (isClear) {
                                 for (let ox = 0; ox <= 1; ox++) {
                                     const checkGX = gx + ox;

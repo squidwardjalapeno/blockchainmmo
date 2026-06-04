@@ -43,21 +43,19 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     const tx = target.gx;
     const ty = target.gy;
 
+    // Scan the current tile and the tile to its left (since the tree is 2 tiles wide)
     for (let ox = -1; ox <= 0; ox++) {
         const anchorX = tx + ox;
         const obj = getObjectAt(anchorX, ty);
         
         if (obj && obj.type === 'FOREST_TREE') {
-            const treeMinX = (anchorX * 16) + 8;  
-            const treeMaxX = (anchorX * 16) + 24; 
-            const treeMinY = ty * 16;
-            const treeMaxY = (ty * 16) + 16;
+            const treeMinX = (anchorX * 16) + 8;  // Left trunk boundary (8px buffer)
+            const treeMaxX = (anchorX * 16) + 24; // Right trunk boundary (8px buffer)
 
-            const overlapX = (pxMin < treeMaxX) && (pxMax > treeMinX);
-            const overlapY = (pyMin < treeMaxY) && (pyMax > treeMinY);
-
-            if (overlapX && overlapY) {
-                return false; 
+            // 🎯 THE FIX: Verify if the exact tested coordinate falls inside the trunk.
+            // (Old buggy 'overlapX' and 'overlapY' checks have been completely removed)
+            if (x >= treeMinX && x <= treeMaxX) {
+                return false; // Collision detected! Block movement
             }
         }
     }
@@ -92,7 +90,7 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
                 }
             }
 
-            // 🎯 THE FIX: Re-evaluate target in case we just opened a door!
+            // Re-evaluate target in case we just opened a door!
             target = getTileData(x, y, worldMatrix, roomMatrix);
         }
 
