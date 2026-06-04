@@ -590,7 +590,8 @@ export function drawBarn(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, world
 
 // ==========================================
 // 🐴 DRAW RANCH
-// ==========================================
+// Replace drawRanch() in src/cellDecorator.js with this:
+
 export function drawRanch(gx, gy, width, height, gateX, barnType, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     for (let i = 0; i < width; i++) {
         for (let j = -(height - 1); j <= 0; j++) {
@@ -602,8 +603,6 @@ export function drawRanch(gx, gy, width, height, gateX, barnType, worldMatrix, r
         }
     }
 
-    let chickensSpawned = 0;
-    const maxChickens = Math.floor(seededRandom() * 2) + 1; 
     let placedNestingBox = false;
 
     for (let i = 0; i < width; i++) {
@@ -631,17 +630,11 @@ export function drawRanch(gx, gy, width, height, gateX, barnType, worldMatrix, r
                     const randomCrop = cropList[Math.floor(seededRandom() * cropList.length)];
                     import('./plants.js').then(m => m.createPlant(tx, ty, fertilityMatrix, initialAge, randomCrop));
                 }
-                if (!isTop && !isBottom && !isLeft && !isRight) {
-                    if (chickensSpawned < maxChickens && seededRandom() > 0.50) {
-                        import('./animals.js').then(m => m.spawnChicken(tx, ty));
-                        chickensSpawned++;
-                    }
-                }
+                // ❌ CLIENT-SIDE CHICKEN SPAWNER HAS BEEN REMOVED FROM HERE
             }
         }
     }
 
-    // 🌟 CORRECTED BARN LOGIC: Double checks width to prevent crashing bounds!
     if (barnType === 'LARGE_BARN') {
         const isLeft = seededRandom() > 0.5;
         const by = gy - height + 1;
@@ -653,6 +646,11 @@ export function drawRanch(gx, gy, width, height, gateX, barnType, worldMatrix, r
         const by = gy - height + 1;
         const bX = isLeft ? gx + 1 : gx + width - 5;
         if (width >= 6) drawBarn(bX, by, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+    }
+
+    // 🎯 THE FIX: Tell the server to spawn and register the pasture chickens securely
+    if (socket && socket.connected) {
+        socket.emit('registerRanch', { gx, gy, w: width, h: height });
     }
 }
 // js/cellDecorator.js

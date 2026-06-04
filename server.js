@@ -1142,6 +1142,44 @@ socket.on('collectAnvil', (data) => {
         }
     });
 
+    // Inside io.on('connection', (socket) => { ... }) in server.js:
+
+    // 🎯 SECURE RANCH CHICKEN REGISTRATION
+    socket.on('registerRanch', (data) => {
+        const { gx, gy, w, h } = data;
+        
+        // Spawn 2 to 3 chickens inside this ranch's internal pasture area
+        const numChickens = Math.floor(Math.random() * 2) + 2; 
+        
+        for (let i = 0; i < numChickens; i++) {
+            // Calculate a random coordinate strictly inside the fence boundary
+            const rx = (gx + 1 + Math.random() * (w - 2)) * 16;
+            const ry = (gy - h + 2 + Math.random() * (h - 2)) * 16;
+
+            serverAnimals.push({
+                id: 'animal_' + Math.random().toString(36).substr(2, 9),
+                x: rx,
+                y: ry,
+                speed: 20,
+                hp: 30,
+                maxHp: 30,
+                state: 'idle',
+                dir: 'East',
+                moveTimer: Math.random() * 3,
+                targetX: null,
+                targetY: null,
+                
+                // 🎯 THE FIX: Store fence coordinates to lock chicken movements inside the pasture
+                ranchBounds: { 
+                    minX: (gx + 1) * 16, 
+                    maxX: (gx + w - 2) * 16, 
+                    minY: (gy - h + 2) * 16, 
+                    maxY: (gy - 1) * 16 
+                }
+            });
+        }
+    });
+
 
 
 
@@ -2131,15 +2169,32 @@ setInterval(() => {
         }
     }
 
-    // 🎯 2. UPDATE SERVER-SIDE CHICKENS (Smooth, synchronized movement AI)
+    // Inside the 50ms heartbeat loop at the bottom of server.js:
+
+    // 🎯 UPDATE SERVER-SIDE CHICKENS (With strict pasture containment)
     serverAnimals.forEach(a => {
         a.moveTimer -= delta;
         if (a.moveTimer <= 0) {
             a.moveTimer = 2 + Math.random() * 3;
-            const angle = Math.random() * Math.PI * 2;
-            const dist = 30 + Math.random() * 50;
-            a.targetX = a.x + Math.cos(angle) * dist;
-            a.targetY = a.y + Math.sin(angle) * dist;
+            
+            let targetX, targetY;
+            
+            if (a.ranchBounds) {
+                // 🎯 THE FIX: Wander ONLY inside the private fence coordinates
+                const rx = a.ranchBounds.maxX - a.ranchBounds.minX;
+                const ry = a.ranchBounds.maxY - a.ranchBounds.minY;
+                targetX = a.ranchBounds.minX + Math.random() * rx;
+                targetY = a.ranchBounds.minY + Math.random() * ry;
+            } else {
+                // Global wander fallback (for chickens spawned outside ranches)
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 30 + Math.random() * 50;
+                targetX = a.x + Math.cos(angle) * dist;
+                targetY = a.y + Math.sin(angle) * dist;
+            }
+
+            a.targetX = targetX;
+            a.targetY = targetY;
             a.state = 'walking';
         }
 
