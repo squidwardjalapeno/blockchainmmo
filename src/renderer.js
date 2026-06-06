@@ -760,11 +760,10 @@ export function drawHero() {
 }
 
 // Inside src/renderer.js:
-
 export function drawRemotePlayers(ctx2, remotePlayersData, roomMatrix) {
-    // 1. Resolve local player's current location room ID
+    // 1. Resolve local player's current location room ID using feet coordinates
     const hTX = Math.floor((hero.x + 8) / 16);
-    const hTY = Math.floor((hero.y + 15) / 16); // Feet placement
+    const hTY = Math.floor((hero.y + 15) / 16); // 👈 THE FIX: Aligned with physical collision threshold
     const rCol = roomMatrix[Math.floor(hTX / 100)]?.[Math.floor(hTY / 100)];
     const heroHouseId = rCol ? rCol[((hTY % 100 + 100) % 100 * 100) + ((hTX % 100 + 100) % 100)] : 0;
 
@@ -779,10 +778,10 @@ export function drawRemotePlayers(ctx2, remotePlayersData, roomMatrix) {
         // 🚪 INSIDE/OUTSIDE VISIBILITY PARTITION
         // ==========================================
         if (heroHouseId !== 0 && heroHouseId !== 9999) {
-            // Caster is inside a building: hide players outside or in other rooms
+            // Local player is inside a building: hide players outside or in other rooms
             if (pRoomId !== heroHouseId) return;
         } else {
-            // Caster is outside in overworld: hide players inside buildings
+            // Local player is outside in overworld: hide players inside buildings
             if (pRoomId !== 0 && pRoomId !== 9999) return;
         }
 
@@ -861,7 +860,8 @@ export function drawRemotePlayers(ctx2, remotePlayersData, roomMatrix) {
         // ==========================================
         // DRAW HERO SPRITE
         // ==========================================
-        const frame = isLunge ? 1 : (p.animFrame || 0);
+        // 🎯 THE FIX: Use Frame 0 for lunge (single-frame file) to prevent out-of-bounds crops
+        const frame = isLunge ? 0 : (p.animFrame || 0);
 
         ctx2.drawImage(img, frame * 16, 0, 16, 16, sx, sy, 16, 16);
         ctx2.shadowBlur = 0;
@@ -925,7 +925,6 @@ export function drawRemotePlayers(ctx2, remotePlayersData, roomMatrix) {
         }
     });
 }
-
 
 export function drawBobber() {
     if (!hero.isFishing) return;

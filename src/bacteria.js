@@ -1,4 +1,4 @@
-// js/bacteria.js
+// src/bacteria.js
 import { CONFIG } from './config.js';
 import { hero } from './entities.js';
 import { plants } from './plants.js';
@@ -6,8 +6,6 @@ import { ITEM_TYPES } from './items.js';
 import { socket } from './multiplayer.js'; 
 
 export const bacteriaCells = new Map();
-
-// 🗺️ Tracks the last updated timestamp of each chunk
 export const chunkLastUpdated = new Map(); 
 
 if (typeof window !== 'undefined') {
@@ -32,15 +30,29 @@ export const BACTERIA_TYPES = {
     "fish_octopus": 46, "fish_eel": 47, "fish_angler": 48,
 
     "raw_chicken": 50, 
-    
     "weapon_dagger": 60,
     "key": 61,
 };
 
-export function handleRemoteTileUpdate(data) {
+export function handleRemoteTileUpdate(data, worldMatrix) {
     const { gx, gy, traits } = data;
-    const { data: chunkData, idx } = getBacteriaData(gx, gy);
-    chunkData[idx] = traits;
+    
+    // 🎯 THE FIX: If traits is a physical tile ID, write it directly to the map matrix
+    if (traits < 1000) {
+        const cx = Math.floor(gx / 100);
+        const cy = Math.floor(gy / 100);
+        if (worldMatrix && worldMatrix[cx]?.[cy]) {
+            const lx = ((gx % 100) + 100) % 100;
+            const ly = ((gy % 100) + 100) % 100;
+            worldMatrix[cx][cy][ly * 100 + lx] = traits;
+        }
+    } else {
+        // Otherwise, update bacteria cells
+        const { data: chunkData, idx } = getBacteriaData(gx, gy);
+        if (chunkData) {
+            chunkData[idx] = traits;
+        }
+    }
 }
 
 export function getBacteriaData(gx, gy) {
@@ -59,9 +71,6 @@ export function getBacteriaData(gx, gy) {
     return { data, idx };
 }
 
-// ==========================================
-// ⚡ TIER 1 & 2: ACTIVE HEARTBEAT (3x3 Chunks)
-// ==========================================
 export function updateBacteria(worldMatrix, fertilityMatrix) {
     const heroGTX = Math.floor(hero.x / CONFIG.TILE_SIZE);
     const heroGTY = Math.floor(hero.y / CONFIG.TILE_SIZE);
@@ -69,7 +78,6 @@ export function updateBacteria(worldMatrix, fertilityMatrix) {
     const heroCY = Math.floor(heroGTY / CONFIG.CELL_SIZE);
     const now = Date.now();
 
-    // Loop through the optimized 3x3 active chunk area (offsets -1 to 1)
     for (let offsetX = -1; offsetX <= 1; offsetX++) {
         for (let offsetY = -1; offsetY <= 1; offsetY++) {
             const targetCX = heroCX + offsetX;
@@ -78,41 +86,33 @@ export function updateBacteria(worldMatrix, fertilityMatrix) {
             if (targetCX >= 0 && targetCX < CONFIG.MAP_SIZE && targetCY >= 0 && targetCY < CONFIG.MAP_SIZE) {
                 const key = `${targetCX}_${targetCY}`;
                 
-                // 🕰️ TIER 3: STEP-IN CATCH-UP GATE
                 if (chunkLastUpdated.has(key)) {
                     const lastTime = chunkLastUpdated.get(key);
                     const deltaSeconds = (now - lastTime) / 1000;
                     
-                    // If the chunk has been frozen for more than 3 seconds, catch up
                     if (deltaSeconds > 3.0) {
                         catchUpChunkBacteria(targetCX, targetCY, deltaSeconds, fertilityMatrix);
                     }
                 }
                 
-                // Update active timestamp
                 chunkLastUpdated.set(key, now);
-
                 processCellSpread(targetCX, targetCY, worldMatrix, fertilityMatrix);
             }
         }
     }
 }
 
-// ==========================================
-// 🕰️ TIER 3: BACTERIA CATCH-UP (Macro Decay)
-// ==========================================
 export function catchUpChunkBacteria(cx, cy, deltaSeconds, fertilityMatrix) {
     const cellKey = `${cx}_${cy}`;
     const data = bacteriaCells.get(cellKey);
     if (!data) return;
 
-    // Fast-forward standard biological decays over the total offline elapsed duration
     for (let idx = 0; idx < 10000; idx++) {
         let traits = data[idx];
         if (traits === 0) continue;
 
         let typeID = (traits >> 20) & 0xFF;
-        if (typeID === 60 || typeID === 61) continue; // Skip keys/weapons (inanimate)
+        if (typeID === 60 || typeID === 61) continue; 
 
         let h = traits & 0xFF;
         let v = (traits >> 8) & 0xFF;
@@ -121,14 +121,12 @@ export function catchUpChunkBacteria(cx, cy, deltaSeconds, fertilityMatrix) {
 
         let timeRemaining = deltaSeconds;
 
-        // 1. Process Health Decay (HP drops by 1 per second average)
         if (h > 0) {
             const hDecay = Math.min(h, Math.floor(timeRemaining));
             h -= hDecay;
             timeRemaining -= hDecay;
         }
 
-        // 2. Process Virulence Decay & Soil Nutrient Leaking
         if (h === 0 && timeRemaining > 0) {
             let bFert = 0;
             if (typeID === 1) bFert = ITEM_TYPES.BASS?.baseFertility || 100;
@@ -137,11 +135,9 @@ export function catchUpChunkBacteria(cx, cy, deltaSeconds, fertilityMatrix) {
             else if (typeID === 5) bFert = ITEM_TYPES.COOKED_BASS?.baseFertility || 80;
             else if (typeID === 16) bFert = ITEM_TYPES.EGG?.baseFertility || 15;
 
-            // Virulence has a ~100s lifecycle window
             const vDecayRate = 50 / 100; 
             const leakProgress = Math.min(1.0, timeRemaining / 100.0);
 
-            // Directly inject nutrients into the soil matrix
             if (bFert > 0 && fertilityMatrix[cx]?.[cy]) {
                 const currentF = fertilityMatrix[cx][cy][idx];
                 fertilityMatrix[cx][cy][idx] = Math.min(255, currentF + (bFert * leakProgress));
@@ -150,7 +146,6 @@ export function catchUpChunkBacteria(cx, cy, deltaSeconds, fertilityMatrix) {
             v = Math.max(0, v - Math.floor(timeRemaining * vDecayRate));
         }
 
-        // If completely composted, delete the tile. Otherwise, save remains.
         if (h === 0 && v === 0) {
             data[idx] = 0; 
         } else {
@@ -261,7 +256,6 @@ function processCellSpread(cx, cy, worldMatrix, fertilityMatrix) {
                     });
                 }
 
-                // Nutrient leak into the soil matrix during active rot
                 if (h === 0 && v > 0) {
                     let bFert = 0;
                     if (typeID === 1) bFert = ITEM_TYPES.BASS?.baseFertility || 100; 
@@ -303,7 +297,6 @@ function processCellSpread(cx, cy, worldMatrix, fertilityMatrix) {
         }
     }
 
-    // Flush dead data nodes rarely
     if (Math.random() > 0.9) { 
         let activeCount = 0;
         for (let j = 0; j < data.length; j++) {
@@ -327,7 +320,7 @@ function processCellSpread(cx, cy, worldMatrix, fertilityMatrix) {
 
         if (activeCount === 0) {
             bacteriaCells.delete(cellKey);
-            chunkLastUpdated.delete(cellKey); // Clear timestamp
+            chunkLastUpdated.delete(cellKey); 
             console.log(`🧹 DEEP CLEAN: Chunk [${cx}, ${cy}] cleared.`);
         }
     }
