@@ -63,6 +63,15 @@ function isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix) {
 
     const data = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix);
     if (!data || data.tileID === undefined) return false;
+
+    // 🎯 THE FIX: Evaluate indoor tiles with non-solid indoor rules
+    const roomID = data.roomID;
+    if (roomID !== 0 && roomID !== 9999) {
+        const hardSolids = [40, 41, 43, 27, 46, 47];
+        if (hardSolids.includes(data.tileID)) return false;
+        return true; 
+    }
+
     const solids = [40, 48, 50, 52, 17, 18, 19, 21, 22, 24, 27, 1, 3];
     if (solids.includes(data.tileID)) return false;
     return true;

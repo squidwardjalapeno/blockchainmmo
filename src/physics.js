@@ -95,7 +95,7 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
 
                     // Houses & Barns (Require Keys)
                     if (near.tileID === 49 || near.tileID === 12) {
-                        const hasKey = entity.inventory.some(item => item.isKey && item.houseId === near.roomID);
+                        const hasKey = entity.inventory && entity.inventory.some(item => item.isKey && item.houseId === near.roomID);
                         if (hasKey) {
                             const newTile = (near.tileID === 49) ? 35 : 13;
                             worldMatrix[near.cx][near.cy][nearIdx] = newTile;
@@ -132,7 +132,6 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
                     const dist = Math.sqrt(Math.pow((near.gx * 16 + 8) - doorCheckX, 2) + Math.pow((near.gy * 16 + 8) - doorCheckY, 2));
                     
                     if (dist > 24) {
-                        // 🎯 HOLD OPEN FIX: If another player is holding/standing in this door, do not close it!
                         if (isAnyPlayerNearDoor(near.gx, near.gy)) {
                             continue;
                         }
@@ -212,7 +211,13 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     const cRoom = (current.roomID === 9999) ? 0 : current.roomID;
     const tRoom = (target.roomID === 9999) ? 0 : target.roomID;
     
-    if (cRoom !== tRoom) return false;
+    if (cRoom !== tRoom) {
+        const openDoors = [35, 13, 23, 20];
+        // 🎯 THE FIX: Allow transition across boundaries when passing through open thresholds
+        if (!openDoors.includes(target.tileID) && !openDoors.includes(current.tileID)) {
+            return false;
+        }
+    }
 
     return true;
 }
