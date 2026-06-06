@@ -39,6 +39,10 @@ export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null) 
         houseId: houseId,
         homeX: homeX,
         homeY: homeY,
+        
+        // 🎯 THE FIX: Explicitly target the door entrance
+        doorX: houseId ? homeX - 1 : null,  // gx + 1
+        doorY: houseId ? homeY + 2 : null,  // gy + 1
 
         // Tight collision profiles for 16px doorways
         hitboxLeft: 4,
@@ -70,7 +74,7 @@ function isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix) {
     const data = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix);
     if (!data || data.tileID === undefined) return false;
 
-    // 🎯 THE FIX: Solid wall tiles must ALWAYS block pathfinding to force doorway usage
+    // Solid wall tiles must ALWAYS block pathfinding to force doorway usage
     const absoluteWalls = [40, 50, 52, 1, 3, 5, 41, 43, 27, 46, 47, 17, 18, 19, 21, 24];
     if (absoluteWalls.includes(data.tileID)) return false;
 
@@ -267,10 +271,18 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
                     } else if (worldTime.isNight && hobbit.houseId) {
                         if (currTX !== hobbit.homeX || currTY !== hobbit.homeY) {
-                            const path = findPathToCoords(currTX, currTY, hobbit.homeX, hobbit.homeY, worldMatrix, roomMatrix);
-                            if (path) {
-                                hobbit.path = path;
+                            if (currTX === hobbit.doorX && currTY === hobbit.doorY) {
+                                hobbit.path = [
+                                    { x: hobbit.doorX, y: hobbit.doorY - 1 },
+                                    { x: hobbit.homeX, y: hobbit.homeY }
+                                ];
                                 hobbit.goal = 'gohome';
+                            } else {
+                                const path = findPathToCoords(currTX, currTY, hobbit.doorX, hobbit.doorY, worldMatrix, roomMatrix);
+                                if (path) {
+                                    hobbit.path = path;
+                                    hobbit.goal = 'gohome';
+                                }
                             }
                         }
                     } else if (!target) {
@@ -349,17 +361,29 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         } 
         else if (worldTime.isNight && hobbit.houseId) {
             hobbit.goal = 'gohome';
-            if (currTX !== hobbit.homeX || currTY !== hobbit.homeY) {
+            if (currTX === hobbit.homeX && currTY === hobbit.homeY) {
+                hobbit.state = 'idle';
+                hobbit.path = [];
+            } 
+            else if (currTX === hobbit.doorX && currTY === hobbit.doorY) {
+                // 🎯 STAGE 2: Explicitly step through the doorway
                 if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
-                    const path = findPathToCoords(currTX, currTY, hobbit.homeX, hobbit.homeY, worldMatrix, roomMatrix);
+                    hobbit.path = [
+                        { x: hobbit.doorX, y: hobbit.doorY - 1 }, // Door tile (GX+1, GY)
+                        { x: hobbit.homeX, y: hobbit.homeY }       // Inside floor (GX+2, GY-1)
+                    ];
+                    hobbit.state = 'walking';
+                }
+            } 
+            else {
+                // 🎯 STAGE 1: Navigate strictly to outside the door
+                if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
+                    const path = findPathToCoords(currTX, currTY, hobbit.doorX, hobbit.doorY, worldMatrix, roomMatrix);
                     if (path) {
                         hobbit.path = path;
                         hobbit.state = 'walking';
                     }
                 }
-            } else {
-                hobbit.state = 'idle';
-                hobbit.path = [];
             }
         }
         else {
