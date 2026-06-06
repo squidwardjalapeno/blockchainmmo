@@ -3,8 +3,7 @@ import { viewport } from './viewport.js';
 import { moveEntity, getTileData } from './physics.js'; 
 import { hero } from './entities.js'; 
 import { getObjectAt, staticObjects, solidTiles } from './staticObjects.js';
-import { socket } from './multiplayer.js'; // 👈 🎯 THE FIX: Add this import!
-
+import { socket } from './multiplayer.js';
 
 export const hobbits = [];
 
@@ -99,21 +98,70 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         const hobbitCX = Math.floor(hobbit.x / 1600);
         const hobbitCY = Math.floor(hobbit.y / 1600);
 
-        // 3-Tier Layer 3: Frozen Zone
+        // ==========================================
+        // ❄️ TIER 3: FROZEN ZONE (Outside 3x3 Chunks)
+        // ==========================================
         const isInsideActiveChunks = Math.abs(hobbitCX - heroCX) <= 1 && Math.abs(hobbitCY - heroCY) <= 1;
         if (!isInsideActiveChunks) return;
 
+        // Initialize elapsed time
         if (!hobbit.lastUpdated) hobbit.lastUpdated = now;
         let deltaSeconds = (now - hobbit.lastUpdated) / 1000;
         hobbit.lastUpdated = now;
 
+        // ==========================================
+        // 🕰️ TIER 3: CATCH-UP (Step-In Fast Forward)
+        // ==========================================
         if (deltaSeconds > 2.0) {
+            let timeRemaining = Math.min(deltaSeconds, 86400); // Guard rails to prevent freeze
+            let simX = Math.floor(hobbit.x / 16);
+            let simY = Math.floor(hobbit.y / 16);
+
+            while (timeRemaining > 0) {
+                const stepTime = Math.min(30.0, timeRemaining);
+                timeRemaining -= stepTime;
+
+                const hx = hero.x + 8;
+                const hy = hero.y + 8;
+                const px = hx - (simX * 16 + 8);
+                const py = hy - (simY * 16 + 8);
+                const distToHero = Math.hypot(px, py);
+
+                if (distToHero < 80 && hero.hp > 0) {
+                    if (distToHero <= 24) {
+                        hero.hp = Math.max(0, hero.hp - hobbit.ad);
+                        if (socket && socket.connected) {
+                            socket.emit('updateStats', { hp: hero.hp });
+                        }
+                    } else {
+                        const hTX = Math.floor(hx / 16);
+                        const hTY = Math.floor(hy / 16);
+                        const path = findPathToCoords(simX, simY, hTX, hTY, worldMatrix, roomMatrix);
+                        if (path && path.length > 0) {
+                            const next = path[Math.min(path.length - 1, 3)]; 
+                            simX = next.x;
+                            simY = next.y;
+                        }
+                    }
+                } else {
+                    const dirs = [[0,-1], [0,1], [-1,0], [1,0]];
+                    const valid = dirs.filter(d => isWalkableForHobbit(simX + d[0], simY + d[1], worldMatrix, roomMatrix));
+                    if (valid.length > 0) {
+                        const pick = valid[Math.floor(Math.random() * valid.length)];
+                        simX += pick[0];
+                        simY += pick[1];
+                    }
+                }
+            }
+
+            hobbit.x = simX * 16;
+            hobbit.y = simY * 16;
             hobbit.path = [];
             hobbit.state = 'idle';
             return;
         }
 
-        // Viewport check
+        // Viewport presence calculation
         const pad = 32; 
         const screenX = hobbit.x + viewport.offset[0];
         const screenY = hobbit.y + viewport.offset[1];
@@ -124,103 +172,138 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             screenY <= viewport.screen[1] + pad
         );
 
-        let shouldProcessAI = inViewport || (hobbit.slowTickTimer -= modifier) <= 0;
-        if (!inViewport && shouldProcessAI) {
-            hobbit.slowTickTimer = 1.5;
-        }
+        // ==========================================
+        // ❄️ TIER 2: COLD HEARTBEAT (Off-Screen Active)
+        // ==========================================
+        if (!inViewport) {
+            hobbit.slowTickTimer -= modifier;
+            if (hobbit.slowTickTimer <= 0) {
+                hobbit.slowTickTimer = 1.5; // Update state once every 1.5s
 
-        if (shouldProcessAI) {
-            const currTX = Math.floor((hobbit.x + 8) / 16);
-            const currTY = Math.floor((hobbit.y + 8) / 16);
+                const currTX = Math.floor((hobbit.x + 8) / 16);
+                const currTY = Math.floor((hobbit.y + 8) / 16);
 
-            // ==========================================
-            // 🧠 CORE INTEL GOAL: Engage or Wander
-            // ==========================================
-            let target = null;
-            let targetDist = Infinity;
+                let target = null;
+                let targetDist = Infinity;
+                const px = (hero.x + 8) - (hobbit.x + 8);
+                const py = (hero.y + 8) - (hobbit.y + 8);
+                const distToHero = Math.hypot(px, py);
 
-            // Scan for player (aggro range: 5 tiles / 80px)
-            const px = (hero.x + 8) - (hobbit.x + 8);
-            const py = (hero.y + 8) - (hobbit.y + 8);
-            const distToHero = Math.hypot(px, py);
-
-            if (distToHero < 80 && hero.hp > 0) {
-                target = hero;
-                targetDist = distToHero;
-            }
-
-            // A. If in close range, execute ATTACK
-            if (target && targetDist <= 20) {
-                hobbit.goal = 'engage';
-                if (hobbit.state !== 'attacking') {
-                    hobbit.state = 'attacking';
-                    hobbit.frame = 0;
-                    hobbit.animTimer = 0;
-                    hobbit.attackTimer = 0.5; // 0.5s swing duration
-                    hobbit.path = []; // Stop movement
-                    
-                    // Face target
-                    const tdx = target.x - hobbit.x;
-                    const tdy = target.y - hobbit.y;
-                    if (Math.abs(tdx) > Math.abs(tdy)) {
-                        hobbit.dir = tdx > 0 ? 'East' : 'West';
-                    } else {
-                        hobbit.dir = tdy > 0 ? 'South' : 'North';
-                    }
+                if (distToHero < 80 && hero.hp > 0) {
+                    target = hero;
+                    targetDist = distToHero;
                 }
-            } 
-            // B. If target found but out of range, chase them
-            else if (target && targetDist > 20) {
-                hobbit.goal = 'engage';
-                if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
-                    const tTX = Math.floor((target.x + 8) / 16);
-                    const tTY = Math.floor((target.y + 8) / 16);
-                    const path = findPathToCoords(currTX, currTY, tTX, tTY, worldMatrix, roomMatrix);
-                    if (path) {
-                        hobbit.path = path;
-                        hobbit.state = 'walking';
-                    }
-                }
-            } 
-            // C. Default: Wander around village
-            else {
-                hobbit.goal = 'wander';
-                if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
-                    hobbit.moveTimer -= (inViewport ? modifier : 1.5);
-                    if (hobbit.moveTimer <= 0) {
+
+                if (!hobbit.path || hobbit.path.length === 0) {
+                    if (target && targetDist > 20) {
+                        const tTX = Math.floor((target.x + 8) / 16);
+                        const tTY = Math.floor((target.y + 8) / 16);
+                        const path = findPathToCoords(currTX, currTY, tTX, tTY, worldMatrix, roomMatrix);
+                        if (path) {
+                            hobbit.path = path;
+                            hobbit.goal = 'engage';
+                        }
+                    } else if (!target) {
                         assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                        hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
-                        hobbit.moveTimer = 2 + Math.random() * 3;
+                        hobbit.goal = 'wander';
                     }
+                }
+
+                if (hobbit.path && hobbit.path.length > 0) {
+                    const nextNode = hobbit.path.shift();
+                    hobbit.x = nextNode.x * 16;
+                    hobbit.y = nextNode.y * 16;
+
+                    const currentDistToHero = Math.hypot((hero.x + 8) - (hobbit.x + 8), (hero.y + 8) - (hobbit.y + 8));
+                    if (hobbit.goal === 'engage' && currentDistToHero <= 24) {
+                        if (hero.hp > 0) {
+                            hero.hp = Math.max(0, hero.hp - hobbit.ad);
+                            if (socket && socket.connected) {
+                                socket.emit('updateStats', { hp: hero.hp });
+                            }
+                        }
+                        hobbit.path = [];
+                    }
+                }
+            }
+            return; // Skip real-time physics and stepping completely!
+        }
+
+        // ==========================================
+        // ⚡ TIER 1: VIEWPORT ACTIVE (On-Screen Real-Time)
+        // ==========================================
+        const currTX = Math.floor((hobbit.x + 8) / 16);
+        const currTY = Math.floor((hobbit.y + 8) / 16);
+
+        // Core Intel Goal Allocation
+        let target = null;
+        let targetDist = Infinity;
+
+        const px = (hero.x + 8) - (hobbit.x + 8);
+        const py = (hero.y + 8) - (hobbit.y + 8);
+        const distToHero = Math.hypot(px, py);
+
+        if (distToHero < 80 && hero.hp > 0) {
+            target = hero;
+            targetDist = distToHero;
+        }
+
+        if (target && targetDist <= 20) {
+            hobbit.goal = 'engage';
+            if (hobbit.state !== 'attacking') {
+                hobbit.state = 'attacking';
+                hobbit.frame = 0;
+                hobbit.animTimer = 0;
+                hobbit.attackTimer = 0.5; 
+                hobbit.path = []; 
+                
+                const tdx = target.x - hobbit.x;
+                const tdy = target.y - hobbit.y;
+                if (Math.abs(tdx) > Math.abs(tdy)) {
+                    hobbit.dir = tdx > 0 ? 'East' : 'West';
+                } else {
+                    hobbit.dir = tdy > 0 ? 'South' : 'North';
+                }
+            }
+        } 
+        else if (target && targetDist > 20) {
+            hobbit.goal = 'engage';
+            if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
+                const tTX = Math.floor((target.x + 8) / 16);
+                const tTY = Math.floor((target.y + 8) / 16);
+                const path = findPathToCoords(currTX, currTY, tTX, tTY, worldMatrix, roomMatrix);
+                if (path) {
+                    hobbit.path = path;
+                    hobbit.state = 'walking';
+                }
+            }
+        } 
+        else {
+            hobbit.goal = 'wander';
+            if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
+                hobbit.moveTimer -= modifier;
+                if (hobbit.moveTimer <= 0) {
+                    assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                    hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
+                    hobbit.moveTimer = 2 + Math.random() * 3;
                 }
             }
         }
 
-        // ==========================================
-        // 🎬 EXECUTE STATE
-        // ==========================================
-        
-        // Inside updateHobbits() in src/hobbits.js:
-
-        // Inside updateHobbits() in src/hobbits.js:
-
-        // --- STATE: ATTACKING ---
+        // Real-Time State Progression
         if (hobbit.state === 'attacking') {
             const oldTimer = hobbit.attackTimer;
             hobbit.attackTimer -= modifier;
             
-            // Apply damage to player on the exact impact frame (0.25s)
             if (oldTimer > 0.25 && hobbit.attackTimer <= 0.25) {
                 const hx = hero.x + 8;
                 const hy = hero.y + 8;
                 const hdist = Math.hypot(hx - (hobbit.x + 8), hy - (hobbit.y + 8));
 
-                // Confirm player is still in range (within 24px)
                 if (hdist <= 24 && hero.hp > 0) {
                     hero.hp = Math.max(0, hero.hp - hobbit.ad);
                     console.log(`💥 Hobbit dealt ${hobbit.ad} damage to you!`);
                     
-                    // 🎯 THE FIX: Simplified, safe socket emit
                     if (socket && socket.connected) {
                         socket.emit('updateStats', { hp: hero.hp });
                     }
@@ -234,11 +317,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 hobbit.moveTimer = 1.0; 
             }
         }
-        
-        // Inside updateHobbits() in src/hobbits.js (under State: Walking):
-
-        // --- STATE: WALKING ---
-        else if (inViewport && hobbit.path && hobbit.path.length > 0 && hobbit.state === 'walking') {
+        else if (hobbit.path && hobbit.path.length > 0 && hobbit.state === 'walking') {
             const nextNode = hobbit.path[0];
             const targetX = nextNode.x * 16;
             const targetY = nextNode.y * 16;
@@ -247,9 +326,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             const dy = targetY - hobbit.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
 
-            // 🎯 THE FIX: Full 8-Directional Vector Translation
-            // Divides the 360-degree circle into 8 equal octants (45-degrees each)
-            // and maps them directly to your diagonal walk assets!
             const angle = Math.atan2(dy, dx);
             const octant = Math.round(8 * angle / (2 * Math.PI) + 8) % 8;
             const directions = ['East', 'SouthEast', 'South', 'SouthWest', 'West', 'NorthWest', 'North', 'NorthEast'];
@@ -271,12 +347,9 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             }
 
             hobbit.animTimer += modifier * 8;
-            hobbit.frame = Math.floor(hobbit.animTimer) % 4; // 4 frames for walk
-        }
-        else if (!inViewport && hobbit.path && hobbit.path.length > 0 && hobbit.state === 'walking') {
-            const nextNode = hobbit.path.shift();
-            hobbit.x = nextNode.x * 16;
-            hobbit.y = nextNode.y * 16;
+            hobbit.frame = Math.floor(hobbit.animTimer) % 4; 
+        } else {
+            hobbit.state = 'idle';
         }
     });
 }
