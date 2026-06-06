@@ -12,7 +12,7 @@ import { globalFishCount } from './fish.js';
 import { getObjectAt } from './staticObjects.js';
 import { roomMetadata } from './cellDecorator.js';
 import { PALADIN_SKILLS } from './uiManager.js';
-import { getHeroAnimationData, getPetAnimationData, getAnimalAnimationData } from './animations.js';
+import { getHeroAnimationData, getPetAnimationData, getAnimalAnimationData, getHobbitAnimationData } from './animations.js';
 
 // Add this import to the top of src/renderer.js:
 import { worldTime } from './clock.js'; // 👈 ADD THIS IMPORT
