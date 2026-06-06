@@ -286,7 +286,8 @@ var render = function () {
     // 🎯 THE FIX: Pass roomMatrix as the third parameter to drawRemotePlayers
     drawRemotePlayers(ctx2, remotePlayers, roomMatrix); 
 
-    drawHobbits(ctx2, hobbits);                // 👈 ADDED HERE
+    drawHobbits(ctx2, hobbits, roomMatrix);    // 👈 🎯 THE FIX: Passed roomMatrix reference
+
 
     drawHero(); 
     drawBobber();

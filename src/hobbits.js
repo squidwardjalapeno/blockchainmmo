@@ -40,6 +40,12 @@ export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null) 
         homeX: homeX,
         homeY: homeY,
 
+        // 🎯 THE FIX: Define a tighter, narrow physical hitbox width
+        hitboxLeft: 4,
+        hitboxRight: 12, // 8px wide profile
+        hitboxTop: 10,
+        hitboxBottom: 15,
+
         state: 'idle',     // 'idle', 'walking', 'attacking'
         goal: 'wander',    // 'wander', 'engage', 'gohome'
         dir: 'South',
@@ -64,7 +70,6 @@ function isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix) {
     const data = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix);
     if (!data || data.tileID === undefined) return false;
 
-    // 🎯 THE FIX: Evaluate indoor tiles with non-solid indoor rules
     const roomID = data.roomID;
     if (roomID !== 0 && roomID !== 9999) {
         const hardSolids = [40, 41, 43, 27, 46, 47];
@@ -420,10 +425,8 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 const moveX = (dx / dist) * hobbit.speed * modifier;
                 const moveY = (dy / dist) * hobbit.speed * modifier;
 
-                if (!moveEntity(hobbit, moveX, moveY, worldMatrix, roomMatrix)) {
-                    hobbit.path = [];
-                    hobbit.state = 'idle';
-                }
+                // 🎯 THE FIX: Do not instantly clear the path on collision failures. Let the vector realign so the smaller hitbox slides around corners.
+                moveEntity(hobbit, moveX, moveY, worldMatrix, roomMatrix);
             } else {
                 hobbit.x = targetX;
                 hobbit.y = targetY;

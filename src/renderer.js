@@ -928,11 +928,35 @@ export function drawRemotePlayers(ctx2, remotePlayersData, roomMatrix) {
 
 // Add to the bottom of src/renderer.js:
 
-export function drawHobbits(ctx2, activeHobbits) {
+// Inside src/renderer.js, replace the drawHobbits function with this:
+export function drawHobbits(ctx2, activeHobbits, roomMatrix) {
     const w = canvas2.width;
     const h = canvas2.height;
 
+    // 🎯 THE FIX: Resolve the local player's room ID
+    const hTX = Math.floor((hero.x + 8) / 16);
+    const hTY = Math.floor((hero.y + 15) / 16);
+    const rCol = roomMatrix[Math.floor(hTX / 100)]?.[Math.floor(hTY / 100)];
+    const heroHouseId = rCol ? rCol[((hTY % 100 + 100) % 100 * 100) + ((hTX % 100 + 100) % 100)] : 0;
+
     activeHobbits.forEach(hobbit => {
+        // 🎯 THE FIX: Resolve each hobbit's room ID using their feet coordinate
+        const pTX = Math.floor((hobbit.x + 8) / 16);
+        const pTY = Math.floor((hobbit.y + 15) / 16);
+        const pCol = roomMatrix[Math.floor(pTX / 100)]?.[Math.floor(pTY / 100)];
+        const hobbitRoomId = pCol ? pCol[((pTY % 100 + 100) % 100 * 100) + ((pTX % 100 + 100) % 100)] : 0;
+
+        // ==========================================
+        // 🚪 INSIDE/OUTSIDE VISIBILITY PARTITION
+        // ==========================================
+        if (heroHouseId !== 0 && heroHouseId !== 9999) {
+            // Player is inside: hide hobbits outside or in other rooms
+            if (hobbitRoomId !== heroHouseId) return;
+        } else {
+            // Player is outside: hide hobbits inside rooms
+            if (hobbitRoomId !== 0 && hobbitRoomId !== 9999) return;
+        }
+
         const screenX = Math.floor(hobbit.x + viewport.offset[0]);
         const screenY = Math.floor(hobbit.y + viewport.offset[1]);
 
@@ -941,7 +965,6 @@ export function drawHobbits(ctx2, activeHobbits) {
         const animData = getHobbitAnimationData(hobbit, images);
 
         if (animData.img && animData.img.complete) {
-            // Scale to 12x12, offset X (+2) and Y (+4) to center on 16x16 grid
             ctx2.drawImage(
                 animData.img,
                 animData.srcX, animData.srcY, animData.srcW, animData.srcH,

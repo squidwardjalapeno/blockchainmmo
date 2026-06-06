@@ -213,7 +213,6 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     
     if (cRoom !== tRoom) {
         const openDoors = [35, 13, 23, 20];
-        // 🎯 THE FIX: Allow transition across boundaries when passing through open thresholds
         if (!openDoors.includes(target.tileID) && !openDoors.includes(current.tileID)) {
             return false;
         }
@@ -223,7 +222,12 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
 }
 
 export function moveEntity(entity, dx, dy, worldMatrix, roomMatrix) {
-    const left = 2, right = 14, top = 8, bottom = 15; 
+    // 🎯 THE FIX: Use custom hitboxes defined on the entity to handle smaller collision profiles
+    const left = entity.hitboxLeft !== undefined ? entity.hitboxLeft : 2;
+    const right = entity.hitboxRight !== undefined ? entity.hitboxRight : 14;
+    const top = entity.hitboxTop !== undefined ? entity.hitboxTop : 8;
+    const bottom = entity.hitboxBottom !== undefined ? entity.hitboxBottom : 15;
+    
     let movedX = false;
     let movedY = false;
 
