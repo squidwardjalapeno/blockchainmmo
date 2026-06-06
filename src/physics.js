@@ -2,7 +2,37 @@
 import { CONFIG } from './config.js';
 import { getObjectAt, solidTiles } from './staticObjects.js'; 
 import { roomMetadata } from './cellDecorator.js';
-import { socket } from './multiplayer.js'; // 👈 THE FIX: Imported socket to resolve ReferenceErrors
+import { hero } from './entities.js'; 
+import { socket, remotePlayers } from './multiplayer.js'; 
+
+// 🎯 THE FIX: Explicit door state close translations (Never morphs gates to barn doors)
+const DOOR_TRANSITIONS = {
+    35: 49, // Opened House -> Closed House
+    13: 12, // Opened Barn -> Closed Barn
+    23: 22, // Opened Vert Gate -> Closed Vert Gate
+    20: 19  // Opened Horiz Gate -> Closed Horiz Gate
+};
+
+// 🎯 THE FIX: Blocks automatic closures if any client is near the tile
+function isAnyPlayerNearDoor(doorGX, doorGY) {
+    const doorX = doorGX * 16 + 8;
+    const doorY = doorGY * 16 + 8;
+
+    const distLocal = Math.hypot((hero.x + 8) - doorX, (hero.y + 8) - doorY);
+    if (distLocal <= 24) return true;
+
+    let near = false;
+    if (remotePlayers) {
+        remotePlayers.forEach(p => {
+            const distRemote = Math.hypot((p.x + 8) - doorX, (p.y + 8) - doorY);
+            if (distRemote <= 24) {
+                near = true;
+            }
+        });
+    }
+
+    return near;
+}
 
 export function getTileData(pxX, pxY, worldMatrix, roomMatrix) {
     const gx = Math.floor(pxX / 16);
@@ -29,10 +59,8 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
 
     if (target.tileID === undefined) return false;
 
-    // Block standard full-tile solid objects (like Wells)
     if (solidTiles.has(`${target.gx}_${target.gy}`)) return false;
 
-    // Sub-pixel tree trunk checks
     const tx = target.gx;
     const ty = target.gy;
 
@@ -51,7 +79,7 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     }
 
     // ==========================================
-    // DOOR & GATE LOGIC (Synchronized)
+    // DOOR & GATE LAYER (Synchronized)
     // ==========================================
     if (entity.floor === 1) {
         const isNearClosedDoor = (
@@ -72,14 +100,13 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
                             const newTile = (near.tileID === 49) ? 35 : 13;
                             worldMatrix[near.cx][near.cy][nearIdx] = newTile;
                             
-                            // Broadcast the opened door state to all other players
                             if (socket && socket.connected) {
                                 socket.emit('syncTile', { gx: near.gx, gy: near.gy, traits: newTile });
                             }
                         }
                     }
                     
-                    // RANCH GATES
+                    // Ranch Gates
                     if (near.tileID === 22 || near.tileID === 19) {
                         const newTile = (near.tileID === 22) ? 23 : 20;
                         worldMatrix[near.cx][near.cy][nearIdx] = newTile;
@@ -91,7 +118,6 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
                 }
             }
 
-            // Re-evaluate target
             target = getTileData(x, y, worldMatrix, roomMatrix);
         }
 
@@ -106,25 +132,31 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
                     const dist = Math.sqrt(Math.pow((near.gx * 16 + 8) - doorCheckX, 2) + Math.pow((near.gy * 16 + 8) - doorCheckY, 2));
                     
                     if (dist > 24) {
-                        const nearIdx = (near.ly * 100) + near.lx;
-                        const closedTile = (near.tileID === 35) ? 49 : 12;
-                        worldMatrix[near.cx][near.cy][nearIdx] = closedTile;
+                        // 🎯 HOLD OPEN FIX: If another player is holding/standing in this door, do not close it!
+                        if (isAnyPlayerNearDoor(near.gx, near.gy)) {
+                            continue;
+                        }
 
-                        // Broadcast closed state
-                        if (socket && socket.connected) {
-                            socket.emit('syncTile', { gx: near.gx, gy: near.gy, traits: closedTile });
+                        const nearIdx = (near.ly * 100) + near.lx;
+                        const closedTile = DOOR_TRANSITIONS[near.tileID];
+                        
+                        if (closedTile !== undefined) {
+                            worldMatrix[near.cx][near.cy][nearIdx] = closedTile;
+
+                            if (socket && socket.connected) {
+                                socket.emit('syncTile', { gx: near.gx, gy: near.gy, traits: closedTile });
+                            }
                         }
                     }
                 }
             }
         }
 
-        // Allow room-boundary bypass for open doors
         if ([35, 13, 23, 20, 54, 55].includes(target.tileID) || [35, 13, 23, 20, 54, 55].includes(current.tileID)) return true;
     }
 
     // ==========================================
-    // GENERAL COLLISION LOGIC
+    // GENERAL COLLISION LAYER
     // ==========================================
     const objAtTarget = getObjectAt(target.gx, target.gy);
     if (objAtTarget && objAtTarget.type === 'INT_WALL') return false;

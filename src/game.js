@@ -414,6 +414,11 @@ async function mainInit() {
         roomMatrix = worldData.roomMatrix;
         fertilityMatrix = worldData.fertilityMatrix;
 
+        // 🎯 THE FIX: Injects worldMatrix reference to multiplayer module to enable door syncing
+        import('./multiplayer.js').then(m => {
+            m.setWorldMatrix(worldMatrix);
+        });
+
         // ==========================================
         // 🏗️ THE PERFECT 8-STEP GENERATION PIPELINE
         // ==========================================

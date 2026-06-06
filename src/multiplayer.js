@@ -1,4 +1,4 @@
-
+// src/multiplayer.js
 import { viewport } from './viewport.js';
 import { images } from './assetLoader.js';
 import { hero } from './entities.js'; 
@@ -6,33 +6,28 @@ import { openChestMenu, handleRemoteChestUpdate, openStoreMenu, handleRemoteStor
 import { setContractAddress } from './blockchainManager.js';
 import { handleRemoteTileUpdate } from './bacteria.js';
 
-// To this:
-if (typeof window !== 'undefined') {
-    logStep("multiplayer.js");
-}
-
 export const remotePlayers = new Map(); 
 export let socket = null;
 export let myID = null;
 export let playerWallet = null; 
 export let serverProjectiles = [];
-// --- Add near the top of src/multiplayer.js ---
 export let globalUnlockedSystems = ["4_4"];
 
-// 👇 ADD THIS SETTER FUNCTION 👇
+// 🎯 THE FIX: Dynamic dependency injection of worldMatrix to bypass circular dependency locks
+export let activeWorldMatrix = null;
+export function setWorldMatrix(matrix) {
+    activeWorldMatrix = matrix;
+}
+
 export function setPlayerWallet(address) {
     playerWallet = address;
 }
 
 export function initMultiplayer() {
     return new Promise((resolve) => {
-        
-        // 🚨 2DS OFFLINE BYPASS
-        // If the HTML script tag for socket.io is missing or failed to load
         if (typeof io === 'undefined' && typeof window.io === 'undefined') {
             if (window.logStep) window.logStep("OFFLINE MODE: No Socket.io");
             
-            // Give the hero default stats so the render loop doesn't crash on undefined math
             hero.xp = 0;
             hero.maxHp = 100;
             hero.hp = 100;
@@ -43,11 +38,10 @@ export function initMultiplayer() {
             hero.armor = 0;
             hero.inGameUni = 0;
             
-            resolve(); // ⚡ Instantly unlock mainInit() to continue loading
+            resolve(); 
             return;
         }
 
-        // --- Standard Multiplayer Connection ---
         const socketIoFunc = typeof io !== 'undefined' ? io : window.io;
         socket = socketIoFunc(window.location.origin, {
             transports: ['polling', 'websocket'] 
@@ -73,60 +67,47 @@ export function initMultiplayer() {
             resolve();
         });
 
-        // 🆕 NEW: If the server says we don't have an account
         socket.on('needsCharacterCreation', () => {
             document.getElementById('main-menu').classList.add('hidden');
             document.getElementById('character-creation-menu').classList.remove('hidden');
             import('./uiManager.js').then(module => module.renderCharacterCreation());
         });
 
-        // Inside initMultiplayer() in src/multiplayer.js
         socket.on('tgvUpdate', (data) => {
-       import('./entities.js').then(m => {
-        m.gameState.tvl = data.tgv; // Update the global state
-        import('./uiManager.js').then(ui => ui.updateHUD()); // Force HUD refresh
-             });
+            import('./entities.js').then(m => {
+                m.gameState.tvl = data.tgv; 
+                import('./uiManager.js').then(ui => ui.updateHUD()); 
+            });
         });
 
-        // Replace the updateInventory socket listener inside src/multiplayer.js with this:
-
-        // Inside initMultiplayer() in src/multiplayer.js:
-
-        // 🎯 THE FIX: Sync equipment updates from server to update paperdoll renders
         socket.on('updateEquipment', (serverEquipment) => {
             import('./entities.js').then(m => {
                 m.hero.equipment = serverEquipment;
-                import('./uiManager.js').then(ui => ui.renderTabContent()); // Refresh HUD/Bag
+                import('./uiManager.js').then(ui => ui.renderTabContent()); 
             });
         });
 
         socket.on('updateInventory', (serverInventory) => {
             import('./entities.js').then(m => {
                 m.hero.inventory = serverInventory;
-                
-                // Refresh standard menu tabs (if open)
                 import('./uiManager.js').then(ui => {
                     ui.renderTabContent();
                     
-                    // 🎯 THE FIX: If the Temple Altar menu is open, redraw it instantly!
                     const templeMenu = document.getElementById('temple-menu');
                     if (templeMenu && !templeMenu.classList.contains('hidden')) {
                         ui.renderTempleUI();
                     }
                     
-                    // 🎯 THE FIX: If the Chest storage menu is open, redraw it!
                     const chestMenu = document.getElementById('chest-menu');
                     if (chestMenu && !chestMenu.classList.contains('hidden')) {
                         ui.renderChestUI();
                     }
                     
-                    // 🎯 THE FIX: If the Root Cellar menu is open, redraw it!
                     const cellarMenu = document.getElementById('cellar-menu');
                     if (cellarMenu && !cellarMenu.classList.contains('hidden')) {
                         ui.renderCellarUI();
                     }
 
-                    // 🎯 THE FIX: If the Hay Storage menu is open, redraw it!
                     const hayMenu = document.getElementById('hay-storage-menu');
                     if (hayMenu && !hayMenu.classList.contains('hidden')) {
                         ui.renderHayStorageUI();
@@ -148,17 +129,12 @@ export function initMultiplayer() {
             hero.speed = data.speed || 100;
             hero.spentPoints = data.spentPoints || 0;
             hero.inGameUni = data.inGameUni || 0;
-            
-            // 🛡️ RESTORE INVENTORY
             hero.inventory = data.inventory || []; 
-
-            // 🎯 THE FIX: Restore equipped weapon state at login
             hero.equipment = data.equipment || { mainHand: null };
 
             if(data.x !== undefined) hero.x = data.x;
             if(data.y !== undefined) hero.y = data.y;
 
-            // 🆕 DIRECTION TRANSLATOR
             if (data.dir) {
                 let safeDir = data.dir;
                 if (safeDir === 'Down') safeDir = 'South';
@@ -173,13 +149,11 @@ export function initMultiplayer() {
             hero.charClass = data.charClass || "Paladin";
             hero.skills = data.skills || [];
 
-            // 🔄 UPDATE UI IMMEDIATELY
             import('./uiManager.js').then(ui => {
                 ui.updateHUD();
-                ui.renderTabContent(); // 👈 THE FIX: Force the icons to draw!
+                ui.renderTabContent(); 
             });
 
-            // CLEAR MENUS
             document.getElementById('main-menu').classList.add('hidden');
             const charMenu = document.getElementById('character-creation-menu');
             if (charMenu) charMenu.classList.add('hidden');
@@ -200,23 +174,15 @@ export function initMultiplayer() {
         socket.on('hayStorageData', (data) => { openHayStorageMenu(data.hayStorageId, data.items); });
         socket.on('hayStorageUpdated', (data) => { handleRemoteHayStorageUpdate(data.hayStorageId, data.items); });
 
-        // --- Inside initMultiplayer() in src/multiplayer.js ---
-
-        // 💬 RECEIVE CHAT MESSAGES
         socket.on('chatMessage', (data) => {
             const chatBox = document.getElementById('chat-messages');
             if (!chatBox) return;
 
             const msgDiv = document.createElement('div');
-            // Format: [Name]: Message
             msgDiv.innerHTML = `<span style="color: var(--banana);">${data.sender}:</span> <span style="color: white;">${data.message}</span>`;
-            
             chatBox.appendChild(msgDiv);
-
-            // Auto-scroll to the bottom so the newest message is always visible
             chatBox.scrollTop = chatBox.scrollHeight;
 
-            // Keep only the last 15 messages so it doesn't lag the game
             if (chatBox.children.length > 15) {
                 chatBox.removeChild(chatBox.firstChild);
             }
@@ -232,7 +198,7 @@ export function initMultiplayer() {
                     const ore = items.createItem(items.ITEM_TYPES.IRON_ORE);
                     if (m.giveItemToHero(ore)) {
                         alert("You collected the Iron Ore!");
-                        import('./uiManager.js').then(ui => ui.renderTabContent()); // Refresh inventory UI
+                        import('./uiManager.js').then(ui => ui.renderTabContent()); 
                     } else {
                         alert("Your backpack is full! Make room first.");
                     }
@@ -240,13 +206,11 @@ export function initMultiplayer() {
             });
         });
         
-        // 1. Handle Knockbacks
         socket.on('forcedMovement', (data) => {
             const p = (data.id === myID) ? hero : remotePlayers.get(data.id);
             if (p) {
                 p.x = data.x;
                 p.y = data.y;
-                // If it happened to us, interrupt our current movement/attack
                 if (data.id === myID) {
                     hero.isAttacking = false;
                     hero.isWindingUp = false;
@@ -254,28 +218,22 @@ export function initMultiplayer() {
             }
         });
 
-        // 2. Update playerHit to handle the Bubble popping
         socket.on('playerHit', (data) => {
             const victim = (data.victimId === myID) ? hero : remotePlayers.get(data.victimId);
             if (victim) {
                 victim.hp = data.newHp;
                 if (data.newShield !== undefined) victim.shield = data.newShield;
                 
-                // 🆕 If the server says the bubble popped, remove it locally!
                 if (data.bubblePopped) {
                     if (victim === hero) hero.buffs.divineBubble = false;
                     else victim.hasDivineBubble = false;
                 }
 
-                // ... inside playerHit ...
-            if (data.bubblePopped === undefined) { 
-                // A normal hit occurred. If we had resonance, assume it was consumed.
-                // (This is a quick shortcut so we don't have to send a separate CC clear packet!)
-                // 👈 THE FIX: Safely initialize victim.cc if it doesn't exist yet!
-                if (!victim.cc) victim.cc = {}; 
-                if (victim === hero) hero.cc.hasResonance = false;
-                else victim.cc.hasResonance = false;
-            }
+                if (data.bubblePopped === undefined) { 
+                    if (!victim.cc) victim.cc = {}; 
+                    if (victim === hero) hero.cc.hasResonance = false;
+                    else victim.cc.hasResonance = false;
+                }
                 
                 if (hero.target && data.victimId === hero.target.id && data.newHp <= 0) {
                     hero.isAttacking = false; hero.target = null; hero.isWindingUp = false; hero.attackTimer = 0;
@@ -283,23 +241,18 @@ export function initMultiplayer() {
             }
         });
 
-        // 🍅 RECEIVE DROPPED ITEMS / BACTERIA UPDATES FROM OTHERS
+        // 🎯 THE FIX: Pass activeWorldMatrix reference to handle physical door changes
         socket.on('syncTile', (data) => {
-            handleRemoteTileUpdate(data);
+            handleRemoteTileUpdate(data, activeWorldMatrix);
         });
 
-        // Listen for incoming heals
         socket.on('playerHealed', (data) => {
             const p = (data.targetId === myID) ? hero : remotePlayers.get(data.targetId);
             if (p) {
                 p.hp = data.newHp;
-                // Optional: You could spawn green '+10' floating text here later!
             }
         });
 
-        // --- ADD THIS inside initMultiplayer() in src/multiplayer.js ---
-
-        // 🛡️ Receive Buffs from Allies!
         socket.on('receiveAllyBuff', (data) => {
             if (data.buffType === 'fleetingBulwark') {
                 console.log("🛡️ Received Fleeting Bulwark from an ally!");
@@ -313,13 +266,10 @@ export function initMultiplayer() {
                 hero.mr += data.mr;
 
                 import('./interactionManager.js').then(m => m.recalculateStats());
-
-                // Tell the server we have new stats so everyone else sees us as tanky!
                 socket.emit('updateStats', { armor: hero.armor, mr: hero.mr });
             }
         });
 
-        // Handle Crowd Control Events
         socket.on('playerCC', (data) => {
             const victim = (data.victimId === myID) ? hero : remotePlayers.get(data.victimId);
             if (victim) {
@@ -331,20 +281,16 @@ export function initMultiplayer() {
                         import('./interactionManager.js').then(m => m.recalculateStats());
                     }
                 }
-
-                // 🆕 Resonance Tracking
                 if (data.ccType === 'resonanceApply') victim.cc.hasResonance = true;
                 if (data.ccType === 'resonanceFade') victim.cc.hasResonance = false;
             }
         });
 
-        // 💨 Receive Cooldown Refunds (e.g. from Zephyr)
         socket.on('refundCooldown', (data) => {
             if (hero.cooldowns[data.index] !== undefined) {
                 hero.cooldowns[data.index] = Math.max(0, hero.cooldowns[data.index] - data.amount);
             }
         });
-
 
         socket.on('playerKilled', (data) => {
             if (data.killerId === myID) hero.xp = data.newAttackerXp; 
@@ -353,58 +299,40 @@ export function initMultiplayer() {
             }
         });
 
-        
-
         socket.on('playerRespawn', (data) => {
             const p = (data.id === myID) ? hero : remotePlayers.get(data.id);
             if (p) p.hp = data.hp;
         });
 
-        // Add this socket listener inside initMultiplayer() in src/multiplayer.js:
-
-        // Receive cyclical plant resets from server
         socket.on('plantReset', (data) => {
             import('./plants.js').then(m => {
                 const plant = m.plants.get(`${data.gx}_${data.gy}`);
                 if (plant) {
                     plant.growth = data.growth;
-                    plant.hasFlowered = false; // Reset the flower flag locally
+                    plant.hasFlowered = false; 
                 }
             });
         });
 
-        // Update the chunkPlantsData socket listener inside src/multiplayer.js:
-
-            // Replace the chunkPlantsData socket listener inside src/multiplayer.js with this:
-
-            // 🎯 THE FIX: Secure Client-Side Filtration
-            // Verify each plant sits on natural open grass (63) and outdoors (Room 0) before spawning
-            socket.on('chunkPlantsData', (data) => {
-                Promise.all([
-                    import('./plants.js'),
-                    import('./physics.js'),
-                    import('./game.js')
-                ]).then(([plantsMod, physMod, gameMod]) => {
-                    
-                    data.plants.forEach(p => {
-                        const tx = p.gx;
-                        const ty = p.gy;
-                        
-                        // Retrieve the physical tile metadata for these coordinates on the client's map
-                        const tileData = physMod.getTileData(tx * 16 + 8, ty * 16 + 8, gameMod.worldMatrix, gameMod.roomMatrix);
-                        
-                        // Spawn ONLY if the ground is grass (63) and outdoors (Room 0 / 9999)
-                        if (tileData && tileData.tileID === 63 && (tileData.roomID === 0 || tileData.roomID === 9999)) {
-                            plantsMod.createPlant(tx, ty, null, p.growth, p.type);
-                        }
-                    });
+        socket.on('chunkPlantsData', (data) => {
+            Promise.all([
+                import('./plants.js'),
+                import('./physics.js'),
+                import('./game.js')
+            ]).then(([plantsMod, physMod, gameMod]) => {
+                data.plants.forEach(p => {
+                    const tx = p.gx;
+                    const ty = p.gy;
+                    const tileData = physMod.getTileData(tx * 16 + 8, ty * 16 + 8, gameMod.worldMatrix, gameMod.roomMatrix);
+                    if (tileData && tileData.tileID === 63 && (tileData.roomID === 0 || tileData.roomID === 9999)) {
+                        plantsMod.createPlant(tx, ty, null, p.growth, p.type);
+                    }
                 });
             });
-
-        // Inside socket.on('position'...) in src/multiplayer.js:
+        });
 
         socket.on('position', (data) => {
-            const { playerbase, projectiles, animals: serverAnimals } = data; // 👈 Accept animals list
+            const { playerbase, projectiles, animals: serverAnimals } = data; 
 
             for (const localId of remotePlayers.keys()) {
                 if (!playerbase[localId]) {
@@ -433,52 +361,43 @@ export function initMultiplayer() {
                         localP.ccFlags = serverP.ccFlags;
                         localP.bulwarkTimer = serverP.bulwarkTimer;
                         localP.isInvincible = serverP.isInvincible;
-                        localP.isLunge = serverP.isLunge; // 👈 Save the lunge flag!
+                        localP.isLunge = serverP.isLunge; 
                         if (serverP.pet) localP.pet = serverP.pet;
                     }
                 }
             }
             serverProjectiles = projectiles || []; 
 
-            // 🎯 THE FIX: Sync local chickens array with the server's master list
             if (serverAnimals) {
                 import('./animals.js').then(m => {
-                    m.animals.length = 0; // Clear local array
-                    m.animals.push(...serverAnimals); // Insert synchronized positions!
+                    m.animals.length = 0; 
+                    m.animals.push(...serverAnimals); 
                 });
             }
         });
 
-        // Inside initMultiplayer() in src/multiplayer.js:
-
-        // A. Fishing cast confirmed by server (sets local visual timer)
         socket.on('fishingCastConfirmed', (data) => {
-            hero.fishTimer = data.waitTime / 1000; // Translate ms to seconds
+            hero.fishTimer = data.waitTime / 1000; 
         });
 
-        // B. Fishing finished confirmed by server
         socket.on('fishingFinished', () => {
             hero.isFishing = false;
             hero.hasBite = false;
         });
 
-        // C. Plant creation confirmed by server
         socket.on('plantCreated', (data) => {
-            // Spawn the plant locally on all clients
             import('./plants.js').then(m => {
                 m.createPlant(data.gx, data.gy, fertilityMatrix, data.growth, data.type);
             });
         });
 
-        // D. Plant removal confirmed by server
         socket.on('plantRemoved', (data) => {
-            // Delete the plant locally on all clients
             import('./plants.js').then(m => {
                 m.plants.delete(`${data.gx}_${data.gy}`);
             });
         });
 
-        socket.on('remoteAbility', (data) => {}); // Hidden for barebones
+        socket.on('remoteAbility', (data) => {}); 
 
         socket.on('playerLeft', (id) => {
             remotePlayers.delete(id);
@@ -486,7 +405,6 @@ export function initMultiplayer() {
     });
 }
 
-// 💬 CHAT FUNCTIONS
 export function sendChatMessage(msg) {
     if (socket) socket.emit('chatMessage', { message: msg });
 }
@@ -498,23 +416,16 @@ export function initChatListener() {
             if (!chatBox) return;
 
             const msgDiv = document.createElement('div');
-            // Format: [Name]: Message
             msgDiv.innerHTML = `<span style="color: var(--banana);">${data.sender}:</span> ${data.message}`;
             chatBox.appendChild(msgDiv);
-
-            // Auto-scroll to bottom
             chatBox.scrollTop = chatBox.scrollHeight;
 
-            // Only keep the last 10 messages so the DOM doesn't get bloated
             if (chatBox.children.length > 10) {
                 chatBox.removeChild(chatBox.firstChild);
             }
         });
     }
 }
-// Paste this at the bottom of src/multiplayer.js
-
-// At the bottom of src/multiplayer.js:
 
 export function syncInventoryWithServer() {
     if (socket && socket.connected) {
@@ -525,11 +436,9 @@ export function syncInventoryWithServer() {
     }
 }
 
-// Add this at the bottom of src/multiplayer.js
 export function updateRemotePlayers(delta) {
     remotePlayers.forEach(p => {
         if (p.targetX !== undefined && p.targetY !== undefined) {
-            // Glide smoothly towards the target destination (Lerp)
             p.x += (p.targetX - p.x) * 15 * delta;
             p.y += (p.targetY - p.y) * 15 * delta;
         }
