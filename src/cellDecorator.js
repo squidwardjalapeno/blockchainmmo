@@ -176,7 +176,7 @@ export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertility
 
     console.log(`🎪 LAZY INITIALIZING SETTLEMENT at Well [${zoneWell.x}, ${zoneWell.y}]`);
 
-    // 🎯 STEP 1: Force-load and decorate background terrain first (No buildings drawn yet)
+    // 🎯 STEP 1: Force-load and decorate background terrain first
     zone.forEach(c => {
         const chunkKey = `${c.cx}_${c.cy}`;
         if (!decoratedCells.has(chunkKey)) {
@@ -185,17 +185,14 @@ export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertility
         }
     });
 
-    // 🎯 STEP 2: Draw the regional roads and walls (Drawn over grass, under buildings)
+    // 🎯 STEP 2: Draw the regional roads and walls
     drawRingRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell);
     drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell.x, zoneWell.y);
     drawTownWalls(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell);
 
-    // 🎯 THE FIX: Spawn EXACTLY 1 Hobbit next to the well upon zone loading
-    const spawnX = zoneWell.x + 2;
-    const spawnY = zoneWell.y + 2;
-    import('./hobbits.js').then(m => m.spawnHobbit(spawnX, spawnY));
+    // [Well-based spawn removed to prevent orphaned/keyless hobbits]
 
-    // 🎯 STEP 3: Stamp buildings, ranches, and wells ON TOP of completed roads and walls
+    // 🎯 STEP 3: Stamp structures, ranches, and wells on top
     zone.forEach(c => {
         stampStructuresForChunk(c.cx, c.cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     });
@@ -328,6 +325,7 @@ export function drawTree(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, world
 
 // Inside src/cellDecorator.js:
 
+// Inside drawHouse, we change the key-seeding line to spawn the hobbit:
 export function drawHouse(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     const currentId = nextHouseId++;
 
@@ -356,8 +354,8 @@ export function drawHouse(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worl
         }
     }
 
-    // 🔑 THE INSTANTIATION: Spawns the key on the walkable grass right outside the front wall!
-    seedBacteria(gx + 2, gy + 1, "key", currentId, 0);
+    // Spawn the Hobbit holding the house key outside the house, pointing home inside.
+    import('./hobbits.js').then(m => m.spawnHobbit(gx + 2, gy + 1, currentId, gx + 2, gy - 1));
 }
 
 // js/cellDecorator.js

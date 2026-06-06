@@ -4,10 +4,25 @@ import { moveEntity, getTileData } from './physics.js';
 import { hero } from './entities.js'; 
 import { getObjectAt, staticObjects, solidTiles } from './staticObjects.js';
 import { socket } from './multiplayer.js';
+import { worldTime } from './clock.js'; 
 
 export const hobbits = [];
 
-export function spawnHobbit(gx, gy) {
+export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null) {
+    const keyItem = houseId ? {
+        name: `Key to House #${houseId}`,
+        seedType: "key",
+        spriteID: 38,
+        tileset: "keyTileset",
+        isKey: true,
+        houseId: houseId,
+        baseHealth: 100,
+        baseVirulence: 0,
+        baseFertility: 0,
+        count: 1,
+        maxStack: 1
+    } : null;
+
     hobbits.push({
         id: 'hobbit_' + Math.random().toString(36).substr(2, 9),
         isHobbit: true,
@@ -20,8 +35,13 @@ export function spawnHobbit(gx, gy) {
         maxHp: 40,
         ad: 2, 
 
+        inventory: keyItem ? [keyItem] : [], // 4-slot limit
+        houseId: houseId,
+        homeX: homeX,
+        homeY: homeY,
+
         state: 'idle',     // 'idle', 'walking', 'attacking'
-        goal: 'wander',    // 'wander', 'engage'
+        goal: 'wander',    // 'wander', 'engage', 'gohome'
         dir: 'South',
         frame: 0,
         animTimer: 0,
@@ -94,6 +114,30 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
     const heroCY = Math.floor(hero.y / 1600);
     const now = Date.now();
 
+    // ==========================================
+    // 💀 CLEANUP DEAD HOBBITS & DROP LOOT
+    // ==========================================
+    for (let i = hobbits.length - 1; i >= 0; i--) {
+        const hob = hobbits[i];
+        if (hob.hp <= 0) {
+            hob.inventory.forEach(item => {
+                import('./bacteria.js').then(m => {
+                    const dropHealth = item.isKey ? item.houseId : item.health;
+                    m.seedBacteria(Math.floor(hob.x / 16), Math.floor(hob.y / 16), item.seedType, dropHealth, item.virulence);
+                });
+            });
+
+            import('./bacteria.js').then(m => m.seedBacteria(
+                Math.floor(hob.x / 16), 
+                Math.floor(hob.y / 16), 
+                "raw_chicken", 50, 0
+            ));
+
+            hobbits.splice(i, 1);
+            continue;
+        }
+    }
+
     hobbits.forEach(hobbit => {
         const hobbitCX = Math.floor(hobbit.x / 1600);
         const hobbitCY = Math.floor(hobbit.y / 1600);
@@ -113,7 +157,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         // 🕰️ TIER 3: CATCH-UP (Step-In Fast Forward)
         // ==========================================
         if (deltaSeconds > 2.0) {
-            let timeRemaining = Math.min(deltaSeconds, 86400); // Guard rails to prevent freeze
+            let timeRemaining = Math.min(deltaSeconds, 86400); 
             let simX = Math.floor(hobbit.x / 16);
             let simY = Math.floor(hobbit.y / 16);
 
@@ -139,6 +183,15 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         const path = findPathToCoords(simX, simY, hTX, hTY, worldMatrix, roomMatrix);
                         if (path && path.length > 0) {
                             const next = path[Math.min(path.length - 1, 3)]; 
+                            simX = next.x;
+                            simY = next.y;
+                        }
+                    }
+                } else if (worldTime.isNight && hobbit.houseId) {
+                    if (simX !== hobbit.homeX || simY !== hobbit.homeY) {
+                        const path = findPathToCoords(simX, simY, hobbit.homeX, hobbit.homeY, worldMatrix, roomMatrix);
+                        if (path && path.length > 0) {
+                            const next = path[Math.min(path.length - 1, 3)];
                             simX = next.x;
                             simY = next.y;
                         }
@@ -178,7 +231,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         if (!inViewport) {
             hobbit.slowTickTimer -= modifier;
             if (hobbit.slowTickTimer <= 0) {
-                hobbit.slowTickTimer = 1.5; // Update state once every 1.5s
+                hobbit.slowTickTimer = 1.5; 
 
                 const currTX = Math.floor((hobbit.x + 8) / 16);
                 const currTY = Math.floor((hobbit.y + 8) / 16);
@@ -203,6 +256,14 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             hobbit.path = path;
                             hobbit.goal = 'engage';
                         }
+                    } else if (worldTime.isNight && hobbit.houseId) {
+                        if (currTX !== hobbit.homeX || currTY !== hobbit.homeY) {
+                            const path = findPathToCoords(currTX, currTY, hobbit.homeX, hobbit.homeY, worldMatrix, roomMatrix);
+                            if (path) {
+                                hobbit.path = path;
+                                hobbit.goal = 'gohome';
+                            }
+                        }
                     } else if (!target) {
                         assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
                         hobbit.goal = 'wander';
@@ -226,7 +287,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     }
                 }
             }
-            return; // Skip real-time physics and stepping completely!
+            return; 
         }
 
         // ==========================================
@@ -235,7 +296,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         const currTX = Math.floor((hobbit.x + 8) / 16);
         const currTY = Math.floor((hobbit.y + 8) / 16);
 
-        // Core Intel Goal Allocation
         let target = null;
         let targetDist = Infinity;
 
@@ -278,6 +338,21 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 }
             }
         } 
+        else if (worldTime.isNight && hobbit.houseId) {
+            hobbit.goal = 'gohome';
+            if (currTX !== hobbit.homeX || currTY !== hobbit.homeY) {
+                if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
+                    const path = findPathToCoords(currTX, currTY, hobbit.homeX, hobbit.homeY, worldMatrix, roomMatrix);
+                    if (path) {
+                        hobbit.path = path;
+                        hobbit.state = 'walking';
+                    }
+                }
+            } else {
+                hobbit.state = 'idle';
+                hobbit.path = [];
+            }
+        }
         else {
             hobbit.goal = 'wander';
             if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
@@ -290,7 +365,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             }
         }
 
-        // Real-Time State Progression
+        // State progression
         if (hobbit.state === 'attacking') {
             const oldTimer = hobbit.attackTimer;
             hobbit.attackTimer -= modifier;
