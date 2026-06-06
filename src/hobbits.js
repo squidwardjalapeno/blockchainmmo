@@ -3,6 +3,8 @@ import { viewport } from './viewport.js';
 import { moveEntity, getTileData } from './physics.js'; 
 import { hero } from './entities.js'; 
 import { getObjectAt, staticObjects, solidTiles } from './staticObjects.js';
+import { socket } from './multiplayer.js'; // 👈 🎯 THE FIX: Add this import!
+
 
 export const hobbits = [];
 
@@ -200,12 +202,14 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         
         // Inside updateHobbits() in src/hobbits.js:
 
+        // Inside updateHobbits() in src/hobbits.js:
+
         // --- STATE: ATTACKING ---
         if (hobbit.state === 'attacking') {
             const oldTimer = hobbit.attackTimer;
             hobbit.attackTimer -= modifier;
             
-            // 🎯 THE FIX: Apply damage to player on the exact impact frame (0.25s) when weapon is extended
+            // Apply damage to player on the exact impact frame (0.25s)
             if (oldTimer > 0.25 && hobbit.attackTimer <= 0.25) {
                 const hx = hero.x + 8;
                 const hy = hero.y + 8;
@@ -216,11 +220,9 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     hero.hp = Math.max(0, hero.hp - hobbit.ad);
                     console.log(`💥 Hobbit dealt ${hobbit.ad} damage to you!`);
                     
-                    // Sync new HP state with the server securely
-                    if (import.meta.env ? true : (socket && socket.connected)) {
-                        import('./multiplayer.js').then(m => {
-                            if (m.socket) m.socket.emit('updateStats', { hp: hero.hp });
-                        });
+                    // 🎯 THE FIX: Simplified, safe socket emit
+                    if (socket && socket.connected) {
+                        socket.emit('updateStats', { hp: hero.hp });
                     }
                 }
             }
