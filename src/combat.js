@@ -2,6 +2,8 @@
 import { remotePlayers } from './multiplayer.js';
 import { animals } from './animals.js';
 import { getTileData } from './physics.js';
+import { hobbits } from './hobbits.js'; // 👈 IMPORT HOBBITS
+
 
 
 export let currentTarget = null; // The passive "hover" target
@@ -38,6 +40,8 @@ export function scanForTarget(hero, range = 150, worldMatrix, roomMatrix) {
 
     remotePlayers.forEach(checkEntity);
     animals.forEach(checkEntity);
+    hobbits.forEach(checkEntity); // 👈 🎯 THE FIX: Scan Hobbits for combat locking!
+
 
     // ⛏️ NEW: Scan the local map area for Ore Deposits (Tile 29)
     if (worldMatrix && roomMatrix) {

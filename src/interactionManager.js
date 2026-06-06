@@ -866,8 +866,10 @@ export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remoteP
                         console.log("❌ You need a Pickaxe to mine this ore!");
                     }
                 } 
-                else if (hero.target.isAnimal) { 
+                // 🎯 THE FIX: Allow player strikes to deduct Hobbit HP locally!
+                else if (hero.target.isAnimal || hero.target.isHobbit) { 
                     hero.target.hp -= finalDamage; 
+                    console.log(`🗡️ Hit Hobbit for ${finalDamage} damage! (HP: ${hero.target.hp}/${hero.target.maxHp})`);
                 } 
                 else { 
                     applyPlayerDamage(hero.target, finalDamage); 

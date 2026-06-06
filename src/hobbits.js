@@ -198,19 +198,43 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         // 🎬 EXECUTE STATE
         // ==========================================
         
+        // Inside updateHobbits() in src/hobbits.js:
+
         // --- STATE: ATTACKING ---
         if (hobbit.state === 'attacking') {
+            const oldTimer = hobbit.attackTimer;
             hobbit.attackTimer -= modifier;
             
-            // Loop lunge frame (Frame 0 is guaranteed to be safe and visible)
+            // 🎯 THE FIX: Apply damage to player on the exact impact frame (0.25s) when weapon is extended
+            if (oldTimer > 0.25 && hobbit.attackTimer <= 0.25) {
+                const hx = hero.x + 8;
+                const hy = hero.y + 8;
+                const hdist = Math.hypot(hx - (hobbit.x + 8), hy - (hobbit.y + 8));
+
+                // Confirm player is still in range (within 24px)
+                if (hdist <= 24 && hero.hp > 0) {
+                    hero.hp = Math.max(0, hero.hp - hobbit.ad);
+                    console.log(`💥 Hobbit dealt ${hobbit.ad} damage to you!`);
+                    
+                    // Sync new HP state with the server securely
+                    if (import.meta.env ? true : (socket && socket.connected)) {
+                        import('./multiplayer.js').then(m => {
+                            if (m.socket) m.socket.emit('updateStats', { hp: hero.hp });
+                        });
+                    }
+                }
+            }
+            
             hobbit.frame = 0; 
 
             if (hobbit.attackTimer <= 0) {
                 hobbit.state = 'idle';
-                hobbit.moveTimer = 1.0; // Wait 1s after attack
+                hobbit.moveTimer = 1.0; 
             }
         }
         
+        // Inside updateHobbits() in src/hobbits.js (under State: Walking):
+
         // --- STATE: WALKING ---
         else if (inViewport && hobbit.path && hobbit.path.length > 0 && hobbit.state === 'walking') {
             const nextNode = hobbit.path[0];
@@ -220,6 +244,15 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             const dx = targetX - hobbit.x;
             const dy = targetY - hobbit.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
+
+            // 🎯 THE FIX: Full 8-Directional Vector Translation
+            // Divides the 360-degree circle into 8 equal octants (45-degrees each)
+            // and maps them directly to your diagonal walk assets!
+            const angle = Math.atan2(dy, dx);
+            const octant = Math.round(8 * angle / (2 * Math.PI) + 8) % 8;
+            const directions = ['East', 'SouthEast', 'South', 'SouthWest', 'West', 'NorthWest', 'North', 'NorthEast'];
+            
+            hobbit.dir = directions[octant];
 
             if (dist > 2) {
                 const moveX = (dx / dist) * hobbit.speed * modifier;
@@ -236,7 +269,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             }
 
             hobbit.animTimer += modifier * 8;
-            hobbit.frame = Math.floor(hobbit.animTimer) % 4;
+            hobbit.frame = Math.floor(hobbit.animTimer) % 4; // 4 frames for walk
         }
         else if (!inViewport && hobbit.path && hobbit.path.length > 0 && hobbit.state === 'walking') {
             const nextNode = hobbit.path.shift();
