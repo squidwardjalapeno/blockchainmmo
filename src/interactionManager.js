@@ -180,8 +180,15 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
                 return;
             }
 
+            // Search for CHEST_STORAGE inside src/interactionManager.js and modify that block:
             if (obj.type === 'CHEST_STORAGE') {
-                if (socket) socket.emit('requestChest', `chest_${tx}_${ty}`);
+                if (socket) {
+                    import('./multiplayer.js').then(m => {
+                        // 🎯 THE FIX: Declare that the player explicitly requested this chest ID
+                        m.setPlayerRequestedChestId(`chest_${tx}_${ty}`);
+                        m.socket.emit('requestChest', `chest_${tx}_${ty}`);
+                    });
+                }
                 inputState.interact = false;
                 inputState.action = false;
                 return;

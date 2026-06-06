@@ -13,6 +13,12 @@ export let playerWallet = null;
 export let serverProjectiles = [];
 export let globalUnlockedSystems = ["4_4"];
 
+// 🎯 THE FIX: Track the chest actively requested by the player's GUI
+export let playerRequestedChestId = null;
+export function setPlayerRequestedChestId(id) {
+    playerRequestedChestId = id;
+}
+
 // 🎯 THE FIX: Dynamic dependency injection of worldMatrix to bypass circular dependency locks
 export let activeWorldMatrix = null;
 export function setWorldMatrix(matrix) {
@@ -163,8 +169,15 @@ export function initMultiplayer() {
         });
 
         socket.on('balanceUpdated', (data) => { hero.inGameUni = data.inGameUni; });
-        socket.on('receiveWithdrawalVoucher', (voucher) => { executeWithdrawal(voucher); });
-        socket.on('chestData', (data) => { openChestMenu(data.chestId, data.items); });
+        
+        // 🎯 THE FIX: Only trigger the UI modal if the incoming dataset was requested by the human player
+        socket.on('chestData', (data) => { 
+            if (data.chestId === playerRequestedChestId) {
+                openChestMenu(data.chestId, data.items); 
+                playerRequestedChestId = null; // Consume the trigger
+            }
+        });
+
         socket.on('chestUpdated', (data) => { handleRemoteChestUpdate(data.chestId, data.items); });
         socket.on('storeData', (data) => { openStoreMenu(data.storeId, data.data); });
         socket.on('storeUpdated', (data) => { handleRemoteStoreUpdate(data.storeId, data.data); });
@@ -241,7 +254,6 @@ export function initMultiplayer() {
             }
         });
 
-        // 🎯 THE FIX: Pass activeWorldMatrix reference to handle physical door changes
         socket.on('syncTile', (data) => {
             handleRemoteTileUpdate(data, activeWorldMatrix);
         });
