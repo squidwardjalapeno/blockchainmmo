@@ -190,6 +190,11 @@ export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertility
     drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell.x, zoneWell.y);
     drawTownWalls(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell);
 
+    // 🎯 THE FIX: Spawn EXACTLY 1 Hobbit next to the well upon zone loading
+    const spawnX = zoneWell.x + 2;
+    const spawnY = zoneWell.y + 2;
+    import('./hobbits.js').then(m => m.spawnHobbit(spawnX, spawnY));
+
     // 🎯 STEP 3: Stamp buildings, ranches, and wells ON TOP of completed roads and walls
     zone.forEach(c => {
         stampStructuresForChunk(c.cx, c.cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);

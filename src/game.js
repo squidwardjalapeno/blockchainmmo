@@ -23,6 +23,8 @@ import { handleInteractions, updateHeroStats, handlePvPCombat, handleFinancialAc
 import { initUI, updateHUD } from './uiManager.js';
 import { getMasterBalance } from './blockchainManager.js';
 import { worldTime } from './clock.js'; // 👈 ADD THIS IMPORT
+import { updateHobbits, hobbits } from './hobbits.js';
+import { drawHobbits } from './renderer.js';
 
 // js/overworldGame.js
 
@@ -175,6 +177,8 @@ var update = function (modifier) {
         // 👇 THE FIX: Let chickens run smoothly here (Removed the 'false' arg)
         if (DEBUG_FLAGS.ENABLE_WORLD_SIM) {
             //updateAnimals(modifier * 3, worldMatrix, roomMatrix); 
+            updateHobbits(modifier * 3, worldMatrix, roomMatrix); // 👈 ADDED HERE
+
         }
     }
 
@@ -281,6 +285,9 @@ var render = function () {
 
     // 🎯 THE FIX: Pass roomMatrix as the third parameter to drawRemotePlayers
     drawRemotePlayers(ctx2, remotePlayers, roomMatrix); 
+
+    drawHobbits(ctx2, hobbits);                // 👈 ADDED HERE
+
     drawHero(); 
     drawBobber();
     // 👇 ADD THIS LINE: Draw the leaves over the players' heads!

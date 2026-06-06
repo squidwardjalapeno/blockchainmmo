@@ -72,3 +72,32 @@ export function getAnimalAnimationData(animal, images) {
         srcH 
     };
 }
+
+// Add to the bottom of src/animations.js:
+
+export function getHobbitAnimationData(hobbit, images) {
+    const srcW = 16;
+    const srcH = 16;
+
+    if (!hobbit.dir) hobbit.dir = 'South';
+
+    // 🎯 THE FIX: Force Frame 0 (index 0) during lunge attacks to avoid out-of-bound rendering
+    if (hobbit.state === 'attacking') {
+        const imgKey = `hobbitLunge${hobbit.dir}`;
+        return { 
+            img: images[imgKey] || images.hobbitLungeSouth, 
+            srcX: 0, 
+            srcY: 0, srcW, srcH 
+        };
+    }
+
+    const imgKey = `hobbitWalk${hobbit.dir}`;
+    const isMoving = hobbit.state === 'walking';
+    const frame = isMoving ? hobbit.frame : 0;
+
+    return { 
+        img: images[imgKey] || images.hobbitWalkSouth, 
+        srcX: frame * srcW, 
+        srcY: 0, srcW, srcH 
+    };
+}
