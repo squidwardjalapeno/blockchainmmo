@@ -1,7 +1,8 @@
 // src/physics.js
 import { CONFIG } from './config.js';
-import { getObjectAt, solidTiles } from './staticObjects.js'; // 👈 IMPORTED: solidTiles coordinate set
+import { getObjectAt, solidTiles } from './staticObjects.js'; 
 import { roomMetadata } from './cellDecorator.js';
+import { socket } from './multiplayer.js'; // 👈 THE FIX: Imported socket to resolve ReferenceErrors
 
 export function getTileData(pxX, pxY, worldMatrix, roomMatrix) {
     const gx = Math.floor(pxX / 16);
@@ -21,14 +22,6 @@ export function getTileData(pxX, pxY, worldMatrix, roomMatrix) {
         gx, gy, cx, cy, lx, ly
     };
 }
-
-// Inside checkCollision() in src/physics.js:
-
-// src/physics.js
-
-// src/physics.js
-
-// Inside checkCollision() in src/physics.js:
 
 export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     let target = getTileData(x, y, worldMatrix, roomMatrix);
@@ -58,7 +51,7 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     }
 
     // ==========================================
-    // 🚪 DOOR & GATE LOGIC (🎯 UPDATED: Synchronized)
+    // DOOR & GATE LOGIC (Synchronized)
     // ==========================================
     if (entity.floor === 1) {
         const isNearClosedDoor = (
@@ -79,7 +72,7 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
                             const newTile = (near.tileID === 49) ? 35 : 13;
                             worldMatrix[near.cx][near.cy][nearIdx] = newTile;
                             
-                            // 🎯 THE FIX: Sync the opened door state to all other players!
+                            // Broadcast the opened door state to all other players
                             if (socket && socket.connected) {
                                 socket.emit('syncTile', { gx: near.gx, gy: near.gy, traits: newTile });
                             }
@@ -88,12 +81,17 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
                     
                     // RANCH GATES
                     if (near.tileID === 22 || near.tileID === 19) {
-                        worldMatrix[near.cx][near.cy][nearIdx] = (near.tileID === 22) ? 23 : 20;
+                        const newTile = (near.tileID === 22) ? 23 : 20;
+                        worldMatrix[near.cx][near.cy][nearIdx] = newTile;
+                        
+                        if (socket && socket.connected) {
+                            socket.emit('syncTile', { gx: near.gx, gy: near.gy, traits: newTile });
+                        }
                     }
                 }
             }
 
-            // Re-evaluate target in case we just opened a door!
+            // Re-evaluate target
             target = getTileData(x, y, worldMatrix, roomMatrix);
         }
 
@@ -112,7 +110,7 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
                         const closedTile = (near.tileID === 35) ? 49 : 12;
                         worldMatrix[near.cx][near.cy][nearIdx] = closedTile;
 
-                        // 🎯 THE FIX: Sync the closed door state to all other players!
+                        // Broadcast closed state
                         if (socket && socket.connected) {
                             socket.emit('syncTile', { gx: near.gx, gy: near.gy, traits: closedTile });
                         }
@@ -126,7 +124,7 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     }
 
     // ==========================================
-    // 🧱 GENERAL COLLISION LOGIC
+    // GENERAL COLLISION LOGIC
     // ==========================================
     const objAtTarget = getObjectAt(target.gx, target.gy);
     if (objAtTarget && objAtTarget.type === 'INT_WALL') return false;
@@ -159,7 +157,7 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
                 if (oy <= -6) return false; 
             } else {
                 if (!isMidCol) return false; 
-                if (oy === 0) return false;  
+                if (oy === 0 || oy === -1) return false;  
             }
             
             if (target.roomID === current.roomID) return true;

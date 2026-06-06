@@ -118,6 +118,8 @@ export function drawNightTint() {
     }
 }
 
+// src/renderer.js
+
 export function drawMap(worldMatrix, roomMatrix) {
     const w = canvas2.width;
     const h = canvas2.height;
@@ -128,7 +130,7 @@ export function drawMap(worldMatrix, roomMatrix) {
     const endY = viewport.endTile[1];
 
     const hTX = Math.floor((hero.x + 8) / 16);
-    const hTY = Math.floor((hero.y + 8) / 16);
+    const hTY = Math.floor((hero.y + 15) / 16); // 👈 THE FIX: Changed from +8 to +15 to align with physical stepping collision
 
     let hHouseId = 0;
     const hChunkR = roomMatrix[Math.floor(hTX / 100)]?.[Math.floor(hTY / 100)];
@@ -211,8 +213,6 @@ export function drawMap(worldMatrix, roomMatrix) {
                                 ctx2.drawImage(woodsImg, (dirtIdx % 12) * 16, Math.floor(dirtIdx / 12) * 16, 16, 16, sX, sY, 16, 16);
                             }
                         }
-
-                        
 
                         const localIdx = tID - 300; 
                         const srcX = (localIdx % 12) * 16;
@@ -367,7 +367,7 @@ export function drawStaticObjects() {
 
 export function drawPlants(roomMatrix) {
     const hTX = Math.floor((hero.x + 8) / 16);
-    const hTY = Math.floor((hero.y + 8) / 16); // 👈 🎯 THE FIX: Changed from + 14 to + 8 to eliminate the threshold gap!
+    const hTY = Math.floor((hero.y + 15) / 16); // 👈 THE FIX: Changed from +8 to +15 to align with physical stepping collision
     const rCol = roomMatrix[Math.floor(hTX / 100)]?.[Math.floor(hTY / 100)];
     const heroHouseId = rCol ? rCol[((hTY % 100 + 100) % 100 * 100) + ((hTX % 100 + 100) % 100)] : 0;
 
@@ -762,14 +762,31 @@ export function drawHero() {
 // Inside src/renderer.js:
 
 export function drawRemotePlayers(ctx2, remotePlayersData, roomMatrix) {
-    // Determine if the local player is currently indoors to handle rendering visibility
+    // 1. Resolve local player's current location room ID
     const hTX = Math.floor((hero.x + 8) / 16);
-    const hTY = Math.floor((hero.y + 8) / 16);
+    const hTY = Math.floor((hero.y + 15) / 16); // Feet placement
     const rCol = roomMatrix[Math.floor(hTX / 100)]?.[Math.floor(hTY / 100)];
     const heroHouseId = rCol ? rCol[((hTY % 100 + 100) % 100 * 100) + ((hTX % 100 + 100) % 100)] : 0;
 
     remotePlayersData.forEach(p => {
-        // Calculate screen positions using standard camera offsets
+        // Resolve this remote player's room ID using their feet coordinate
+        const pTX = Math.floor((p.x + 8) / 16);
+        const pTY = Math.floor((p.y + 15) / 16);
+        const pCol = roomMatrix[Math.floor(pTX / 100)]?.[Math.floor(pTY / 100)];
+        const pRoomId = pCol ? pCol[((pTY % 100 + 100) % 100 * 100) + ((pTX % 100 + 100) % 100)] : 0;
+
+        // ==========================================
+        // 🚪 INSIDE/OUTSIDE VISIBILITY PARTITION
+        // ==========================================
+        if (heroHouseId !== 0 && heroHouseId !== 9999) {
+            // Caster is inside a building: hide players outside or in other rooms
+            if (pRoomId !== heroHouseId) return;
+        } else {
+            // Caster is outside in overworld: hide players inside buildings
+            if (pRoomId !== 0 && pRoomId !== 9999) return;
+        }
+
+        // Calculate screen positions
         let sx = Math.floor(p.x + viewport.offset[0]);
         let sy = Math.floor(p.y + viewport.offset[1]);
 
@@ -780,26 +797,25 @@ export function drawRemotePlayers(ctx2, remotePlayersData, roomMatrix) {
         
         const isLunge = p.isLunge; 
 
-        // 1. Resolve the primary asset key based on current action state
+        // Resolve assets and build key
         let imgKey = `heroWalk${p.dir || 'South'}`;
         if (isLunge) {
             imgKey = `heroLunge${p.dir || 'South'}`; 
         }
         
-        // 2. Robust asset validation with fallback cascade
+        // ==========================================
+        // 🛡️ LUNGE GHOST FIX: Automatic Fallback
+        // ==========================================
         let img = images[imgKey];
         if (!img || !img.complete || img.naturalWidth === 0) {
-            // Fall back to directional walk if lunge is unavailable or broken
+            // Fallback to walking spritesheet for that direction if lunge sheet fails to load
             imgKey = `heroWalk${p.dir || 'South'}`;
             img = images[imgKey];
-            
-            // Absolute fallback to default South walk if even directional walk is unrendered
             if (!img || !img.complete || img.naturalWidth === 0) {
-                img = images.heroWalkSouth;
+                img = images.heroWalkSouth; // Hard safe fallback
             }
         }
 
-        // Final safety check to prevent rendering context issues
         if (!img || !img.complete || img.naturalWidth === 0) return;
 
         // ==========================================
@@ -845,7 +861,6 @@ export function drawRemotePlayers(ctx2, remotePlayersData, roomMatrix) {
         // ==========================================
         // DRAW HERO SPRITE
         // ==========================================
-        // Use Frame 1 (extended weapon pose) during lunges, otherwise use current animation frame
         const frame = isLunge ? 1 : (p.animFrame || 0);
 
         ctx2.drawImage(img, frame * 16, 0, 16, 16, sx, sy, 16, 16);
@@ -910,6 +925,7 @@ export function drawRemotePlayers(ctx2, remotePlayersData, roomMatrix) {
         }
     });
 }
+
 
 export function drawBobber() {
     if (!hero.isFishing) return;
