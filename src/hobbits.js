@@ -40,9 +40,9 @@ export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null) 
         homeX: homeX,
         homeY: homeY,
 
-        // 🎯 THE FIX: Define a tighter, narrow physical hitbox width
+        // Tight collision profiles for 16px doorways
         hitboxLeft: 4,
-        hitboxRight: 12, // 8px wide profile
+        hitboxRight: 12, 
         hitboxTop: 10,
         hitboxBottom: 15,
 
@@ -70,15 +70,10 @@ function isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix) {
     const data = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix);
     if (!data || data.tileID === undefined) return false;
 
-    const roomID = data.roomID;
-    if (roomID !== 0 && roomID !== 9999) {
-        const hardSolids = [40, 41, 43, 27, 46, 47];
-        if (hardSolids.includes(data.tileID)) return false;
-        return true; 
-    }
+    // 🎯 THE FIX: Solid wall tiles must ALWAYS block pathfinding to force doorway usage
+    const absoluteWalls = [40, 50, 52, 1, 3, 5, 41, 43, 27, 46, 47, 17, 18, 19, 21, 24];
+    if (absoluteWalls.includes(data.tileID)) return false;
 
-    const solids = [40, 48, 50, 52, 17, 18, 19, 21, 22, 24, 27, 1, 3];
-    if (solids.includes(data.tileID)) return false;
     return true;
 }
 
@@ -425,7 +420,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 const moveX = (dx / dist) * hobbit.speed * modifier;
                 const moveY = (dy / dist) * hobbit.speed * modifier;
 
-                // 🎯 THE FIX: Do not instantly clear the path on collision failures. Let the vector realign so the smaller hitbox slides around corners.
                 moveEntity(hobbit, moveX, moveY, worldMatrix, roomMatrix);
             } else {
                 hobbit.x = targetX;
