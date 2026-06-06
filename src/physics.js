@@ -28,40 +28,37 @@ export function getTileData(pxX, pxY, worldMatrix, roomMatrix) {
 
 // src/physics.js
 
+// Inside checkCollision() in src/physics.js:
+
 export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     let target = getTileData(x, y, worldMatrix, roomMatrix);
     const current = getTileData(entity.x + 8, entity.y + 15, worldMatrix, roomMatrix); 
 
     if (target.tileID === undefined) return false;
 
-    // 1. Block standard full-tile solid objects (like Wells)
+    // Block standard full-tile solid objects (like Wells)
     if (solidTiles.has(`${target.gx}_${target.gy}`)) return false;
 
-    // ==========================================
-    // 🌲 2. SUB-PIXEL TREE TRUNK COLLISION (Point-In-Trunk Check)
-    // ==========================================
+    // Sub-pixel tree trunk checks
     const tx = target.gx;
     const ty = target.gy;
 
-    // Scan the current tile and the tile to its left (since the tree is 2 tiles wide)
     for (let ox = -1; ox <= 0; ox++) {
         const anchorX = tx + ox;
         const obj = getObjectAt(anchorX, ty);
         
         if (obj && obj.type === 'FOREST_TREE') {
-            const treeMinX = (anchorX * 16) + 8;  // Left trunk boundary (8px buffer)
-            const treeMaxX = (anchorX * 16) + 24; // Right trunk boundary (8px buffer)
+            const treeMinX = (anchorX * 16) + 8;  
+            const treeMaxX = (anchorX * 16) + 24; 
 
-            // 🎯 THE FIX: Verify if the exact tested coordinate falls inside the trunk.
-            // (Old buggy 'overlapX' and 'overlapY' checks have been completely removed)
             if (x >= treeMinX && x <= treeMaxX) {
-                return false; // Collision detected! Block movement
+                return false; 
             }
         }
     }
 
     // ==========================================
-    // 🚪 3. DOOR & GATE LOGIC
+    // 🚪 DOOR & GATE LOGIC (🎯 UPDATED: Synchronized)
     // ==========================================
     if (entity.floor === 1) {
         const isNearClosedDoor = (
@@ -79,7 +76,13 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
                     if (near.tileID === 49 || near.tileID === 12) {
                         const hasKey = entity.inventory.some(item => item.isKey && item.houseId === near.roomID);
                         if (hasKey) {
-                            worldMatrix[near.cx][near.cy][nearIdx] = (near.tileID === 49) ? 35 : 13;
+                            const newTile = (near.tileID === 49) ? 35 : 13;
+                            worldMatrix[near.cx][near.cy][nearIdx] = newTile;
+                            
+                            // 🎯 THE FIX: Sync the opened door state to all other players!
+                            if (socket && socket.connected) {
+                                socket.emit('syncTile', { gx: near.gx, gy: near.gy, traits: newTile });
+                            }
                         }
                     }
                     
@@ -106,10 +109,13 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
                     
                     if (dist > 24) {
                         const nearIdx = (near.ly * 100) + near.lx;
-                        if (near.tileID === 35) worldMatrix[near.cx][near.cy][nearIdx] = 49;
-                        else if (near.tileID === 13) worldMatrix[near.cx][near.cy][nearIdx] = 12;
-                        else if (near.tileID === 23) worldMatrix[near.cx][near.cy][nearIdx] = 22;
-                        else if (near.tileID === 20) worldMatrix[near.cx][near.cy][nearIdx] = 19;
+                        const closedTile = (near.tileID === 35) ? 49 : 12;
+                        worldMatrix[near.cx][near.cy][nearIdx] = closedTile;
+
+                        // 🎯 THE FIX: Sync the closed door state to all other players!
+                        if (socket && socket.connected) {
+                            socket.emit('syncTile', { gx: near.gx, gy: near.gy, traits: closedTile });
+                        }
                     }
                 }
             }

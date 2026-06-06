@@ -363,9 +363,11 @@ export function drawStaticObjects() {
     }
 }
 
+// Replace drawPlants() in src/renderer.js with this:
+
 export function drawPlants(roomMatrix) {
     const hTX = Math.floor((hero.x + 8) / 16);
-    const hTY = Math.floor((hero.y + 14) / 16);
+    const hTY = Math.floor((hero.y + 8) / 16); // 👈 🎯 THE FIX: Changed from + 14 to + 8 to eliminate the threshold gap!
     const rCol = roomMatrix[Math.floor(hTX / 100)]?.[Math.floor(hTY / 100)];
     const heroHouseId = rCol ? rCol[((hTY % 100 + 100) % 100 * 100) + ((hTX % 100 + 100) % 100)] : 0;
 
@@ -759,7 +761,13 @@ export function drawHero() {
 
 // Inside src/renderer.js:
 
-export function drawRemotePlayers(ctx2, remotePlayersData) {
+export function drawRemotePlayers(ctx2, remotePlayersData, roomMatrix) {
+    // Determine if the local player is currently indoors to handle rendering visibility
+    const hTX = Math.floor((hero.x + 8) / 16);
+    const hTY = Math.floor((hero.y + 8) / 16);
+    const rCol = roomMatrix[Math.floor(hTX / 100)]?.[Math.floor(hTY / 100)];
+    const heroHouseId = rCol ? rCol[((hTY % 100 + 100) % 100 * 100) + ((hTX % 100 + 100) % 100)] : 0;
+
     remotePlayersData.forEach(p => {
         // Calculate screen positions using standard camera offsets
         let sx = Math.floor(p.x + viewport.offset[0]);
@@ -770,20 +778,32 @@ export function drawRemotePlayers(ctx2, remotePlayersData) {
         
         if (p.isOffline) ctx2.globalAlpha = 0.5; 
         
-        const isMoving = p.isMoving;
-        const isLunge = p.isLunge; // 👈 🎯 THE FIX: Read the lunge flag
+        const isLunge = p.isLunge; 
 
-        // 🎯 THE FIX: Choose the lunge sheet if they are attacking, otherwise default to walk
+        // 1. Resolve the primary asset key based on current action state
         let imgKey = `heroWalk${p.dir || 'South'}`;
         if (isLunge) {
             imgKey = `heroLunge${p.dir || 'South'}`; 
         }
         
-        const img = images[imgKey] || images.heroWalkSouth;
-        if (!img || !img.complete) return;
+        // 2. Robust asset validation with fallback cascade
+        let img = images[imgKey];
+        if (!img || !img.complete || img.naturalWidth === 0) {
+            // Fall back to directional walk if lunge is unavailable or broken
+            imgKey = `heroWalk${p.dir || 'South'}`;
+            img = images[imgKey];
+            
+            // Absolute fallback to default South walk if even directional walk is unrendered
+            if (!img || !img.complete || img.naturalWidth === 0) {
+                img = images.heroWalkSouth;
+            }
+        }
+
+        // Final safety check to prevent rendering context issues
+        if (!img || !img.complete || img.naturalWidth === 0) return;
 
         // ==========================================
-        // 1. VISUAL EFFECTS (Behind Hero)
+        // VISUAL EFFECTS (Behind Hero)
         // ==========================================
         if (p.bulwarkTimer && p.bulwarkTimer > 0) {
             ctx2.strokeStyle = "rgba(100, 200, 255, 0.8)"; 
@@ -823,9 +843,9 @@ export function drawRemotePlayers(ctx2, remotePlayersData) {
         }
 
         // ==========================================
-        // 2. DRAW HERO SPRITE
+        // DRAW HERO SPRITE
         // ==========================================
-        // 🎯 THE FIX: Lock to Frame 1 (Sword extended) during the lunge, otherwise draw standard walk frames
+        // Use Frame 1 (extended weapon pose) during lunges, otherwise use current animation frame
         const frame = isLunge ? 1 : (p.animFrame || 0);
 
         ctx2.drawImage(img, frame * 16, 0, 16, 16, sx, sy, 16, 16);
@@ -833,7 +853,7 @@ export function drawRemotePlayers(ctx2, remotePlayersData) {
         ctx2.globalAlpha = 1.0; 
 
         // ==========================================
-        // 3. VISUAL EFFECTS (In Front of Hero)
+        // VISUAL EFFECTS (In Front of Hero)
         // ==========================================
         if (p.cc && p.cc.hasResonance) {
             ctx2.fillStyle = "#FF1493"; 
@@ -846,7 +866,7 @@ export function drawRemotePlayers(ctx2, remotePlayersData) {
         }
 
         // ==========================================
-        // 4. UI: NAMEPLATE & HEALTH BARS
+        // UI: NAMEPLATE & HEALTH BARS
         // ==========================================
         ctx2.fillStyle = p.isOffline ? "#888888" : "white"; 
         ctx2.font = "8px Arial";
@@ -868,7 +888,7 @@ export function drawRemotePlayers(ctx2, remotePlayersData) {
         ctx2.fillRect(sx, sy - 4, barW * (p.hp / (p.maxHp || 100)), barH);
 
         // ==========================================
-        // 5. 🤖 DRAW REMOTE ZENITH GUARDIANS
+        // DRAW REMOTE ZENITH GUARDIANS
         // ==========================================
         if (p.pet && p.pet.active) {
             const petSx = Math.floor(p.pet.x + viewport.offset[0]);

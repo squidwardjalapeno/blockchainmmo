@@ -279,7 +279,8 @@ var render = function () {
     drawProjectiles(ctx2, serverProjectiles);
 
 
-    drawRemotePlayers(ctx2, remotePlayers);
+    // 🎯 THE FIX: Pass roomMatrix as the third parameter to drawRemotePlayers
+    drawRemotePlayers(ctx2, remotePlayers, roomMatrix); 
     drawHero(); 
     drawBobber();
     // 👇 ADD THIS LINE: Draw the leaves over the players' heads!
