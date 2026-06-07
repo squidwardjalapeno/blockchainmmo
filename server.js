@@ -859,8 +859,8 @@ socket.on('collectAnvil', (data) => {
 
         const currentGrowth = startGrowth + (gRate * 0.1 * elapsedSeconds);
 
-        // Determine if the plant has hit its mature visual threshold
-        const isMature = currentGrowth >= threshold;
+        // 🎯 CHANGE THIS LINE: Use the identical visual-stage helper instead of a flat threshold!
+        const isMature = isServerPlantMature(plant, currentGrowth);
 
         if (isMature) {
             // ==========================================
