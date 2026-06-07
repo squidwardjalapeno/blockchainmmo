@@ -522,31 +522,27 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     }
                 }
             }
+            // Locate this block in updateHobbits inside src/hobbits.js:
             else {
                 hobbit.goal = 'harvest';
 
-                // If currently inside, we must safely step out to the overworld first
-                if (roomID === hobbit.houseId) {
-                    if (currTX === hobbit.homeX && currTY === hobbit.homeY) {
-                        if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
+                // 🎯 THE FIX: Deny targeting/scanning if the hobbit is still indoors
+                if (roomID !== 0 && roomID !== 9999) {
+                    if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
+                        if (currTX === hobbit.homeX && currTY === hobbit.homeY) {
                             hobbit.path = [
-                                { x: hobbit.doorX, y: hobbit.doorY - 1 }, // Door
-                                { x: hobbit.doorX, y: hobbit.doorY }      // Outside
+                                { x: hobbit.doorX, y: hobbit.doorY - 1 }, // Door tile
+                                { x: hobbit.doorX, y: hobbit.doorY }      // Outside tile
                             ];
-                            hobbit.state = 'walking';
+                        } else {
+                            // Walk to the doorstep alignment position first
+                            hobbit.path = [{ x: hobbit.homeX, y: hobbit.homeY }];
                         }
-                    } else {
-                        if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
-                            const path = findPathToCoords(currTX, currTY, hobbit.homeX, hobbit.homeY, worldMatrix, roomMatrix);
-                            if (path) {
-                                hobbit.path = path;
-                                hobbit.state = 'walking';
-                            }
-                        }
+                        hobbit.state = 'walking';
                     }
                 }
                 else {
-                    // Caster is outdoors, ready to harvest
+                    // Caster is outdoors, safely ready to scan or walk to plants
                     if (hobbit.targetPlant) {
                         const plantKey = `${hobbit.targetPlant.gx}_${hobbit.targetPlant.gy}`;
                         const livePlant = plants.get(plantKey);
@@ -584,7 +580,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                         hobbit.path = path;
                                         hobbit.state = 'walking';
                                     } else {
-                                        hobbit.targetPlant = null; // Mark unreachable
+                                        hobbit.targetPlant = null; 
                                     }
                                 }
                             }

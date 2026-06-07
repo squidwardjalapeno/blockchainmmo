@@ -858,23 +858,28 @@ export function handleRemoteChestUpdate(chestId, items) {
     }
 }
 
+// Locate renderChestUI inside src/uiManager.js and modify both innerHTML maps:
 export function renderChestUI() {
     if (!activeChestId) return;
 
     const heroInv = document.getElementById('chest-hero-inv');
     const chestInv = document.getElementById('chest-box-inv');
 
+    // 🎯 THE FIX: Appended item count output
     heroInv.innerHTML = hero.inventory.map((item, i) => `
         <div class="inv-item draggable-item" draggable="true" data-index="${i}" data-source="hero">
             <div class="item-icon" style="font-size: 24px;">${getItemIcon(item)}</div>
             <strong>${item.name}</strong>
+            ${item.count > 1 ? `<br><span style="color:var(--banana-dark); font-size:8px;">(x${item.count})</span>` : ''}
         </div>
     `).join('');
 
+    // 🎯 THE FIX: Appended item count output
     chestInv.innerHTML = activeChestItems.map((item, i) => `
         <div class="inv-item draggable-item" draggable="true" data-index="${i}" data-source="chest">
             <div class="item-icon" style="font-size: 24px;">${getItemIcon(item)}</div>
             <strong>${item.name}</strong>
+            ${item.count > 1 ? `<br><span style="color:var(--banana-dark); font-size:8px;">(x${item.count})</span>` : ''}
         </div>
     `).join('');
 
