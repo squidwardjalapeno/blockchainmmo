@@ -452,10 +452,15 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             // ==========================================
             const hasLoot = hobbit.inventory.some(item => !item.isKey);
 
+            // Locate this block in updateHobbits inside src/hobbits.js:
             if (hasLoot) {
                 hobbit.goal = 'deposit';
 
-                if (currTX === hobbit.chestX && currTY === hobbit.chestY) {
+                // 🎯 THE FIX: Redirect targeting to the open floor space 1 tile to the right of the chest
+                const depositTX = hobbit.chestX + 1;
+                const depositTY = hobbit.chestY;
+
+                if (currTX === depositTX && currTY === depositTY) {
                     hobbit.state = 'idle';
                     hobbit.path = [];
 
@@ -496,7 +501,8 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 }
                 else if (roomID === hobbit.houseId) {
                     if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
-                        const path = findPathToCoords(currTX, currTY, hobbit.chestX, hobbit.chestY, worldMatrix, roomMatrix);
+                        // 🎯 THE FIX: Pathfind to the safe floor coordinate instead of the wall-side chest tile
+                        const path = findPathToCoords(currTX, currTY, depositTX, depositTY, worldMatrix, roomMatrix);
                         if (path) {
                             hobbit.path = path;
                             hobbit.state = 'walking';
