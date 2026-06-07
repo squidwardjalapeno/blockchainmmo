@@ -34,10 +34,19 @@ export const BACTERIA_TYPES = {
     "key": 61,
 };
 
+// Replace the handleRemoteTileUpdate function in src/bacteria.js with this specific fix:
 export function handleRemoteTileUpdate(data, worldMatrix) {
     const { gx, gy, traits } = data;
     
-    // 🎯 THE FIX: If traits is a physical tile ID, write it directly to the map matrix
+    // 🎯 THE FIX: Intercept tile-clearing immediately so it does not paint Sand (Terrain 0)
+    if (traits === 0) {
+        const { data: chunkData, idx } = getBacteriaData(gx, gy);
+        if (chunkData) {
+            chunkData[idx] = 0;
+        }
+        return;
+    }
+
     if (traits < 1000) {
         const cx = Math.floor(gx / 100);
         const cy = Math.floor(gy / 100);
@@ -47,7 +56,6 @@ export function handleRemoteTileUpdate(data, worldMatrix) {
             worldMatrix[cx][cy][ly * 100 + lx] = traits;
         }
     } else {
-        // Otherwise, update bacteria cells
         const { data: chunkData, idx } = getBacteriaData(gx, gy);
         if (chunkData) {
             chunkData[idx] = traits;

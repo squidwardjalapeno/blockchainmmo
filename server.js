@@ -1514,7 +1514,7 @@ socket.on('requestActivityLog', () => {
         socket.emit('updateInventory', player.inventory);
     });
 
-    // 4. Chest Transfer Request
+    // Locate socket.on('requestChestTransfer') inside server.js and replace its logic with this:
     socket.on('requestChestTransfer', (data) => {
         const { chestId, index, direction } = data;
         const player = players[socket.id];
@@ -1536,17 +1536,39 @@ socket.on('requestActivityLog', () => {
             if (!item) return;
 
             player.inventory.splice(index, 1);
-            chestItems.push(item);
-        } else if (direction === 'to_hero') {
-            if (player.inventory.length >= 10) {
-                socket.emit('inventoryFull');
-                return;
+
+            // 🎯 THE FIX: Try to merge with an existing stack in the chest first
+            let merged = false;
+            if (item.maxStack > 1) {
+                const existing = chestItems.find(i => i.seedType === item.seedType && i.count < item.maxStack);
+                if (existing) {
+                    const space = item.maxStack - existing.count;
+                    if (item.count <= space) {
+                        existing.count += item.count;
+                        merged = true;
+                    } else {
+                        existing.count = item.maxStack;
+                        item.count -= space;
+                    }
+                }
             }
+
+            if (!merged) {
+                chestItems.push(item);
+            }
+        } else if (direction === 'to_hero') {
             const item = chestItems[index];
             if (!item) return;
 
             chestItems.splice(index, 1);
-            player.inventory.push(item);
+
+            // 🎯 THE FIX: Use our secure stacking helper to merge into player's backpack
+            const success = giveItemToServerInventory(player, item);
+            if (!success) {
+                chestItems.push(item); // Refund chest if backpack full
+                socket.emit('inventoryFull');
+                return;
+            }
         }
 
         fs.writeFileSync('chests.json', JSON.stringify(chestDb, null, 2));
@@ -2212,7 +2234,7 @@ setInterval(() => {
         // Lay Egg
         if (a.eggTimer <= 0) {
             a.eggTimer = 30 + Math.random() * 30; // Reset
-            const packedTraits = (30 & 0xFF) | ((16 & 0xFF) << 20); // 30 hp, TypeID 16 (Egg)
+            const packedTraits = (1 & 0xFF) | ((16 & 0xFF) << 20); // 30 hp, TypeID 16 (Egg)
             io.emit('syncTile', { gx: tx, gy: ty, traits: packedTraits });
         }
 
