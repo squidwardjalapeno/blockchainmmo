@@ -99,7 +99,7 @@ export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null) 
 }
 
 // Replace isWalkableForHobbit inside src/hobbits.js:
-function isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix, hobbit = null) {
+function isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix, hobbit = null, fromX = null, fromY = null) {
     if (solidTiles.has(`${tx}_${ty}`)) return false;
 
     const obj = getObjectAt(tx, ty);
@@ -114,20 +114,22 @@ function isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix, hobbit = null) {
     const absoluteWalls = [40, 50, 52, 1, 3, 5, 41, 43, 27, 46, 47, 17, 18, 19, 21, 24];
     if (absoluteWalls.includes(data.tileID)) return false;
 
-    // 🎯 THE FIX: Enforce strict room accessibility rules for pathfinding
-    const roomID = data.roomID;
-    if (roomID !== 0 && roomID !== 9999) {
-        if (hobbit) {
-            const canEnter = (hobbit.goal === 'gohome' || hobbit.goal === 'deposit') && (roomID === hobbit.houseId);
-            if (!canEnter) return false;
-        } else {
-            return false;
+    // 🎯 THE FIX: Force the pathfinder to respect room boundaries, matching physics.js
+    if (fromX !== null && fromY !== null) {
+        const fromData = getTileData(fromX * 16 + 8, fromY * 16 + 8, worldMatrix, roomMatrix);
+        const cRoom = (fromData.roomID === 9999) ? 0 : fromData.roomID;
+        const tRoom = (data.roomID === 9999) ? 0 : data.roomID;
+        
+        if (cRoom !== tRoom) {
+            const doors = [35, 13, 23, 20, 49, 12, 22, 19];
+            if (!doors.includes(data.tileID) && !doors.includes(fromData.tileID)) {
+                return false; 
+            }
         }
     }
 
     return true;
 }
-
 // Update assignRandomWalk inside src/hobbits.js:
 function assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix) {
     const dirs = [[0,-1], [0,1], [-1,0], [1,0]];
@@ -158,11 +160,13 @@ function findPathToCoords(startTX, startTY, targetTX, targetTY, worldMatrix, roo
             { x: curr.x - 1, y: curr.y }, { x: curr.x + 1, y: curr.y }
         ];
 
+        // Update only the neighbor-loop block inside findPathToCoords in src/hobbits.js:
         for (let n of neighbors) {
             const key = `${n.x}_${n.y}`;
             if (!visited.has(key)) {
                 visited.add(key);
-                if (isWalkableForHobbit(n.x, n.y, worldMatrix, roomMatrix, hobbit)) {
+                // 🎯 THE FIX: Pass curr.x, curr.y as the fromX, fromY parameters to evaluate boundaries
+                if (isWalkableForHobbit(n.x, n.y, worldMatrix, roomMatrix, hobbit, curr.x, curr.y)) {
                     queue.push({ x: n.x, y: n.y, path: [...curr.path, { x: n.x, y: n.y }] });
                 }
             }
