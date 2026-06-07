@@ -98,7 +98,8 @@ export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null) 
     });
 }
 
-function isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix) {
+// Replace isWalkableForHobbit inside src/hobbits.js:
+function isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix, hobbit = null) {
     if (solidTiles.has(`${tx}_${ty}`)) return false;
 
     const obj = getObjectAt(tx, ty);
@@ -109,22 +110,36 @@ function isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix) {
     const data = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix);
     if (!data || data.tileID === undefined) return false;
 
+    // Solid wall tiles must ALWAYS block pathfinding to force doorway usage
     const absoluteWalls = [40, 50, 52, 1, 3, 5, 41, 43, 27, 46, 47, 17, 18, 19, 21, 24];
     if (absoluteWalls.includes(data.tileID)) return false;
+
+    // 🎯 THE FIX: Enforce strict room accessibility rules for pathfinding
+    const roomID = data.roomID;
+    if (roomID !== 0 && roomID !== 9999) {
+        if (hobbit) {
+            const canEnter = (hobbit.goal === 'gohome' || hobbit.goal === 'deposit') && (roomID === hobbit.houseId);
+            if (!canEnter) return false;
+        } else {
+            return false;
+        }
+    }
 
     return true;
 }
 
+// Update assignRandomWalk inside src/hobbits.js:
 function assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix) {
     const dirs = [[0,-1], [0,1], [-1,0], [1,0]];
-    const valid = dirs.filter(d => isWalkableForHobbit(currTX + d[0], currTY + d[1], worldMatrix, roomMatrix));
+    const valid = dirs.filter(d => isWalkableForHobbit(currTX + d[0], currTY + d[1], worldMatrix, roomMatrix, hobbit));
     if (valid.length > 0) {
         const pick = valid[Math.floor(Math.random() * valid.length)];
         hobbit.path = [{ x: currTX + pick[0], y: currTY + pick[1] }];
     }
 }
 
-function findPathToCoords(startTX, startTY, targetTX, targetTY, worldMatrix, roomMatrix) {
+// Update findPathToCoords inside src/hobbits.js:
+function findPathToCoords(startTX, startTY, targetTX, targetTY, worldMatrix, roomMatrix, hobbit = null) {
     const queue = [{ x: startTX, y: startTY, path: [] }];
     const visited = new Set([`${startTX}_${startTY}`]);
     const maxDepth = 40; 
@@ -147,7 +162,7 @@ function findPathToCoords(startTX, startTY, targetTX, targetTY, worldMatrix, roo
             const key = `${n.x}_${n.y}`;
             if (!visited.has(key)) {
                 visited.add(key);
-                if (isWalkableForHobbit(n.x, n.y, worldMatrix, roomMatrix)) {
+                if (isWalkableForHobbit(n.x, n.y, worldMatrix, roomMatrix, hobbit)) {
                     queue.push({ x: n.x, y: n.y, path: [...curr.path, { x: n.x, y: n.y }] });
                 }
             }
