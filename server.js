@@ -373,7 +373,6 @@ if (fs.existsSync('cellars.json')) { try { fs.unlinkSync('cellars.json'); } catc
 if (fs.existsSync('hay.json')) { try { fs.unlinkSync('hay.json'); console.log("🗑️ Hay Storage file deleted."); } catch(err){} }
 
 
-// Spawn 15 chickens globally near the village center at startup
 function initServerAnimals() {
     for (let i = 0; i < 15; i++) {
         serverAnimals.push({
@@ -387,7 +386,9 @@ function initServerAnimals() {
             dir: 'East',
             moveTimer: Math.random() * 3,
             targetX: null,
-            targetY: null
+            targetY: null,
+            eggTimer: 15 + Math.random() * 20,  // Ready to lay in 15-35s
+            poopTimer: 10 + Math.random() * 20  // Ready to poop in 10-30s
         });
     }
 }
@@ -846,7 +847,8 @@ socket.on('collectAnvil', (data) => {
         }
 
         const def = SERVER_PLANT_DEFS[plant.type];
-        const threshold = def ? def.harvestThreshold : 100;
+        // 🎯 CHANGE THIS LINE: Fall back to 95% if harvestThreshold is undefined
+        const threshold = (def && def.harvestThreshold !== undefined) ? def.harvestThreshold : 95;
         
         // Calculate growth securely
         const elapsedSeconds = plant.timestamp ? (Date.now() - plant.timestamp) / 1000 : 0;
@@ -1165,12 +1167,10 @@ socket.on('collectAnvil', (data) => {
 
     // Replace the registerRanch socket listener inside server.js with this:
 
-    // 🎯 SECURE RANCH CHICKEN REGISTRATION
     socket.on('registerRanch', (data) => {
         const { gx, gy, w, h } = data;
         const ranchKey = `${gx}_${gy}`;
 
-        // 🎯 THE FIX: If this ranch has already been registered on the server, abort spawning!
         if (registeredServerRanches.has(ranchKey)) {
             return; 
         }
@@ -1178,7 +1178,6 @@ socket.on('collectAnvil', (data) => {
 
         console.log(`🐓 Registering new Server Ranch at [${gx}, ${gy}]. Spawning pasture chickens.`);
 
-        // Spawn 2 to 3 chickens inside this ranch's internal pasture area
         const numChickens = Math.floor(Math.random() * 2) + 2; 
         
         for (let i = 0; i < numChickens; i++) {
@@ -1197,6 +1196,8 @@ socket.on('collectAnvil', (data) => {
                 moveTimer: Math.random() * 3,
                 targetX: null,
                 targetY: null,
+                eggTimer: 15 + Math.random() * 20,  // Ready to lay in 15-35s
+                poopTimer: 10 + Math.random() * 20, // Ready to poop in 10-30s
                 
                 ranchBounds: { 
                     minX: (gx + 1) * 16, 
@@ -1207,7 +1208,6 @@ socket.on('collectAnvil', (data) => {
             });
         }
     });
-
 
 
 
@@ -2182,7 +2182,6 @@ function broadcastEffectiveTGV() {
 // ==========================================
 // THE HEARTBEAT (50ms Physics Loop)
 // Update the 50ms heartbeat loop in server.js:
-
 setInterval(() => {
     const delta = 0.05; // 50ms in seconds
 
@@ -2197,10 +2196,33 @@ setInterval(() => {
         }
     }
 
-    // Inside the 50ms heartbeat loop at the bottom of server.js:
-
     // 🎯 UPDATE SERVER-SIDE CHICKENS (With strict pasture containment)
     serverAnimals.forEach(a => {
+        // Initialize timers if missing
+        if (a.eggTimer === undefined) a.eggTimer = 15;
+        if (a.poopTimer === undefined) a.poopTimer = 10;
+
+        // Tick timers down by delta
+        a.eggTimer -= delta;
+        a.poopTimer -= delta;
+
+        const tx = Math.floor(a.x / 16);
+        const ty = Math.floor(a.y / 16);
+
+        // Lay Egg
+        if (a.eggTimer <= 0) {
+            a.eggTimer = 30 + Math.random() * 30; // Reset
+            const packedTraits = (30 & 0xFF) | ((16 & 0xFF) << 20); // 30 hp, TypeID 16 (Egg)
+            io.emit('syncTile', { gx: tx, gy: ty, traits: packedTraits });
+        }
+
+        // Drop Poop
+        if (a.poopTimer <= 0) {
+            a.poopTimer = 20 + Math.random() * 30; // Reset
+            const packedTraits = (3 & 0xFF) | ((12 & 0xFF) << 8) | ((4 & 0xFF) << 20); // 3 hp, 12 vir, TypeID 4 (Poop)
+            io.emit('syncTile', { gx: tx, gy: ty, traits: packedTraits });
+        }
+
         a.moveTimer -= delta;
         if (a.moveTimer <= 0) {
             a.moveTimer = 2 + Math.random() * 3;
@@ -2208,13 +2230,11 @@ setInterval(() => {
             let targetX, targetY;
             
             if (a.ranchBounds) {
-                // 🎯 THE FIX: Wander ONLY inside the private fence coordinates
                 const rx = a.ranchBounds.maxX - a.ranchBounds.minX;
                 const ry = a.ranchBounds.maxY - a.ranchBounds.minY;
                 targetX = a.ranchBounds.minX + Math.random() * rx;
                 targetY = a.ranchBounds.minY + Math.random() * ry;
             } else {
-                // Global wander fallback (for chickens spawned outside ranches)
                 const angle = Math.random() * Math.PI * 2;
                 const dist = 30 + Math.random() * 50;
                 targetX = a.x + Math.cos(angle) * dist;
@@ -2305,15 +2325,13 @@ setInterval(() => {
         if (hit || p.life <= 0) projectiles.splice(i, 1); 
     }
 
-    // 🎯 4. BROADCAST ALL ENTITIES (Includes the fully synced chickens!)
+    // 🎯 4. BROADCAST ALL ENTITIES
     io.emit('position', { 
         playerbase: players,
         projectiles: projectiles,
-        animals: serverAnimals // 👈 Added here
+        animals: serverAnimals 
     });
 }, 50);
-
-
 
 
 // 5. START SERVER
