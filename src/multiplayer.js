@@ -337,7 +337,8 @@ export function initMultiplayer() {
                     const ty = p.gy;
                     const tileData = physMod.getTileData(tx * 16 + 8, ty * 16 + 8, gameMod.worldMatrix, gameMod.roomMatrix);
                     if (tileData && tileData.tileID === 63 && (tileData.roomID === 0 || tileData.roomID === 9999)) {
-                        plantsMod.createPlant(tx, ty, null, p.growth, p.type);
+                        // Pass true as the 7th parameter to disable recursive network packet loops
+                        plantsMod.createPlant(tx, ty, null, p.growth, p.type, 0, true);
                     }
                 });
             });
