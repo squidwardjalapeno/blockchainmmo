@@ -175,6 +175,7 @@ export function drawMap(worldMatrix, roomMatrix) {
                     continue; 
                 }
 
+                // Locate this block inside drawMap() in src/renderer.js and update:
                 if (tID >= 300 && tID < 500) {
                     const woodsImg = images.woodsTileset2;
                     if (woodsImg && woodsImg.complete) {
@@ -201,7 +202,17 @@ export function drawMap(worldMatrix, roomMatrix) {
                                 }
                             }
 
-                            if (isBeach) {
+                            // 🎯 THE FIX: Retrieve the tile directly beneath the border
+                            const cxBelow = Math.floor(k / 100);
+                            const cyBelow = Math.floor((l + 1) / 100);
+                            const lxBelow = ((k % 100) + 100) % 100;
+                            const lyBelow = (((l + 1) % 100) + 100) % 100;
+                            const belowTile = worldMatrix[cxBelow]?.[cyBelow]?.[lyBelow * 100 + lxBelow];
+
+                            if (belowTile === 48) {
+                                // 🎯 THE FIX: Use Roof Top (40) as the background base for the "dug-in" cellar roof
+                                ctx2.drawImage(tileImg, (40 % 8) * 16, Math.floor(40 / 8) * 16, 16, 16, sX, sY, 16, 16);
+                            } else if (isBeach) {
                                 ctx2.drawImage(tileImg, 0, 0, 16, 16, sX, sY, 16, 16);
                             } else if (isStone) {
                                 const roadImg = images.mainTileset2;
