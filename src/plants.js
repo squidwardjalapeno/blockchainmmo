@@ -3,7 +3,7 @@ import { seedBacteria } from './bacteria.js';
 import { ITEM_TYPES } from './items.js';
 import { hero } from './entities.js'; 
 import { viewport } from './viewport.js'; // 👈 IMPORTED: Allows viewport boundary checks
-import { socket, registerOnRestoreHero } from './multiplayer.js'; // 👈 ADD THIS IMPORT
+import { socket } from './multiplayer.js'; // 👈 ADD THIS IMPORT
 
 
 
@@ -272,7 +272,3 @@ function spreadSeed(parentPlant, fertilityMatrix, worldMatrix, roomMatrix, lefto
     createPlant(targetX, targetY, fertilityMatrix, 0, parentPlant.type, leftoverTime);
 }
 
-// Add this registration block at the very bottom of src/plants.js:
-registerOnRestoreHero(() => {
-    plants.clear();
-});

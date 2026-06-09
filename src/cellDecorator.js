@@ -10,7 +10,7 @@ import { getTileData } from './physics.js';
 import { seedBacteria } from './bacteria.js'; // 👈 ADD THIS LINE
 // At the top of src/cellDecorator.js (Line 1 or 2):
 
-import { socket, registerOnRestoreHero  } from './multiplayer.js'; // 👈 ADD THIS IMPORT
+import { socket } from './multiplayer.js'; // 👈 ADD THIS IMPORT
 
 
 
@@ -2982,9 +2982,3 @@ export function generateGlobalShorelines(worldMatrix, roomMatrix, fertilityMatri
         }
     }
 }
-
-// Add this registration block at the very bottom of src/cellDecorator.js:
-registerOnRestoreHero(() => {
-    decoratedCells.clear();
-    ecoGenerated.clear();
-});

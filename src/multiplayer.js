@@ -5,8 +5,6 @@ import { hero } from './entities.js';
 import { openChestMenu, handleRemoteChestUpdate, openStoreMenu, handleRemoteStoreUpdate, processClaimedStorage, openCellarMenu, handleRemoteCellarUpdate, openHayStorageMenu, handleRemoteHayStorageUpdate, openWithdrawMenu, executeWithdrawal } from './uiManager.js';
 import { setContractAddress } from './blockchainManager.js';
 import { handleRemoteTileUpdate } from './bacteria.js';
-// Add these static imports near the top of src/multiplayer.js:
-import { plants } from './plants.js';
 
 export const remotePlayers = new Map(); 
 export let socket = null;
@@ -21,11 +19,6 @@ export function setPlayerRequestedChestId(id) {
     playerRequestedChestId = id;
 }
 
-// 🎯 Add this registry array and exporter near the top of src/multiplayer.js:
-const onRestoreHeroCallbacks = [];
-export function registerOnRestoreHero(cb) {
-    onRestoreHeroCallbacks.push(cb);
-}
 
 // 🎯 THE FIX: Dynamic dependency injection of worldMatrix to bypass circular dependency locks
 export let activeWorldMatrix = null;
@@ -164,8 +157,7 @@ export function initMultiplayer() {
             hero.charClass = data.charClass || "Paladin";
             hero.skills = data.skills || [];
 
-            // 🎯 THE FIX: Instantly execute all registered cleanups synchronously
-            onRestoreHeroCallbacks.forEach(cb => cb());
+            
 
             import('./uiManager.js').then(ui => {
                 ui.updateHUD();
