@@ -10,7 +10,7 @@ import { getTileData } from './physics.js';
 import { seedBacteria } from './bacteria.js'; // 👈 ADD THIS LINE
 // At the top of src/cellDecorator.js (Line 1 or 2):
 
-import { socket } from './multiplayer.js'; // 👈 ADD THIS IMPORT
+import { socket, registerOnRestoreHero  } from './multiplayer.js'; // 👈 ADD THIS IMPORT
 
 
 
@@ -2080,7 +2080,8 @@ function promotePath(startNode, endNode, adj, tileID, thickness, maxRangeSq, wor
 
 
 
-const decoratedCells = new Set(); 
+// Revert decoratedCells back to a standard local constant inside src/cellDecorator.js:
+const decoratedCells = new Set();
 
 // Inside ensureLocalCells() in src/cellDecorator.js:
 
@@ -2981,3 +2982,9 @@ export function generateGlobalShorelines(worldMatrix, roomMatrix, fertilityMatri
         }
     }
 }
+
+// Add this registration block at the very bottom of src/cellDecorator.js:
+registerOnRestoreHero(() => {
+    decoratedCells.clear();
+    ecoGenerated.clear();
+});

@@ -22,6 +22,12 @@ export function setPlayerRequestedChestId(id) {
     playerRequestedChestId = id;
 }
 
+// 🎯 Add this registry array and exporter near the top of src/multiplayer.js:
+const onRestoreHeroCallbacks = [];
+export function registerOnRestoreHero(cb) {
+    onRestoreHeroCallbacks.push(cb);
+}
+
 // 🎯 THE FIX: Dynamic dependency injection of worldMatrix to bypass circular dependency locks
 export let activeWorldMatrix = null;
 export function setWorldMatrix(matrix) {
@@ -125,7 +131,7 @@ export function initMultiplayer() {
             });
         });
 
-        // Locate socket.on('restoreHero') inside src/multiplayer.js and update to:
+        // Locate socket.on('restoreHero') inside src/multiplayer.js and update:
         socket.on('restoreHero', (data) => {
             hero.xp = data.xp || 0;
             hero.hp = data.hp || 100;
@@ -159,10 +165,8 @@ export function initMultiplayer() {
             hero.charClass = data.charClass || "Paladin";
             hero.skills = data.skills || [];
 
-            // 🎯 THE FIX: Instantly and synchronously clear caches to prevent race conditions during spawn
-            decoratedCells.clear();
-            ecoGenerated.clear();
-            plants.clear();
+            // 🎯 THE FIX: Instantly execute all registered cleanups synchronously
+            onRestoreHeroCallbacks.forEach(cb => cb());
 
             import('./uiManager.js').then(ui => {
                 ui.updateHUD();
