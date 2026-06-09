@@ -496,12 +496,13 @@ export function drawVillageHall(gx, gy, worldMatrix, roomMatrix, fertilityMatrix
 
 // js/cellDecorator.js
 
+// Locate and replace drawRootCellar inside src/cellDecorator.js:
 export function drawRootCellar(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     const currentId = nextHouseId++;
     console.log(`🕳️ Digging Root Cellar at ${gx}, ${gy} (ID: ${currentId})`);
 
-    // 1. FILL FOOTPRINT (2 wide x 3 deep)
-    for (let i = 0; i <= 2; i++) {
+    // 1. FILL FOOTPRINT (3x3 Flooring)
+    for (let i = 0; i < 3; i++) {
         for (let j = -2; j <= 0; j++) {
             // Interior Floor (Tile 42)
             setGlobalTile(gx + i, gy + j, 42, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
@@ -509,26 +510,27 @@ export function drawRootCellar(gx, gy, worldMatrix, roomMatrix, fertilityMatrix,
         }
     }
 
-    // 2. EXTERIOR STRUCTURE
-    for (let i = 0; i <= 2; i++) {
-        for (let j = -2; j <= 0; j++) {
-            let tileID = 63; // Most of the cellar is hidden under Grass
+    // 2. EXTERIOR STRUCTURE (New dug-in aesthetic)
+    
+    // Row 0 (Front): Solid wall (50) on left/right, Closed Door (49) in the middle
+    setGlobalTile(gx, gy, 50, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+    setGlobalTile(gx + 1, gy, 49, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+    setGlobalTile(gx + 2, gy, 50, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
 
-            // Door placement (First row, first tile)
-            if (j === 0 && i === 1) {
-                tileID = 49;
-            }
+    // Row -1 (Middle): Standard roof mid tiles (48)
+    for (let i = 0; i < 3; i++) {
+        setGlobalTile(gx + i, gy - 1, 48, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+    }
 
-            setGlobalTile(gx + i, gy + j, tileID, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-        }
+    // Row -2 (Top): South-facing grass borders (367) set to Room ID 0 (walkable from the outside)
+    for (let i = 0; i < 3; i++) {
+        setGlobalTile(gx + i, gy - 2, 367, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     }
 
     // 3. LOGIC REGISTRY
-    // We register a storage spot at the back row
     registerObject(gx + 0, gy - 1, 'FOOD_STORAGE', { houseId: currentId });
-    registerObject(gx + 1, gy - 1, 'FOOD_STORAGE', { houseId: currentId });
+    registerObject(gx + 2, gy - 1, 'FOOD_STORAGE', { houseId: currentId });
 }
-
 // js/cellDecorator.js
 
 export function drawBarn(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
