@@ -119,7 +119,6 @@ export function drawNightTint() {
 }
 
 // src/renderer.js
-
 export function drawMap(worldMatrix, roomMatrix) {
     const w = canvas2.width;
     const h = canvas2.height;
@@ -130,7 +129,7 @@ export function drawMap(worldMatrix, roomMatrix) {
     const endY = viewport.endTile[1];
 
     const hTX = Math.floor((hero.x + 8) / 16);
-    const hTY = Math.floor((hero.y + 15) / 16); // 👈 THE FIX: Changed from +8 to +15 to align with physical stepping collision
+    const hTY = Math.floor((hero.y + 15) / 16);
 
     let hHouseId = 0;
     const hChunkR = roomMatrix[Math.floor(hTX / 100)]?.[Math.floor(hTY / 100)];
@@ -162,7 +161,7 @@ export function drawMap(worldMatrix, roomMatrix) {
                 const ly = ((l % 100) + 100) % 100;
                 const tID = wChunk[(ly * 100) + lx];
 
-                if (tID === 63) continue; // Walkable grass skipped (handled by flat background color)
+                if (tID === 63) continue; // Walkable grass
 
                 const sY = Math.floor((l * 16) + viewport.offset[1]);
 
@@ -175,7 +174,6 @@ export function drawMap(worldMatrix, roomMatrix) {
                     continue; 
                 }
 
-                // Locate this block inside drawMap() in src/renderer.js and update:
                 if (tID >= 300 && tID < 500) {
                     const woodsImg = images.woodsTileset2;
                     if (woodsImg && woodsImg.complete) {
@@ -202,7 +200,7 @@ export function drawMap(worldMatrix, roomMatrix) {
                                 }
                             }
 
-                            // 🎯 THE FIX: Retrieve the tile directly beneath the border
+                            // Retrieve the tile directly beneath the border
                             const cxBelow = Math.floor(k / 100);
                             const cyBelow = Math.floor((l + 1) / 100);
                             const lxBelow = ((k % 100) + 100) % 100;
@@ -210,7 +208,7 @@ export function drawMap(worldMatrix, roomMatrix) {
                             const belowTile = worldMatrix[cxBelow]?.[cyBelow]?.[lyBelow * 100 + lxBelow];
 
                             if (belowTile === 48) {
-                                // 🎯 THE FIX: Use Roof Top (40) as the background base for the "dug-in" cellar roof
+                                // Use Roof Top (40) as the background base for the "dug-in" cellar roof
                                 ctx2.drawImage(tileImg, (40 % 8) * 16, Math.floor(40 / 8) * 16, 16, 16, sX, sY, 16, 16);
                             } else if (isBeach) {
                                 ctx2.drawImage(tileImg, 0, 0, 16, 16, sX, sY, 16, 16);
@@ -270,9 +268,20 @@ export function drawMap(worldMatrix, roomMatrix) {
                 const idx = (ly * 100) + lx;
                 const rID = rCol?.[cy]?.[idx] || 0;
 
-                if (rID === hHouseId) {
+                // Dynamically include the top-row dug-in tile (367) in the active room if standing inside
+                let isInsideCellarTop = false;
+                if (rID === 0 && wChunk && wChunk[idx] === 367) {
+                    const lyBelow = (ly + 1) % 100;
+                    const idxBelow = (lyBelow * 100) + lx;
+                    const rIDBelow = rCol?.[cy]?.[idxBelow] || 0;
+                    if (rIDBelow === hHouseId && hHouseId !== 0) {
+                        isInsideCellarTop = true;
+                    }
+                }
+
+                if (rID === hHouseId || isInsideCellarTop) {
                     const sY = Math.floor((l * 16) + viewport.offset[1]); 
-                    const meta = roomMetadata[rID];
+                    const meta = roomMetadata[hHouseId];
                     let base = 42; 
 
                     if (meta && meta.type === 'LARGE_BARN') {
@@ -293,7 +302,18 @@ export function drawMap(worldMatrix, roomMatrix) {
                         }
                     } 
                     else {
-                        if (ly > 0 && rCol[cy][idx - 100] !== rID) base = 41; 
+                        // Route the interior wall tile (41) to the top row (367) and preserve the middle row as wooden floor (42)
+                        if (isInsideCellarTop) {
+                            base = 41; // Top-most row of cellar gets the interior wall tile
+                        } else {
+                            const lyAbove = (ly - 1 + 100) % 100;
+                            const idxAbove = (lyAbove * 100) + lx;
+                            if (wChunk && wChunk[idxAbove] === 367) {
+                                base = 42; // Middle row stays clean wooden floor tile
+                            } else if (ly > 0 && rCol[cy][idx - 100] !== rID) {
+                                base = 41; // Standard interior wall tile for other houses
+                            }
+                        }
                     }
                     
                     ctx2.drawImage(tileImg, (base % 8) * 16, Math.floor(base / 8) * 16, 16, 16, sX, sY, 16, 16);
@@ -305,8 +325,7 @@ export function drawMap(worldMatrix, roomMatrix) {
                             'STORE_COUNTER': 5, 'TEMPLE_ALTAR': 6, 'STAIRS_TOGGLE': 7,
                             'KITCHEN': 8, 'MAP_TABLE': 9, 'ARMORY': 10,
                             'MILITARY_STORAGE': 10, 'FOOD_STORAGE': 11,
-                                'HOBBIT_MANAGER': 12 // 👈 Map to Tile 12 of transparentTileset
-
+                            'HOBBIT_MANAGER': 12
                         };
                         const oldMap = { 'SMELTER': 53, 'BEDROLL': 61, 'INT_WALL': 41, 'ANVIL': 54 }; 
 
