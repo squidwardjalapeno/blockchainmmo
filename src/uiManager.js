@@ -1909,3 +1909,83 @@ export function triggerLocationBanner(cx, cy, cellType) {
         banner.style.opacity = "0";
     }, 4000);
 }
+
+// Add these functions to the bottom of src/uiManager.js:
+
+let selectedHobbitId = null;
+
+export function openHobbitManagerMenu() {
+    selectedHobbitId = null; // Clear selection
+    document.getElementById('hobbit-manager-menu').classList.remove('hidden');
+    renderHobbitManagerUI();
+
+    document.getElementById('close-hobbit-manager-btn').onclick = () => {
+        document.getElementById('hobbit-manager-menu').classList.add('hidden');
+    };
+}
+
+function renderHobbitManagerUI() {
+    const listEl = document.getElementById('hobbit-list');
+    const detailsEl = document.getElementById('selected-hobbit-details');
+    const buttonContainer = document.getElementById('job-button-container');
+    
+    // Statically import the local hobbit array
+    import('./hobbits.js').then(m => {
+        const activeHobbits = m.hobbits;
+
+        if (activeHobbits.length === 0) {
+            listEl.innerHTML = `<div style="text-align:center; font-size:8px; color:#555; margin-top:80px;">NO ACTIVE WORKERS IN RANGE</div>`;
+            detailsEl.innerText = "Workforce empty.";
+            buttonContainer.innerHTML = "";
+            return;
+        }
+
+        // Render roster list
+        listEl.innerHTML = activeHobbits.map(hob => {
+            const isSelected = (hob.id === selectedHobbitId);
+            const style = isSelected ? 'background: var(--highlight); color: white; border: 4px solid var(--bg-dark);' : 'background: white; border: 4px solid var(--bg-dark);';
+            return `
+                <div class="workforce-row" onclick="window.selectHobbit('${hob.id}')" style="${style} padding: 8px; font-size: 8px; cursor: pointer; display: flex; justify-content: space-between;">
+                    <strong>${hob.name}</strong>
+                    <span style="color: ${hob.job === 'Idle' ? '#888' : 'var(--banana-dark)'};">${hob.job.toUpperCase()}</span>
+                </div>
+            `;
+        }).join('');
+
+        // Render Details & Role selectors
+        const selected = activeHobbits.find(h => h.id === selectedHobbitId);
+        if (selected) {
+            detailsEl.innerHTML = `
+                <strong style="font-size: 10px; color: var(--text-dark);">${selected.name}</strong><br>
+                <span style="font-size:8px; color: #555;">CURRENT ROLE: <strong style="color:var(--highlight);">${selected.job.toUpperCase()}</strong></span>
+            `;
+
+            buttonContainer.innerHTML = `
+                <button onclick="window.assignHobbitJob('Forager')" class="pixel-btn ${selected.job === 'Forager' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">FORAGER</button>
+                <button onclick="window.assignHobbitJob('Idle')" class="pixel-btn ${selected.job === 'Idle' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">IDLE</button>
+            `;
+        } else {
+            detailsEl.innerText = "Select a hobbit to modify their duties.";
+            buttonContainer.innerHTML = "";
+        }
+    });
+}
+
+// Attach functions globally to handle UI onclick actions
+window.selectHobbit = (id) => {
+    selectedHobbitId = id;
+    renderHobbitManagerUI();
+};
+
+window.assignHobbitJob = (jobName) => {
+    if (!selectedHobbitId) return;
+    import('./hobbits.js').then(m => {
+        const target = m.hobbits.find(h => h.id === selectedHobbitId);
+        if (target) {
+            target.job = jobName;
+            target.path = []; // Cancel current path to evaluate new job immediately
+            target.state = 'idle';
+            renderHobbitManagerUI();
+        }
+    });
+};

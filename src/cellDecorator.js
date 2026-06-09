@@ -485,7 +485,7 @@ export function drawVillageHall(gx, gy, worldMatrix, roomMatrix, fertilityMatrix
 
     // 4. QUADRANT FURNITURE
     // Top-Left: Master Bed
-    registerObject(gx + 2, gy - 7, 'SAFE_ZONE', { houseId: currentId });
+    registerObject(gx + 2, gy - 7, 'HOBBIT_MANAGER', { houseId: currentId });
     // Top-Right: Armory
     registerObject(gx + 8, gy - 7, 'ARMORY', { houseId: currentId });
     // Bottom-Left: Kitchen

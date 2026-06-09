@@ -293,7 +293,9 @@ export function drawMap(worldMatrix, roomMatrix) {
                             'CHEST_STORAGE': 2, 'HAY_TABLE': 3, 'HAY_STORAGE': 4,
                             'STORE_COUNTER': 5, 'TEMPLE_ALTAR': 6, 'STAIRS_TOGGLE': 7,
                             'KITCHEN': 8, 'MAP_TABLE': 9, 'ARMORY': 10,
-                            'MILITARY_STORAGE': 10, 'FOOD_STORAGE': 11
+                            'MILITARY_STORAGE': 10, 'FOOD_STORAGE': 11,
+                                'HOBBIT_MANAGER': 12 // 👈 Map to Tile 12 of transparentTileset
+
                         };
                         const oldMap = { 'SMELTER': 53, 'BEDROLL': 61, 'INT_WALL': 41, 'ANVIL': 54 }; 
 

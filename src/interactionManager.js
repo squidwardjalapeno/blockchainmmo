@@ -241,6 +241,14 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
                 inputState.action = false;
                 return;
             }
+
+            // Locate handleInteractions() inside src/interactionManager.js and add this block:
+            if (obj.type === 'HOBBIT_MANAGER') {
+                import('./uiManager.js').then(m => m.openHobbitManagerMenu());
+                inputState.interact = false;
+                inputState.action = false;
+                return;
+            }
         }
 
         // B. PHYSICAL TILE ACTIONS (Doors/Mining)
