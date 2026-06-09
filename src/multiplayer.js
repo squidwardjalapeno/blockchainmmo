@@ -6,7 +6,6 @@ import { openChestMenu, handleRemoteChestUpdate, openStoreMenu, handleRemoteStor
 import { setContractAddress } from './blockchainManager.js';
 import { handleRemoteTileUpdate } from './bacteria.js';
 // Add these static imports near the top of src/multiplayer.js:
-import { decoratedCells, ecoGenerated } from './cellDecorator.js';
 import { plants } from './plants.js';
 
 export const remotePlayers = new Map(); 
