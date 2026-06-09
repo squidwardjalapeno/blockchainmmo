@@ -5,6 +5,9 @@ import { hero } from './entities.js';
 import { openChestMenu, handleRemoteChestUpdate, openStoreMenu, handleRemoteStoreUpdate, processClaimedStorage, openCellarMenu, handleRemoteCellarUpdate, openHayStorageMenu, handleRemoteHayStorageUpdate, openWithdrawMenu, executeWithdrawal } from './uiManager.js';
 import { setContractAddress } from './blockchainManager.js';
 import { handleRemoteTileUpdate } from './bacteria.js';
+// Add these static imports near the top of src/multiplayer.js:
+import { decoratedCells, ecoGenerated } from './cellDecorator.js';
+import { plants } from './plants.js';
 
 export const remotePlayers = new Map(); 
 export let socket = null;
@@ -122,6 +125,7 @@ export function initMultiplayer() {
             });
         });
 
+        // Locate socket.on('restoreHero') inside src/multiplayer.js and update to:
         socket.on('restoreHero', (data) => {
             hero.xp = data.xp || 0;
             hero.hp = data.hp || 100;
@@ -154,6 +158,11 @@ export function initMultiplayer() {
             
             hero.charClass = data.charClass || "Paladin";
             hero.skills = data.skills || [];
+
+            // 🎯 THE FIX: Instantly and synchronously clear caches to prevent race conditions during spawn
+            decoratedCells.clear();
+            ecoGenerated.clear();
+            plants.clear();
 
             import('./uiManager.js').then(ui => {
                 ui.updateHUD();
