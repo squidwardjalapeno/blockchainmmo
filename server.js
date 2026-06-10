@@ -2397,12 +2397,23 @@ setInterval(() => {
                 if (foundFood) break;
             }
 
-            // 🎯 PRIORITY 2: Search for growing crops if no hay is available
+            // Locate "Priority 2: Search for growing crops" in the heartbeat loop of server.js and replace it:
+            // 🎯 PRIORITY 2: Search for growing crops if no hay is available (Optimized)
             if (!foundFood) {
                 let nearestPlant = null;
                 let nearestDist = Infinity;
 
                 for (let [key, plant] of serverPlants) {
+                    // 🎯 THE FIX: Instantly skip plants in different chunks
+                    const pCX = Math.floor(plant.gx / 100);
+                    const pCY = Math.floor(plant.gy / 100);
+                    if (pCX !== cx || pCY !== cy) continue;
+
+                    // 🎯 THE FIX: Instantly skip plants further than an 8-tile radius using cheap subtractions
+                    const dx = Math.abs(plant.gx - tx);
+                    const dy = Math.abs(plant.gy - ty);
+                    if (dx > 8 || dy > 8) continue;
+
                     const dist = Math.hypot((plant.gx * 16 + 8) - a.x, (plant.gy * 16 + 8) - a.y);
                     if (dist < 120 && dist < nearestDist) {
                         nearestDist = dist;
