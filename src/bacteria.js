@@ -18,7 +18,8 @@ export const BACTERIA_TYPES = {
     "turnip_item": 6, "tomato_item": 7, "eggplant_item": 8,
     "strawberry_item": 9, "pumpkin_item": 10, "watermelon_item": 11,
     "corn_item": 12, "pineapple_item": 13, "potato_item": 14,
-    "wheat_item": 15, "egg": 16,
+    "wheat_item": 15, "egg": 16,     "hay": 17, // 🎯 Added Type ID 17 for dropped hay
+
     
     "grass_seed": 20, "turnip_seed": 21, "tomato_seed": 22, "eggplant_seed": 23,
     "strawberry_seed": 24, "pumpkin_seed": 25, "watermelon_seed": 26, "corn_seed": 27,

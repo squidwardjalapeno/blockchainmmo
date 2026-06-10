@@ -225,15 +225,16 @@ export const ITEM_TYPES = {
         maxStack: 64
     },
 
-    // 🆕 NEW HAY ITEM
+    // Locate the HAY configuration inside ITEM_TYPES in src/items.js and verify/add:
     HAY: {
         name: "Dried Hay",
-        seedType: "hay",        // For filtering in storage
-        spriteID: 28,           // Looks like a bundle of hay
-        isFodder: true,         // Useful for animal logic later
-        baseHealth: 100,
+        seedType: "hay",        
+        spriteID: 28,           
+        isFodder: true,         
+        baseHealth: 100, // Acts as 10 bites (10 HP per bite)
         baseVirulence: 0,
-        baseFertility: 0
+        baseFertility: 0,
+        drawSize: 16 // 🎯 Ensures full 16px tile representation
     },
     CHICKEN_POOP: {
         name: "Chicken Poop",

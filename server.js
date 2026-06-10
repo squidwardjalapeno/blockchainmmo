@@ -88,7 +88,8 @@ const BACTERIA_TYPES = {
     "turnip_item": 6, "tomato_item": 7, "eggplant_item": 8,
     "strawberry_item": 9, "pumpkin_item": 10, "watermelon_item": 11,
     "corn_item": 12, "pineapple_item": 13, "potato_item": 14,
-    "wheat_item": 15, "egg": 16,
+    "wheat_item": 15, "egg": 16,     "hay": 17, // 🎯 Added Type ID 17 for dropped hay
+
     
     "grass_seed": 20, "turnip_seed": 21, "tomato_seed": 22, "eggplant_seed": 23,
     "strawberry_seed": 24, "pumpkin_seed": 25, "watermelon_seed": 26, "corn_seed": 27,
@@ -384,6 +385,9 @@ function initServerAnimals() {
             speed: 20,
             hp: 30,
             maxHp: 30,
+            // Add these default values when instantiating chickens inside server.js:
+            hunger: 100,
+            goal: 'wander',
             state: 'idle',
             dir: 'East',
             moveTimer: Math.random() * 3,
@@ -1297,6 +1301,9 @@ socket.on('collectAnvil', (data) => {
                 speed: 20,
                 hp: 30,
                 maxHp: 30,
+                // Add these default values when instantiating chickens inside server.js:
+                hunger: 100,
+                goal: 'wander',
                 state: 'idle',
                 dir: 'East',
                 moveTimer: Math.random() * 3,
@@ -2324,39 +2331,94 @@ setInterval(() => {
         }
     }
 
-    // 🎯 UPDATE SERVER-SIDE CHICKENS (With strict pasture containment)
+    // Locate serverAnimals.forEach(a => { ... }) inside the setInterval loop in server.js and replace:
     serverAnimals.forEach(a => {
-        // Initialize timers if missing
         if (a.eggTimer === undefined) a.eggTimer = 15;
         if (a.poopTimer === undefined) a.poopTimer = 10;
+        if (a.hunger === undefined) a.hunger = 100;
 
-        // Tick timers down by delta
         a.eggTimer -= delta;
         a.poopTimer -= delta;
+        a.hunger = Math.max(0, a.hunger - (delta * 1.5)); // Drains over ~65 seconds
 
         const tx = Math.floor(a.x / 16);
         const ty = Math.floor(a.y / 16);
 
-        // Lay Egg
-        if (a.eggTimer <= 0) {
-            a.eggTimer = 30 + Math.random() * 30; // Reset
-            const packedTraits = (1 & 0xFF) | ((16 & 0xFF) << 20); // 30 hp, TypeID 16 (Egg)
+        // Lay Egg (only if fed)
+        if (a.eggTimer <= 0 && a.hunger > 30) {
+            a.eggTimer = 30 + Math.random() * 30;
+            const packedTraits = (1 & 0xFF) | ((16 & 0xFF) << 20); 
             io.emit('syncTile', { gx: tx, gy: ty, traits: packedTraits });
         }
 
         // Drop Poop
         if (a.poopTimer <= 0) {
-            a.poopTimer = 20 + Math.random() * 30; // Reset
-            const packedTraits = (3 & 0xFF) | ((12 & 0xFF) << 8) | ((4 & 0xFF) << 20); // 3 hp, 12 vir, TypeID 4 (Poop)
+            a.poopTimer = 20 + Math.random() * 30;
+            const packedTraits = (3 & 0xFF) | ((12 & 0xFF) << 8) | ((4 & 0xFF) << 20); 
             io.emit('syncTile', { gx: tx, gy: ty, traits: packedTraits });
         }
 
+        // ==========================================
+        // 🧠 CHICKEN HUNGER SEARCH (AUTHORITATIVE)
+        // ==========================================
+        if (a.hunger < 50 && a.goal !== 'eating') {
+            let foundFood = false;
+
+            // 🎯 PRIORITY 1: Search 5-tile radius for Dropped Hay (Type ID 17)
+            for (let ox = -5; ox <= 5; ox++) {
+                for (let oy = -5; oy <= 5; oy++) {
+                    const cx = Math.floor((tx + ox) / 100);
+                    const cy = Math.floor((ty + oy) / 100);
+                    const lx = (((tx + ox) % 100) + 100) % 100;
+                    const ly = (((ty + oy) % 100) + 100) % 100;
+                    
+                    if (bacteriaCells.has(`${cx}_${cy}`)) {
+                        const traits = bacteriaCells.get(`${cx}_${cy}`)[(ly * 100) + lx];
+                        const typeID = (traits >> 20) & 0xFF;
+                        
+                        if (typeID === 17) { // Found Hay!
+                            a.targetX = (tx + ox) * 16 + 8;
+                            a.targetY = (ty + oy) * 16 + 8;
+                            a.goal = 'eating';
+                            a.foodType = 'hay';
+                            a.foodKey = `${tx + ox}_${ty + oy}`;
+                            foundFood = true;
+                            break;
+                        }
+                    }
+                }
+                if (foundFood) break;
+            }
+
+            // 🎯 PRIORITY 2: Search for growing crops if no hay is available
+            if (!foundFood) {
+                let nearestPlant = null;
+                let nearestDist = Infinity;
+
+                for (let [key, plant] of serverPlants) {
+                    const dist = Math.hypot((plant.gx * 16 + 8) - a.x, (plant.gy * 16 + 8) - a.y);
+                    if (dist < 120 && dist < nearestDist) {
+                        nearestDist = dist;
+                        nearestPlant = plant;
+                    }
+                }
+
+                if (nearestPlant) {
+                    a.targetX = nearestPlant.gx * 16 + 8;
+                    a.targetY = nearestPlant.gy * 16 + 8;
+                    a.goal = 'eating';
+                    a.foodType = 'crop';
+                    a.foodKey = `${nearestPlant.gx}_${nearestPlant.gy}`;
+                    foundFood = true;
+                }
+            }
+        }
+
         a.moveTimer -= delta;
-        if (a.moveTimer <= 0) {
+        if (a.moveTimer <= 0 && a.goal !== 'eating') {
             a.moveTimer = 2 + Math.random() * 3;
             
             let targetX, targetY;
-            
             if (a.ranchBounds) {
                 const rx = a.ranchBounds.maxX - a.ranchBounds.minX;
                 const ry = a.ranchBounds.maxY - a.ranchBounds.minY;
@@ -2372,19 +2434,65 @@ setInterval(() => {
             a.targetX = targetX;
             a.targetY = targetY;
             a.state = 'walking';
+            a.goal = 'wander';
         }
 
-        if (a.state === 'walking' && a.targetX !== null) {
+        // Stepping & Eating execution
+        if (a.targetX !== null) {
             const dx = a.targetX - a.x;
             const dy = a.targetY - a.y;
             const dist = Math.hypot(dx, dy);
-            if (dist > 2) {
+            
+            if (dist > 4) {
                 a.x += (dx / dist) * a.speed * delta;
                 a.y += (dy / dist) * a.speed * delta;
                 a.dir = dx > 0 ? 'East' : 'West';
+                a.state = 'walking';
             } else {
                 a.state = 'idle';
                 a.targetX = null;
+
+                // Execute bite action
+                if (a.goal === 'eating') {
+                    if (a.foodType === 'hay') {
+                        const coords = a.foodKey.split('_');
+                        const hx = parseInt(coords[0]), hy = parseInt(coords[1]);
+                        const cx = Math.floor(hx / 100), cy = Math.floor(hy / 100);
+                        const lx = ((hx % 100) + 100) % 100, ly = ((hy % 100) + 100) % 100;
+
+                        if (bacteriaCells.has(`${cx}_${cy}`)) {
+                            const data = bacteriaCells.get(`${cx}_${cy}`);
+                            const idx = (ly * 100) + lx;
+                            let traits = data[idx];
+                            
+                            let health = traits & 0xFF;
+                            health = Math.max(0, health - 10); // Deduct 1 bite (10% of hay)
+
+                            if (health <= 0) {
+                                data[idx] = 0; // Depleted
+                                io.emit('syncTile', { gx: hx, gy: hy, traits: 0 });
+                            } else {
+                                // Repack and update
+                                const typeID = (traits >> 20) & 0xFF;
+                                const newTraits = ((health & 0xFF) | ((typeID & 0xFF) << 20)) >>> 0;
+                                data[idx] = newTraits;
+                                io.emit('syncTile', { gx: hx, gy: hy, traits: newTraits });
+                            }
+                            a.hunger = 100; // Fed!
+                            console.log(`🐓 Chicken ate Hay at [${hx}, ${hy}]. Health remaining: ${health}`);
+                        }
+                    } 
+                    else if (a.foodType === 'crop') {
+                        if (serverPlants.has(a.foodKey)) {
+                            const plant = serverPlants.get(a.foodKey);
+                            serverPlants.delete(a.foodKey);
+                            io.emit('plantRemoved', { gx: plant.gx, gy: plant.gy });
+                            a.hunger = 100; // Fed!
+                            console.log(`🐓 Chicken ate crop at [${a.foodKey}]`);
+                        }
+                    }
+                    a.goal = 'wander';
+                }
             }
         }
     });
