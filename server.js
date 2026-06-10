@@ -2353,6 +2353,10 @@ setInterval(() => {
 
         const tx = Math.floor(a.x / 16);
         const ty = Math.floor(a.y / 16);
+        
+        // 🎯 THE FIX: Declare the chicken's current chunk coordinates at the top of the loop
+        const cx = Math.floor(tx / 100);
+        const cy = Math.floor(ty / 100);
 
         // Lay Egg (only if fed)
         if (a.eggTimer <= 0 && a.energy > 30) {
