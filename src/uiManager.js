@@ -280,10 +280,6 @@ export function initUI() {
         handleTempleDrop(e, 'altar');
     });
 
-    // --- KITCHEN LISTENERS ---
-    document.getElementById('close-kitchen-btn').addEventListener('click', () => {
-        document.getElementById('kitchen-menu').classList.add('hidden');
-    });
 
     document.getElementById('cook-fish-btn').addEventListener('click', () => {
         const fishIdx = hero.inventory.findIndex(item => item.seedType === 'fish');
@@ -1248,9 +1244,155 @@ function transferTempleItem(index, source) {
 
 // ==========================================
 // 🍳 KITCHEN UI LOGIC
-// ==========================================
-export function openKitchenMenu() {
+
+// Add these variables, event registration, and functions to src/uiManager.js:
+
+export let activeKitchenId = null;
+export let activeKitchenData = null;
+let confirmingKitchenSpeedUp = false;
+
+// Register the listeners once multiplayer is ready
+import('./multiplayer.js').then(m => {
+    const checkSocket = setInterval(() => {
+        if (m.socket) {
+            clearInterval(checkSocket);
+            m.socket.on('kitchenData', (data) => {
+                activeKitchenId = data.jobId;
+                activeKitchenData = data.data;
+                renderKitchenUI();
+            });
+            m.socket.on('kitchenUpdated', (data) => {
+                if (activeKitchenId === data.jobId) {
+                    activeKitchenData = data.data;
+                    renderKitchenUI();
+                }
+            });
+            m.socket.on('receiveKitchenLoot', (data) => {
+                const { recipe } = data;
+                import('./items.js').then(items => {
+                    import('./interactionManager.js').then(im => {
+                        let newItem = null;
+                        
+                        if (recipe === 'COOK_FISH') {
+                            newItem = items.createItem(items.ITEM_TYPES.COOKED_BASS);
+                        } else if (recipe.startsWith('EXTRACT_')) {
+                            // Extract crop type name (e.g. 'EXTRACT_TOMATO_ITEM' -> 'tomato')
+                            const cropType = recipe.replace('EXTRACT_', '').replace('_ITEM', '').toLowerCase();
+                            const seedConstName = `${cropType.toUpperCase()}_SEED`;
+                            
+                            if (items.ITEM_TYPES[seedConstName]) {
+                                newItem = items.createItem(items.ITEM_TYPES[seedConstName]);
+                                // 🎯 THE FIX: Dynamically generate 5 to 8 seeds!
+                                const seedCount = Math.floor(Math.random() * 4) + 5; 
+                                newItem.count = seedCount;
+                            }
+                        }
+
+                        if (newItem && im.giveItemToHero(newItem)) {
+                            alert(`Success! Collected: ${newItem.name} (x${newItem.count || 1})`);
+                            renderTabContent();
+                            syncInventoryWithServer();
+                        } else {
+                            alert("Backpack full! Make space first.");
+                        }
+                    });
+                });
+            });
+        }
+    }, 100);
+});
+
+export function openKitchenMenu(kitchenId) {
+    activeKitchenId = kitchenId;
+    confirmingKitchenSpeedUp = false;
     document.getElementById('kitchen-menu').classList.remove('hidden');
+    if (socket) socket.emit('requestKitchen', kitchenId);
+}
+
+function renderKitchenUI() {
+    if (!activeKitchenData) return;
+    const bar = document.getElementById('kitchen-progress-bar');
+    const text = document.getElementById('kitchen-progress-text');
+    const costText = document.getElementById('kitchen-cost-text');
+    const btn = document.getElementById('kitchen-start-btn');
+    const selectContainer = document.getElementById('kitchen-recipe-select-container');
+
+    const pct = ((activeKitchenData.maxWork - activeKitchenData.workLeft) / activeKitchenData.maxWork) * 100;
+    bar.style.width = `${pct}%`;
+    text.innerText = `${activeKitchenData.workLeft} / ${activeKitchenData.maxWork}`;
+
+    if (activeKitchenData.ready) {
+        selectContainer.style.display = 'none';
+        btn.innerText = "COLLECT NOW!";
+        btn.className = "pixel-btn safe";
+        text.innerText = "JOB COMPLETE";
+        costText.innerText = "";
+        confirmingKitchenSpeedUp = false;
+    } else if (activeKitchenData.active) {
+        selectContainer.style.display = 'none';
+        const cost = activeKitchenData.recipe === 'COOK_FISH' ? 0.0169 : 0.0068;
+        
+        if (confirmingKitchenSpeedUp) {
+            btn.innerText = "SPEED - UP NOW!";
+            btn.className = "pixel-btn safe";
+            costText.innerText = `COST: ${cost} UNI`;
+        } else {
+            btn.innerText = "SPEED - UP";
+            btn.className = "pixel-btn";
+            costText.innerText = "";
+        }
+    } else {
+        selectContainer.style.display = 'block';
+        btn.innerText = "START RECIPE";
+        btn.className = "pixel-btn";
+        costText.innerText = "";
+        confirmingKitchenSpeedUp = false;
+    }
+}
+
+// Register clicking handlers inside initUI() or at the bottom of uiManager.js:
+if (typeof window !== 'undefined') {
+    const checkElements = setInterval(() => {
+        const startBtn = document.getElementById('kitchen-start-btn');
+        if (startBtn) {
+            clearInterval(checkElements);
+
+            document.getElementById('close-kitchen-btn').addEventListener('click', () => {
+                document.getElementById('kitchen-menu').classList.add('hidden');
+                confirmingKitchenSpeedUp = false;
+            });
+
+            startBtn.addEventListener('click', () => {
+                if (!activeKitchenData) return;
+
+                if (activeKitchenData.ready) {
+                    if (socket) socket.emit('collectKitchen', { jobId: activeKitchenId });
+                } else if (!activeKitchenData.active) {
+                    const selectedRecipe = document.getElementById('kitchen-recipe-select').value;
+                    
+                    // Client-side ingredient validation
+                    if (selectedRecipe === 'COOK_FISH') {
+                        const fishIdx = hero.inventory.findIndex(item => item.seedType === 'fish');
+                        if (fishIdx === -1) { alert("You need a raw River Bass to cook!"); return; }
+                    } else if (selectedRecipe.startsWith('EXTRACT_')) {
+                        const cropType = selectedRecipe.replace('EXTRACT_', '').toLowerCase();
+                        const cropIdx = hero.inventory.findIndex(item => item.seedType === cropType);
+                        if (cropIdx === -1) { alert(`You need 1x ${cropType.replace('_item', '')} to extract seeds!`); return; }
+                    }
+
+                    if (socket) socket.emit('startKitchenJob', { jobId: activeKitchenId, recipe: selectedRecipe });
+                } else {
+                    if (!confirmingKitchenSpeedUp) {
+                        confirmingKitchenSpeedUp = true;
+                        renderKitchenUI();
+                    } else {
+                        if (socket) socket.emit('speedUpKitchen', { jobId: activeKitchenId });
+                        confirmingKitchenSpeedUp = false;
+                    }
+                }
+            });
+        }
+    }, 100);
 }
 
 // ==========================================

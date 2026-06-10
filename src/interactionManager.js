@@ -201,8 +201,9 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
                 return;
             }
 
+            // Locate handleInteractions() inside src/interactionManager.js and modify the KITCHEN interaction:
             if (obj.type === 'KITCHEN') {
-                openKitchenMenu();
+                import('./uiManager.js').then(m => m.openKitchenMenu(`kitchen_${tx}_${ty}`));
                 inputState.interact = false;
                 inputState.action = false;
                 return;
@@ -308,14 +309,15 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
     }
 
     // --- WORK LOGIC (F Key Toggle) ---
-    // 1. Toggle work mode ON when F is pressed
+    // Locate the hold-'F' trigger check inside handleInteractions() in src/interactionManager.js:
     if (inputState.keyF) {
-        inputState.keyF = false; // Instantly consume the keypress
+        inputState.keyF = false; 
         
-        if (obj && (obj.type === 'SMELTER' || obj.type === 'ANVIL')) {
+        // 🎯 THE FIX: Register KITCHEN as an active work object
+        if (obj && (obj.type === 'SMELTER' || obj.type === 'ANVIL' || obj.type === 'KITCHEN')) {
             hero.isWorking = true;
             hero.workingObj = { tx: tx, ty: ty, type: obj.type };
-            hero.workTimer = 0; // Reset the 1-second timer
+            hero.workTimer = 0; 
             console.log(`🔥 Started working at the ${obj.type}...`);
         }
     }
@@ -340,14 +342,18 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
             // Increment the 1-second timer
             hero.workTimer += modifier;
             
+            // Locate the workTimer tick check inside handleInteractions() in src/interactionManager.js:
             if (hero.workTimer >= 1.0) {
-                hero.workTimer -= 1.0; // Reset timer, keep remainder
+                hero.workTimer -= 1.0; 
                 
-                // Send exactly 1 strike per second!
                 if (hero.workingObj.type === 'SMELTER') {
                     if (socket) socket.emit('workSmelterStrike', { jobId: `smelter_${hero.workingObj.tx}_${hero.workingObj.ty}` });
                 } else if (hero.workingObj.type === 'ANVIL') {
                     if (socket) socket.emit('workAnvilStrike', { jobId: `anvil_${hero.workingObj.tx}_${hero.workingObj.ty}` });
+                } 
+                // 🎯 THE FIX: Direct the manual work strike to the kitchen socket event
+                else if (hero.workingObj.type === 'KITCHEN') {
+                    if (socket) socket.emit('workKitchenStrike', { jobId: `kitchen_${hero.workingObj.tx}_${hero.workingObj.ty}` });
                 }
             }
         }

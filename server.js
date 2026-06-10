@@ -309,6 +309,8 @@ let hayDb = {}; // 🆕 Database for Hay Storage
 let oreDb = {}; // ⛏️ NEW: Database for mining jobs!
 let smelterDb = {};
 let anvilDb = {};
+// Initialize the kitchen database near your other database variables (like smelterDb) in server.js:
+let kitchenDb = {};
 
 // 📖 DAILY ACTIVITY LEDGER
 let activityLog = [];
@@ -567,6 +569,106 @@ io.on('connection', (socket) => {
         syncPlayerAndSave(socket.id);
     });
 
+    // Add these socket listeners inside io.on('connection', (socket) => { ... }) in server.js:
+
+    socket.on('requestKitchen', (jobId) => {
+        if (!kitchenDb[jobId]) kitchenDb[jobId] = { workLeft: 50, maxWork: 50, active: false, ready: false, recipe: null };
+        socket.emit('kitchenData', { jobId, data: kitchenDb[jobId] });
+    });
+
+    socket.on('startKitchenJob', (data) => {
+        const player = players[socket.id];
+        if (!player) return;
+
+        const now = Date.now();
+        if (player.lastKitchen && now - player.lastKitchen < 1000) return;
+        player.lastKitchen = now;
+
+        const job = kitchenDb[data.jobId];
+        if (!job || job.active || job.ready) return;
+
+        const recipeName = data.recipe;
+        if (recipeName === 'COOK_FISH') {
+            const fishIdx = player.inventory.findIndex(item => item.seedType === 'fish');
+            if (fishIdx === -1) return;
+            player.inventory.splice(fishIdx, 1);
+            
+            job.maxWork = 50;
+            job.workLeft = 50;
+            job.recipe = 'COOK_FISH';
+        }
+        else if (recipeName.startsWith('EXTRACT_')) {
+            const cropType = recipeName.replace('EXTRACT_', '').toLowerCase(); // e.g. 'tomato_item'
+            const cropIdx = player.inventory.findIndex(item => item.seedType === cropType);
+            if (cropIdx === -1) return;
+            player.inventory.splice(cropIdx, 1);
+
+            job.maxWork = 20;
+            job.workLeft = 20;
+            job.recipe = recipeName;
+        } else {
+            return;
+        }
+
+        job.active = true;
+        job.ready = false;
+        
+        io.emit('kitchenUpdated', { jobId: data.jobId, data: job });
+        socket.emit('updateInventory', player.inventory);
+    });
+
+    socket.on('workKitchenStrike', (data) => {
+        const job = kitchenDb[data.jobId];
+        if (job && job.active && job.workLeft > 0) {
+            job.workLeft--;
+            if (job.workLeft <= 0) job.ready = true;
+            if (job.workLeft % 5 === 0 || job.workLeft === 0) {
+                io.emit('kitchenUpdated', { jobId: data.jobId, data: job });
+            }
+        }
+    });
+
+    socket.on('speedUpKitchen', (data) => {
+        const player = players[socket.id];
+        const job = kitchenDb[data.jobId];
+        if (!job || !job.active || !player) return;
+
+        const cost = job.recipe === 'COOK_FISH' ? 0.0169 : 0.0068;
+
+        if (player.inGameUni >= cost) {
+            player.inGameUni -= cost;
+            globalDebt = Math.max(0, globalDebt - cost);
+            saveDebt();
+            logActivity('SPEEDUP', socket.wallet || socket.id, `Paid ${cost} UNI to speed up Kitchen job`);
+
+            job.workLeft = 0;
+            job.ready = true;
+
+            io.emit('kitchenUpdated', { jobId: data.jobId, data: job });
+            socket.emit('balanceUpdated', { inGameUni: player.inGameUni });
+            broadcastEffectiveTGV();
+            syncPlayerAndSave(socket.id);
+        } else {
+            socket.emit('oreMessage', `Insufficient funds! You need ${cost} UNI.`);
+        }
+    });
+
+    socket.on('collectKitchen', (data) => {
+        const job = kitchenDb[data.jobId];
+        const player = players[socket.id];
+        if (job && job.ready && player) {
+            const recipe = job.recipe;
+            
+            job.active = false; 
+            job.ready = false; 
+            job.workLeft = 50; 
+            job.recipe = null;
+
+            io.emit('kitchenUpdated', { jobId: data.jobId, data: job });
+            socket.emit('receiveKitchenLoot', { recipe });
+        }
+    });
+
     // --- SMELTER JOBS ---
 socket.on('requestSmelter', (jobId) => {
     if (!smelterDb[jobId]) smelterDb[jobId] = { workLeft: 200, maxWork: 200, active: false, ready: false };
@@ -658,7 +760,7 @@ socket.on('workSmelterStrike', (data) => {
     socket.on('speedUpSmelter', (data) => {
         const player = players[socket.id];
         const job = smelterDb[data.jobId];
-        const SPEEDUP_COST = 0.0007;
+        const SPEEDUP_COST = 0.0678;
 
         if (job && job.active && player) {
             if (player.inGameUni >= SPEEDUP_COST) {
@@ -693,7 +795,7 @@ socket.on('workSmelterStrike', (data) => {
     socket.on('speedUpAnvil', (data) => {
         const player = players[socket.id];
         const job = anvilDb[data.jobId];
-        const SPEEDUP_COST = 0.0001;
+        const SPEEDUP_COST = 0.10167;
 
         if (job && job.active && player) {
             if (player.inGameUni >= SPEEDUP_COST) {
@@ -862,6 +964,7 @@ socket.on('collectAnvil', (data) => {
         // 🎯 CHANGE THIS LINE: Use the identical visual-stage helper instead of a flat threshold!
         const isMature = isServerPlantMature(plant, currentGrowth);
 
+        // Locate this block in server.js -> socket.on('requestHarvest')
         if (isMature) {
             // ==========================================
             // 🍇 1. SECURE MATURE HARVEST
@@ -883,14 +986,17 @@ socket.on('collectAnvil', (data) => {
                 giveItemToServerInventory(player, createServerItem(cropTemplate));
             }
 
-            // Seed Drop
-            const seedConstName = `${plant.type.toUpperCase()}_SEED`;
-            const seedTemplate = SERVER_ITEM_TYPES[seedConstName];
-            if (seedTemplate) {
-                const seedCount = Math.floor(Math.random() * 2) + 1; 
-                const seedItem = createServerItem(seedTemplate);
-                seedItem.count = seedCount;
-                giveItemToServerInventory(player, seedItem);
+            // 🎯 THE FIX: Do not drop seeds for farm crops (only drop for wild flowers/grass)
+            const farmCrops = ['turnip', 'tomato', 'eggplant', 'strawberry', 'pumpkin', 'watermelon', 'corn', 'pineapple', 'potato', 'wheat'];
+            if (!farmCrops.includes(plant.type)) {
+                const seedConstName = `${plant.type.toUpperCase()}_SEED`;
+                const seedTemplate = SERVER_ITEM_TYPES[seedConstName];
+                if (seedTemplate) {
+                    const seedCount = Math.floor(Math.random() * 2) + 1; 
+                    const seedItem = createServerItem(seedTemplate);
+                    seedItem.count = seedCount;
+                    giveItemToServerInventory(player, seedItem);
+                }
             }
 
             // Cyclical check
