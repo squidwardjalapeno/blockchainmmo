@@ -14,6 +14,9 @@ import fs from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Add this database near your other databases (like kitchenDb, chestDb) in server.js:
+const serverBacteria = new Map(); // 🎯 THE FIX: Keeps a server-side mirror of ground items
+
 
 
 // 3. Initialize App & Socket
@@ -1448,17 +1451,16 @@ socket.on('requestActivityLog', () => {
 
 // Inside socket.on('requestPickup'...) in server.js:
 
-     // 1. Secure Server-Authoritative Pickup
+    // Locate socket.on('requestPickup') inside server.js and update:
     socket.on('requestPickup', (itemData) => {
         const player = players[socket.id];
         if (!player || !player.inventory) return;
 
-        // Distance validation (Anti-teleport/vacuum)
+        // Distance validation
         const px = Math.floor(player.x / 16);
         const py = Math.floor(player.y / 16);
         if (Math.abs(px - itemData.tx) + Math.abs(py - itemData.ty) > 5) return;
 
-        // 🎯 THE FIX: Map seedType to template keys to load secure properties (maxStack, drawSize)
         const seedTypeToKeyMap = {};
         for (let key in SERVER_ITEM_TYPES) {
             seedTypeToKeyMap[SERVER_ITEM_TYPES[key].seedType] = key;
@@ -1472,22 +1474,21 @@ socket.on('requestActivityLog', () => {
             return;
         }
 
-        // Create item using the trusted server-side template
         const newItem = createServerItem(template);
-        
-        // If it's a key, apply the specific houseId
         if (template.isKey) {
             newItem.houseId = itemData.houseId;
             newItem.name = `Key to House #${itemData.houseId}`;
         }
 
-        // 🎯 THE FIX: Use our secure stacking helper!
         const success = giveItemToServerInventory(player, newItem);
 
         if (success) {
             // Wipe the ground tile
             io.emit('syncTile', { gx: itemData.tx, gy: itemData.ty, traits: 0 });
             
+            // 🎯 THE FIX: Remove the picked up item from server memory
+            serverBacteria.delete(`${itemData.tx}_${itemData.ty}`);
+
             syncPlayerAndSave(socket.id);
             socket.emit('updateInventory', player.inventory);
         } else {
@@ -1583,8 +1584,7 @@ socket.on('requestActivityLog', () => {
     });
 
 
-    // Replace the requestDrop socket listener inside server.js with this:
-
+    // Locate socket.on('requestDrop') inside server.js and update:
     socket.on('requestDrop', (data) => {
         const { index, amount, tx, ty } = data;
         const player = players[socket.id];
@@ -1593,7 +1593,7 @@ socket.on('requestActivityLog', () => {
         const item = player.inventory[index];
         if (!item || item.count < amount) return;
 
-        // Validate player is near the drop coordinate (Anti-vacuum/teleport)
+        // Validate player is near the drop coordinate
         const px = Math.floor(player.x / 16);
         const py = Math.floor(player.y / 16);
         if (Math.abs(px - tx) + Math.abs(py - ty) > 5) {
@@ -1607,15 +1607,16 @@ socket.on('requestActivityLog', () => {
         if (typeId === 61) {
             packedTraits = ((item.houseId & 0xFFFF) | ((typeId & 0xFF) << 20)) >>> 0;
         } else {
-            // Apply safe numerical defaults in case properties are missing
             const hVal = item.health !== undefined ? item.health : (item.baseHealth || 100);
             const vVal = item.virulence !== undefined ? item.virulence : (item.baseVirulence || 0);
-
             packedTraits = ((Math.floor(hVal) & 0xFF) | ((Math.floor(vVal) & 0xFF) << 8) | ((2 & 0x0F) << 16) | ((typeId & 0xFF) << 20)) >>> 0;
         }
 
         // Broadcast the new item drop on the ground to all clients
         io.emit('syncTile', { gx: tx, gy: ty, traits: packedTraits });
+
+        // 🎯 THE FIX: Track the dropped item in server memory
+        serverBacteria.set(`${tx}_${ty}`, packedTraits);
 
         // Subtract from server inventory
         item.count -= amount;
@@ -2037,10 +2038,17 @@ socket.on('pvpAttack', (data) => {
 
 
     // server.js
-socket.on('syncTile', (data) => {
-    // Keep the name consistent: syncTile -> syncTile
-    socket.broadcast.emit('syncTile', data);
-});
+// Locate socket.on('syncTile') inside server.js and update:
+    socket.on('syncTile', (data) => {
+        socket.broadcast.emit('syncTile', data);
+
+        // 🎯 THE FIX: Sync manual tile changes (e.g. eating crops/decaying) to server memory
+        if (data.traits === 0) {
+            serverBacteria.delete(`${data.gx}_${data.gy}`);
+        } else {
+            serverBacteria.set(`${data.gx}_${data.gy}`, data.traits);
+        }
+    });
 
     // G. Handle Item Drops
     socket.on('dropItem', (data) => {
@@ -2331,7 +2339,7 @@ setInterval(() => {
         }
     }
 
-    // Locate serverAnimals.forEach(a => { ... }) inside the setInterval loop in server.js and replace:
+    // Locate serverAnimals.forEach(a => { ... }) inside setInterval in server.js and update:
     serverAnimals.forEach(a => {
         if (a.eggTimer === undefined) a.eggTimer = 15;
         if (a.poopTimer === undefined) a.poopTimer = 10;
@@ -2339,7 +2347,7 @@ setInterval(() => {
 
         a.eggTimer -= delta;
         a.poopTimer -= delta;
-        a.hunger = Math.max(0, a.hunger - (delta * 1.5)); // Drains over ~65 seconds
+        a.hunger = Math.max(0, a.hunger - (delta * 1.5)); 
 
         const tx = Math.floor(a.x / 16);
         const ty = Math.floor(a.y / 16);
@@ -2364,16 +2372,13 @@ setInterval(() => {
         if (a.hunger < 50 && a.goal !== 'eating') {
             let foundFood = false;
 
-            // 🎯 PRIORITY 1: Search 5-tile radius for Dropped Hay (Type ID 17)
+            // 🎯 PRIORITY 1: Search 5-tile radius for Dropped Hay in serverBacteria memory
             for (let ox = -5; ox <= 5; ox++) {
                 for (let oy = -5; oy <= 5; oy++) {
-                    const cx = Math.floor((tx + ox) / 100);
-                    const cy = Math.floor((ty + oy) / 100);
-                    const lx = (((tx + ox) % 100) + 100) % 100;
-                    const ly = (((ty + oy) % 100) + 100) % 100;
+                    const checkKey = `${tx + ox}_${ty + oy}`;
                     
-                    if (bacteriaCells.has(`${cx}_${cy}`)) {
-                        const traits = bacteriaCells.get(`${cx}_${cy}`)[(ly * 100) + lx];
+                    if (serverBacteria.has(checkKey)) {
+                        const traits = serverBacteria.get(checkKey);
                         const typeID = (traits >> 20) & 0xFF;
                         
                         if (typeID === 17) { // Found Hay!
@@ -2381,7 +2386,7 @@ setInterval(() => {
                             a.targetY = (ty + oy) * 16 + 8;
                             a.goal = 'eating';
                             a.foodType = 'hay';
-                            a.foodKey = `${tx + ox}_${ty + oy}`;
+                            a.foodKey = checkKey;
                             foundFood = true;
                             break;
                         }
@@ -2457,29 +2462,25 @@ setInterval(() => {
                     if (a.foodType === 'hay') {
                         const coords = a.foodKey.split('_');
                         const hx = parseInt(coords[0]), hy = parseInt(coords[1]);
-                        const cx = Math.floor(hx / 100), cy = Math.floor(hy / 100);
-                        const lx = ((hx % 100) + 100) % 100, ly = ((hy % 100) + 100) % 100;
 
-                        if (bacteriaCells.has(`${cx}_${cy}`)) {
-                            const data = bacteriaCells.get(`${cx}_${cy}`);
-                            const idx = (ly * 100) + lx;
-                            let traits = data[idx];
+                        if (serverBacteria.has(a.foodKey)) {
+                            let traits = serverBacteria.get(a.foodKey);
                             
                             let health = traits & 0xFF;
-                            health = Math.max(0, health - 10); // Deduct 1 bite (10% of hay)
+                            health = Math.max(0, health - 10); // Deduct 1 bite (10% of hay bundle)
 
                             if (health <= 0) {
-                                data[idx] = 0; // Depleted
+                                serverBacteria.delete(a.foodKey); // Depleted
                                 io.emit('syncTile', { gx: hx, gy: hy, traits: 0 });
                             } else {
                                 // Repack and update
                                 const typeID = (traits >> 20) & 0xFF;
                                 const newTraits = ((health & 0xFF) | ((typeID & 0xFF) << 20)) >>> 0;
-                                data[idx] = newTraits;
+                                serverBacteria.set(a.foodKey, newTraits);
                                 io.emit('syncTile', { gx: hx, gy: hy, traits: newTraits });
                             }
                             a.hunger = 100; // Fed!
-                            console.log(`🐓 Chicken ate Hay at [${hx}, ${hy}]. Health remaining: ${health}`);
+                            console.log(` 🌾 Chicken ate Hay at [${hx}, ${hy}]. Health remaining: ${health}`);
                         }
                     } 
                     else if (a.foodType === 'crop') {
@@ -2488,7 +2489,7 @@ setInterval(() => {
                             serverPlants.delete(a.foodKey);
                             io.emit('plantRemoved', { gx: plant.gx, gy: plant.gy });
                             a.hunger = 100; // Fed!
-                            console.log(`🐓 Chicken ate crop at [${a.foodKey}]`);
+                            console.log(`🌽 Chicken ate crop at [${a.foodKey}]`);
                         }
                     }
                     a.goal = 'wander';
@@ -2496,7 +2497,7 @@ setInterval(() => {
             }
         }
     });
-
+    
     // 3. UPDATE FLYING PROJECTILES
     for (let i = projectiles.length - 1; i >= 0; i--) {
         let p = projectiles[i];
