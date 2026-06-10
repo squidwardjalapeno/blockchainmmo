@@ -394,8 +394,9 @@ function initServerAnimals() {
             state: 'idle',
             dir: 'East',
             moveTimer: Math.random() * 3,
-            targetX: null,
-            targetY: null,
+            // Replace the target initialization lines inside both initServerAnimals and registerRanch in server.js:
+            targetX: undefined,
+            targetY: undefined,
             eggTimer: 15 + Math.random() * 20,  // Ready to lay in 15-35s
             poopTimer: 10 + Math.random() * 20  // Ready to poop in 10-30s
         });
@@ -1310,8 +1311,9 @@ socket.on('collectAnvil', (data) => {
                 state: 'idle',
                 dir: 'East',
                 moveTimer: Math.random() * 3,
-                targetX: null,
-                targetY: null,
+                // Replace the target initialization lines inside both initServerAnimals and registerRanch in server.js:
+                targetX: undefined,
+                targetY: undefined,
                 eggTimer: 15 + Math.random() * 20,  // Ready to lay in 15-35s
                 poopTimer: 10 + Math.random() * 20, // Ready to poop in 10-30s
                 
@@ -2443,7 +2445,7 @@ setInterval(() => {
         }
 
         // Stepping & Eating execution
-        if (a.targetX !== null) {
+        if (a.targetX !== undefined) {
             const dx = a.targetX - a.x;
             const dy = a.targetY - a.y;
             const dist = Math.hypot(dx, dy);
@@ -2455,7 +2457,10 @@ setInterval(() => {
                 a.state = 'walking';
             } else {
                 a.state = 'idle';
-                a.targetX = null;
+                // 🎯 CHANGE THESE LINES: Clear using undefined instead of null
+                a.targetX = undefined;
+                a.targetY = undefined;
+
 
                 // Execute bite action
                 if (a.goal === 'eating') {
