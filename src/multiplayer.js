@@ -383,12 +383,34 @@ export function initMultiplayer() {
                     }
                 }
             }
+            // Locate socket.on('position') inside src/multiplayer.js and update the serverAnimals block:
             serverProjectiles = projectiles || []; 
 
+            // 🎯 THE FIX: Map chickens to targets synchronously to enable 60fps smoothing
             if (serverAnimals) {
                 import('./animals.js').then(m => {
-                    m.animals.length = 0; 
-                    m.animals.push(...serverAnimals); 
+                    serverAnimals.forEach(sa => {
+                        const localA = m.animals.find(la => la.id === sa.id);
+                        if (!localA) {
+                            sa.targetX = sa.x;
+                            sa.targetY = sa.y;
+                            m.animals.push(sa);
+                        } else {
+                            localA.targetX = sa.x;
+                            localA.targetY = sa.y;
+                            localA.dir = sa.dir;
+                            localA.state = sa.state;
+                            localA.energy = sa.energy; // Sync fullness
+                            localA.hp = sa.hp;
+                        }
+                    });
+                    
+                    // Wipe any removed chickens
+                    for (let i = m.animals.length - 1; i >= 0; i--) {
+                        if (!serverAnimals.some(sa => sa.id === m.animals[i].id)) {
+                            m.animals.splice(i, 1);
+                        }
+                    }
                 });
             }
         });

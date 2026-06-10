@@ -389,7 +389,7 @@ function initServerAnimals() {
             hp: 30,
             maxHp: 30,
             // Add these default values when instantiating chickens inside server.js:
-            hunger: 100,
+            energy: 100,
             goal: 'wander',
             state: 'idle',
             dir: 'East',
@@ -1305,7 +1305,7 @@ socket.on('collectAnvil', (data) => {
                 hp: 30,
                 maxHp: 30,
                 // Add these default values when instantiating chickens inside server.js:
-                hunger: 100,
+                energy: 100,
                 goal: 'wander',
                 state: 'idle',
                 dir: 'East',
@@ -2343,17 +2343,17 @@ setInterval(() => {
     serverAnimals.forEach(a => {
         if (a.eggTimer === undefined) a.eggTimer = 15;
         if (a.poopTimer === undefined) a.poopTimer = 10;
-        if (a.hunger === undefined) a.hunger = 100;
+        if (a.energy === undefined) a.energy = 100;
 
         a.eggTimer -= delta;
         a.poopTimer -= delta;
-        a.hunger = Math.max(0, a.hunger - (delta * 1.5)); 
+        a.energy = Math.max(0, a.energy - (delta * 1.5)); 
 
         const tx = Math.floor(a.x / 16);
         const ty = Math.floor(a.y / 16);
 
         // Lay Egg (only if fed)
-        if (a.eggTimer <= 0 && a.hunger > 30) {
+        if (a.eggTimer <= 0 && a.energy > 30) {
             a.eggTimer = 30 + Math.random() * 30;
             const packedTraits = (1 & 0xFF) | ((16 & 0xFF) << 20); 
             io.emit('syncTile', { gx: tx, gy: ty, traits: packedTraits });
@@ -2369,7 +2369,7 @@ setInterval(() => {
         // ==========================================
         // 🧠 CHICKEN HUNGER SEARCH (AUTHORITATIVE)
         // ==========================================
-        if (a.hunger < 50 && a.goal !== 'eating') {
+        if (a.energy < 50 && a.goal !== 'eating') {
             let foundFood = false;
 
             // 🎯 PRIORITY 1: Search 5-tile radius for Dropped Hay in serverBacteria memory
@@ -2479,7 +2479,7 @@ setInterval(() => {
                                 serverBacteria.set(a.foodKey, newTraits);
                                 io.emit('syncTile', { gx: hx, gy: hy, traits: newTraits });
                             }
-                            a.hunger = 100; // Fed!
+                            a.energy = 100; // Fed!
                             console.log(` 🌾 Chicken ate Hay at [${hx}, ${hy}]. Health remaining: ${health}`);
                         }
                     } 
@@ -2488,7 +2488,7 @@ setInterval(() => {
                             const plant = serverPlants.get(a.foodKey);
                             serverPlants.delete(a.foodKey);
                             io.emit('plantRemoved', { gx: plant.gx, gy: plant.gy });
-                            a.hunger = 100; // Fed!
+                            a.energy = 100; // Fed!
                             console.log(`🌽 Chicken ate crop at [${a.foodKey}]`);
                         }
                     }
@@ -2497,7 +2497,7 @@ setInterval(() => {
             }
         }
     });
-    
+
     // 3. UPDATE FLYING PROJECTILES
     for (let i = projectiles.length - 1; i >= 0; i--) {
         let p = projectiles[i];

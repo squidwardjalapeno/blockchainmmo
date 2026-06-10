@@ -4,7 +4,7 @@ import { plants } from './plants.js';
 import { ITEM_TYPES } from './items.js';
 import { moveEntity, getTileData } from './physics.js'; 
 import { hero } from './entities.js'; 
-import { viewport } from './viewport.js'; // 👈 IMPORTED: Allows viewport boundary checks
+import { viewport } from './viewport.js'; 
 
 export const animals = []; 
 
@@ -12,14 +12,14 @@ export function spawnChicken(gx, gy) {
     animals.push({
         id: 'animal_' + Math.random().toString(36).substr(2, 9),
         isAnimal: true, // Identifies them to the combat system
-        x: gx * 16, y: gy * 16, floor: 1, inventory: [], speed: 20,
+        x: gx * 16, y: gy * 16, floor: 1, inventory: [], speed: 35,
         
         hp: 30, maxHp: 30,             
         energy: 100, maxEnergy: 100,   
         
         hunger: 80, eggTimer: 10.0, state: 'idle', goal: 'wander', path: [], 
         moveTimer: Math.random() * 2, dir: 'East', lastUpdated: Date.now(),
-        slowTickTimer: Math.random() * 1.5 // 👈 Tracks cold-heartbeat updates
+        slowTickTimer: Math.random() * 1.5 // Tracks cold-heartbeat updates
     });
 }
 
@@ -124,6 +124,15 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
     }
 
     animals.forEach(chicken => {
+        // ==========================================
+        // 🎯 ONLINE MODE: Real-Time 60fps smoothing
+        // ==========================================
+        if (chicken.targetX !== undefined && chicken.targetY !== undefined) {
+            chicken.x += (chicken.targetX - chicken.x) * 15 * modifier;
+            chicken.y += (chicken.targetY - chicken.y) * 15 * modifier;
+            return; // 🎯 Bypass offline local AI loops
+        }
+
         const chickenCX = Math.floor(chicken.x / 1600);
         const chickenCY = Math.floor(chicken.y / 1600);
 
@@ -244,7 +253,6 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
             if (chicken.slowTickTimer <= 0) {
                 chicken.slowTickTimer = 1.5; // Tick once every 1.5 seconds
 
-                // Deduct flat hunger over the ticked duration
                 chicken.energy = Math.max(0, chicken.energy - 0.75);
                 chicken.eggTimer -= 1.5;
 

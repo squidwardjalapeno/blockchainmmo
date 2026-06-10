@@ -564,6 +564,7 @@ export function drawDroppedItems() {
     }
 }
 
+// Locate drawAnimals() inside src/renderer.js and replace:
 export function drawAnimals() {
     const w = canvas2.width | 0;
     const h = canvas2.height | 0;
@@ -584,11 +585,12 @@ export function drawAnimals() {
             );
         }
 
-        const hungerPct = (100 - chicken.hunger) / 100;
+        // 🎯 THE FIX: Use standard energy / fullness scaling (Yellow stamina style)
+        const energyPct = (chicken.energy !== undefined ? chicken.energy : 100) / 100;
         ctx2.fillStyle = "black";
         ctx2.fillRect(screenX + 2, screenY - 4, 12, 2);
-        ctx2.fillStyle = "orange";
-        ctx2.fillRect(screenX + 2, screenY - 4, 12 * Math.max(0, hungerPct), 2);
+        ctx2.fillStyle = "#FFD700"; // Stamina Yellow
+        ctx2.fillRect(screenX + 2, screenY - 4, 12 * Math.max(0, energyPct), 2);
     });
 }
 
