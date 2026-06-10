@@ -280,23 +280,6 @@ export function initUI() {
         handleTempleDrop(e, 'altar');
     });
 
-
-    document.getElementById('cook-fish-btn').addEventListener('click', () => {
-        const fishIdx = hero.inventory.findIndex(item => item.seedType === 'fish');
-        if (fishIdx === -1) {
-            alert("You don't have any raw fish to cook!");
-            return;
-        }
-        hero.inventory.splice(fishIdx, 1);
-        hero.inventory.push(createItem(ITEM_TYPES.COOKED_BASS));
-        console.log("🔥 Sizzle... Fish cooked successfully!");
-        alert("Success! You cooked a hearty meal.");
-
-        // Sync local changes to the server
-        syncInventoryWithServer();
-        renderTabContent();
-    });
-
     // --- MAP TABLE LISTENERS ---
     document.getElementById('close-maptable-btn').addEventListener('click', () => {
         document.getElementById('maptable-menu').classList.add('hidden');
