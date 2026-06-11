@@ -319,32 +319,6 @@ export function initUI() {
     cellarHeroPane.addEventListener('drop', (e) => handleCellarDrop(e, 'hero-cellar'));
     cellarPane.addEventListener('drop', (e) => handleCellarDrop(e, 'cellar'));
 
-    // --- HAY TABLE LISTENERS ---
-    document.getElementById('close-hay-table-btn').addEventListener('click', () => {
-        document.getElementById('hay-table-menu').classList.add('hidden');
-    });
-
-    // Locate 'craft-hay-btn' click listener inside src/uiManager.js and replace it:
-            document.getElementById('craft-hay-btn').addEventListener('click', () => {
-                // Search for Plant Matter instead of grass_item
-                const pmIdx = hero.inventory.findIndex(item => item.seedType === 'plant_matter');
-                if (pmIdx === -1 || hero.inventory[pmIdx].count < 8) {
-                    alert("You need 8x Plant Matter to make hay!");
-                    return;
-                }
-                
-                // Deduct 8x Plant Matter
-                hero.inventory[pmIdx].count -= 8;
-                if (hero.inventory[pmIdx].count <= 0) {
-                    hero.inventory.splice(pmIdx, 1);
-                }
-
-                hero.inventory.push(createItem(ITEM_TYPES.HAY));
-                alert("Success! You crafted a bundle of Dried Hay.");
-                renderTabContent();
-                syncInventoryWithServer();
-            });
-
     // --- HAY STORAGE LISTENERS ---
     document.getElementById('close-hay-storage-btn').addEventListener('click', () => {
         document.getElementById('hay-storage-menu').classList.add('hidden');
