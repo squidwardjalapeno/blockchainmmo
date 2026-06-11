@@ -225,17 +225,19 @@ export const ITEM_TYPES = {
         maxStack: 64
     },
 
-    // Locate the HAY configuration inside ITEM_TYPES in src/items.js and verify/add:
+    // Locate the HAY entry inside ITEM_TYPES in src/items.js and update:
     HAY: {
         name: "Dried Hay",
         seedType: "hay",        
-        spriteID: 28,           
+        spriteID: 168,           // 🎯 THE FIX: Use Tile 168
+        tileset: "gardenTileset", // 🎯 THE FIX: Draw from the garden tileset
         isFodder: true,         
-        baseHealth: 100, // Acts as 10 bites (10 HP per bite)
+        baseHealth: 100,
         baseVirulence: 0,
         baseFertility: 0,
-        drawSize: 16 // 🎯 Ensures full 16px tile representation
+        drawSize: 16 
     },
+    
     CHICKEN_POOP: {
         name: "Chicken Poop",
         decayRate: 1,       // Very slow decay
