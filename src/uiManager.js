@@ -1235,6 +1235,128 @@ function transferTempleItem(index, source) {
 
 }
 
+// Add these variables, event registration, and functions to src/uiManager.js:
+
+export let activeHayTableId = null;
+export let activeHayTableData = null;
+let confirmingHayTableSpeedUp = false;
+
+// Register listeners once multiplayer is ready
+import('./multiplayer.js').then(m => {
+    const checkSocket = setInterval(() => {
+        if (m.socket) {
+            clearInterval(checkSocket);
+            m.socket.on('hayTableData', (data) => {
+                activeHayTableId = data.jobId;
+                activeHayTableData = data.data;
+                renderHayTableUI();
+            });
+            m.socket.on('hayTableUpdated', (data) => {
+                if (activeHayTableId === data.jobId) {
+                    activeHayTableData = data.data;
+                    renderHayTableUI();
+                }
+            });
+            m.socket.on('receiveHayTableLoot', () => {
+                import('./items.js').then(items => {
+                    import('./interactionManager.js').then(im => {
+                        const hay = items.createItem(items.ITEM_TYPES.HAY);
+                        if (im.giveItemToHero(hay)) {
+                            alert("🌾 Collected 1x Dried Hay!");
+                            renderTabContent();
+                            syncInventoryWithServer();
+                        } else {
+                            alert("Backpack full! Make space first.");
+                        }
+                    });
+                });
+            });
+        }
+    }, 100);
+});
+
+export function openHayTableMenu(jobId) {
+    activeHayTableId = jobId;
+    confirmingHayTableSpeedUp = false;
+    document.getElementById('hay-table-menu').classList.remove('hidden');
+    if (socket) socket.emit('requestHayTable', jobId);
+}
+
+function renderHayTableUI() {
+    if (!activeHayTableData) return;
+    const bar = document.getElementById('hay-table-progress-bar');
+    const text = document.getElementById('hay-table-progress-text');
+    const costText = document.getElementById('hay-table-cost-text');
+    const btn = document.getElementById('hay-table-start-btn');
+
+    const pct = ((activeHayTableData.maxWork - activeHayTableData.workLeft) / activeHayTableData.maxWork) * 100;
+    bar.style.width = `${pct}%`;
+    text.innerText = `${activeHayTableData.workLeft} / ${activeHayTableData.maxWork}`;
+
+    if (activeHayTableData.ready) {
+        btn.innerText = "COLLECT NOW!";
+        btn.className = "pixel-btn safe";
+        text.innerText = "JOB COMPLETE";
+        costText.innerText = "";
+        confirmingHayTableSpeedUp = false;
+    } else if (activeHayTableData.active) {
+        if (confirmingHayTableSpeedUp) {
+            btn.innerText = "SPEED - UP NOW!";
+            btn.className = "pixel-btn safe";
+            costText.innerText = "COST: 0.0407 UNI";
+        } else {
+            btn.innerText = "SPEED - UP";
+            btn.className = "pixel-btn";
+            costText.innerText = "";
+        }
+    } else {
+        btn.innerText = "START (8x Plant Matter)";
+        btn.className = "pixel-btn";
+        costText.innerText = "";
+        confirmingHayTableSpeedUp = false;
+    }
+}
+
+// Register click handlers inside the existing UI checkElements loop in src/uiManager.js:
+if (typeof window !== 'undefined') {
+    const checkTableElements = setInterval(() => {
+        const startTableBtn = document.getElementById('hay-table-start-btn');
+        if (startTableBtn) {
+            clearInterval(checkTableElements);
+
+            document.getElementById('close-hay-table-btn').addEventListener('click', () => {
+                document.getElementById('hay-table-menu').classList.add('hidden');
+                confirmingHayTableSpeedUp = false;
+            });
+
+            startTableBtn.addEventListener('click', () => {
+                if (!activeHayTableData) return;
+
+                if (activeHayTableData.ready) {
+                    if (socket) socket.emit('collectHayTable', { jobId: activeHayTableId });
+                } else if (!activeHayTableData.active) {
+                    // Client-side ingredient validation
+                    const pmIdx = hero.inventory.findIndex(item => item.seedType === 'plant_matter');
+                    if (pmIdx === -1 || hero.inventory[pmIdx].count < 8) {
+                        alert("You need 8x Plant Matter to make hay!");
+                        return;
+                    }
+
+                    if (socket) socket.emit('startHayTableJob', { jobId: activeHayTableId });
+                } else {
+                    if (!confirmingHayTableSpeedUp) {
+                        confirmingHayTableSpeedUp = true;
+                        renderHayTableUI();
+                    } else {
+                        if (socket) socket.emit('speedUpHayTable', { jobId: activeHayTableId });
+                        confirmingHayTableSpeedUp = false;
+                    }
+                }
+            });
+        }
+    }, 100);
+}
+
 // ==========================================
 // 🍳 KITCHEN UI LOGIC
 
@@ -1491,9 +1613,6 @@ function transferCellarItem(index, source) {
 // ==========================================
 // 🌾 HAY UI LOGIC
 // ==========================================
-export function openHayTableMenu() {
-    document.getElementById('hay-table-menu').classList.remove('hidden');
-}
 
 export function openHayStorageMenu(hayStorageId, items) {
     activeHayStorageId = hayStorageId;

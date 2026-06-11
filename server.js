@@ -315,6 +315,8 @@ let smelterDb = {};
 let anvilDb = {};
 // Initialize the kitchen database near your other database variables (like smelterDb) in server.js:
 let kitchenDb = {};
+// Initialize the database near your other database variables in server.js:
+let hayTableDb = {};
 
 // 📖 DAILY ACTIVITY LEDGER
 let activityLog = [];
@@ -575,6 +577,91 @@ io.on('connection', (socket) => {
 
         // Force immediate save to persistence.json
         syncPlayerAndSave(socket.id);
+    });
+
+    // Add these socket listeners inside io.on('connection', (socket) => { ... }) in server.js:
+
+    socket.on('requestHayTable', (jobId) => {
+        if (!hayTableDb[jobId]) hayTableDb[jobId] = { workLeft: 120, maxWork: 120, active: false, ready: false };
+        socket.emit('hayTableData', { jobId, data: hayTableDb[jobId] });
+    });
+
+    socket.on('startHayTableJob', (data) => {
+        const player = players[socket.id];
+        if (!player) return;
+
+        const now = Date.now();
+        if (player.lastHayTable && now - player.lastHayTable < 1000) return;
+        player.lastHayTable = now;
+
+        const job = hayTableDb[data.jobId];
+        if (!job || job.active || job.ready) return;
+
+        // Deduct 8x Plant Matter
+        const pmIdx = player.inventory.findIndex(item => item.seedType === 'plant_matter');
+        if (pmIdx === -1 || player.inventory[pmIdx].count < 8) return;
+
+        player.inventory[pmIdx].count -= 8;
+        if (player.inventory[pmIdx].count <= 0) {
+            player.inventory.splice(pmIdx, 1);
+        }
+
+        job.maxWork = 120;
+        job.workLeft = 120;
+        job.active = true;
+        job.ready = false;
+
+        io.emit('hayTableUpdated', { jobId: data.jobId, data: job });
+        socket.emit('updateInventory', player.inventory);
+    });
+
+    socket.on('workHayTableStrike', (data) => {
+        const job = hayTableDb[data.jobId];
+        if (job && job.active && job.workLeft > 0) {
+            job.workLeft--;
+            if (job.workLeft <= 0) job.ready = true;
+            if (job.workLeft % 5 === 0 || job.workLeft === 0) {
+                io.emit('hayTableUpdated', { jobId: data.jobId, data: job });
+            }
+        }
+    });
+
+    socket.on('speedUpHayTable', (data) => {
+        const player = players[socket.id];
+        const job = hayTableDb[data.jobId];
+        if (!job || !job.active || !player) return;
+
+        const cost = 0.0407; // 🎯 0.0407 UNI speed up cost
+
+        if (player.inGameUni >= cost) {
+            player.inGameUni -= cost;
+            globalDebt = Math.max(0, globalDebt - cost);
+            saveDebt();
+            logActivity('SPEEDUP', socket.wallet || socket.id, `Paid ${cost} UNI to speed up Hay Table job`);
+
+            job.workLeft = 0;
+            job.ready = true;
+
+            io.emit('hayTableUpdated', { jobId: data.jobId, data: job });
+            socket.emit('balanceUpdated', { inGameUni: player.inGameUni });
+            broadcastEffectiveTGV();
+            syncPlayerAndSave(socket.id);
+        } else {
+            socket.emit('oreMessage', `Insufficient funds! You need ${cost} UNI.`);
+        }
+    });
+
+    socket.on('collectHayTable', (data) => {
+        const job = hayTableDb[data.jobId];
+        const player = players[socket.id];
+        if (job && job.ready && player) {
+            job.active = false; 
+            job.ready = false; 
+            job.workLeft = 120; 
+
+            io.emit('hayTableUpdated', { jobId: data.jobId, data: job });
+            socket.emit('receiveHayTableLoot');
+        }
     });
 
     // Add these socket listeners inside io.on('connection', (socket) => { ... }) in server.js:

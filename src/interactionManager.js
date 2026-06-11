@@ -216,8 +216,9 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
                 return;
             }
 
+            // Locate handleInteractions() inside src/interactionManager.js and modify the HAY_TABLE interaction:
             if (obj.type === 'HAY_TABLE') {
-                openHayTableMenu();
+                import('./uiManager.js').then(m => m.openHayTableMenu(`haytable_${tx}_${ty}`));
                 inputState.interact = false;
                 inputState.action = false;
                 return;
@@ -313,8 +314,8 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
     if (inputState.keyF) {
         inputState.keyF = false; 
         
-        // 🎯 THE FIX: Register KITCHEN as an active work object
-        if (obj && (obj.type === 'SMELTER' || obj.type === 'ANVIL' || obj.type === 'KITCHEN')) {
+        // 🎯 THE FIX: Add HAY_TABLE to the work object initializer
+        if (obj && (obj.type === 'SMELTER' || obj.type === 'ANVIL' || obj.type === 'KITCHEN' || obj.type === 'HAY_TABLE')) {
             hero.isWorking = true;
             hero.workingObj = { tx: tx, ty: ty, type: obj.type };
             hero.workTimer = 0; 
@@ -350,10 +351,12 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
                     if (socket) socket.emit('workSmelterStrike', { jobId: `smelter_${hero.workingObj.tx}_${hero.workingObj.ty}` });
                 } else if (hero.workingObj.type === 'ANVIL') {
                     if (socket) socket.emit('workAnvilStrike', { jobId: `anvil_${hero.workingObj.tx}_${hero.workingObj.ty}` });
-                } 
-                // 🎯 THE FIX: Direct the manual work strike to the kitchen socket event
-                else if (hero.workingObj.type === 'KITCHEN') {
+                } else if (hero.workingObj.type === 'KITCHEN') {
                     if (socket) socket.emit('workKitchenStrike', { jobId: `kitchen_${hero.workingObj.tx}_${hero.workingObj.ty}` });
+                }
+                // 🎯 THE FIX: Direct the manual work strike to the hay table socket event
+                else if (hero.workingObj.type === 'HAY_TABLE') {
+                    if (socket) socket.emit('workHayTableStrike', { jobId: `haytable_${hero.workingObj.tx}_${hero.workingObj.ty}` });
                 }
             }
         }

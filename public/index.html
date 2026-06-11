@@ -401,21 +401,23 @@
             </div>
         </div>
 
-        <!-- HAY TABLE MENU -->
-        <div id="hay-table-menu" class="hidden menu-modal">
-            <div class="pixel-panel" style="text-align: center; width: 350px;">
+        <!-- Replace your hay-table-menu modal inside index.html with this markup: -->
+        <!-- REVISED HAY TABLE MENU -->
+        <div id="hay-table-menu" class="hidden menu-modal" style="z-index: 3000;">
+            <div class="pixel-panel" style="width: 350px; text-align: center;">
                 <h2 style="color: var(--text-dark); margin-top: 0;">🌾 HAY TABLE</h2>
-                <p style="font-size: 10px; margin-bottom: 20px;">Dry grass into animal fodder.</p>
+                <p style="font-size: 8px; margin-bottom: 20px; color:#555;">Stand in front and hold 'F' to dry grass into hay.</p>
                 
-                <div style="background: rgba(255,255,255,0.5); padding: 15px; border: 4px solid var(--bg-dark); margin-bottom: 20px; text-align: left;">
-                    <!-- Locate the hay-table-menu modal in index.html and update the requirement text: -->
-                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 4px solid var(--bg-dark); padding-bottom: 10px; margin-bottom: 10px;">
-                        <span style="font-size: 12px;">🌾 DRIED HAY</span>
+                <div style="background: #fff; padding: 15px; border: 4px solid var(--bg-dark); margin-bottom: 20px;">
+                    <div style="font-size: 10px; margin-bottom: 10px;">WORK REMAINING</div>
+                    <div style="width: 100%; background: #ccc; height: 16px; border: 2px solid #000; position: relative; margin-bottom: 8px;">
+                        <div id="hay-table-progress-bar" style="width: 0%; height: 100%; background: var(--highlight);"></div>
+                        <div id="hay-table-progress-text" style="position: absolute; width: 100%; top: 2px; font-size: 8px; text-align: center; color: #000;">120 / 120</div>
                     </div>
-                    <p style="font-size: 8px; margin: 0;">REQ: 8x Plant Matter</p> <!-- 🎯 Updated -->
+                    <div id="hay-table-cost-text" style="font-size: 8px; color: var(--banana-dark); height: 10px;"></div>
                 </div>
-                
-                <button id="craft-hay-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 10px;">CRAFT HAY</button>
+
+                <button id="hay-table-start-btn" class="pixel-btn" style="width: 100%; margin-bottom: 10px;">START (8x Plant Matter)</button>
                 <button id="close-hay-table-btn" class="pixel-btn cancel" style="width: 100%;">STEP AWAY</button>
             </div>
         </div>
