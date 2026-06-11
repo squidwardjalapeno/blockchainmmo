@@ -385,7 +385,7 @@ function initServerAnimals() {
             id: 'animal_' + Math.random().toString(36).substr(2, 9),
             x: 1550 + Math.random() * 100, 
             y: 1550 + Math.random() * 100,
-            speed: 20,
+            speed: 35,
             hp: 30,
             maxHp: 30,
             // Add these default values when instantiating chickens inside server.js:
@@ -1302,7 +1302,7 @@ socket.on('collectAnvil', (data) => {
                 id: 'animal_' + Math.random().toString(36).substr(2, 9),
                 x: rx,
                 y: ry,
-                speed: 20,
+                speed: 35,
                 hp: 30,
                 maxHp: 30,
                 // Add these default values when instantiating chickens inside server.js:
