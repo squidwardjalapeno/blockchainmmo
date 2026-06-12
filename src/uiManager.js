@@ -8,6 +8,8 @@ import { submitVoucherToChain, connectWallet } from './blockchainManager.js';
 import { mapCanvas } from './renderer.js';
 import { recalculateStats } from './interactionManager.js';
 
+export let activeDoorCoords = null;
+
 
 if (typeof window !== 'undefined') {
     logStep("uiManager.js");
@@ -389,6 +391,41 @@ export function initUI() {
         }
         document.getElementById('withdraw-menu').classList.add('hidden');
     };
+
+    // --- DOOR CONTROL LISTENERS ---
+    const closeDoorBtn = document.getElementById('close-door-btn');
+    if (closeDoorBtn) {
+        closeDoorBtn.onclick = () => {
+            document.getElementById('door-menu').classList.add('hidden');
+            activeDoorCoords = null;
+        };
+    }
+
+    const lockDoorBtn = document.getElementById('door-lock-btn');
+    if (lockDoorBtn) {
+        lockDoorBtn.onclick = () => {
+            if (activeDoorCoords && socket) {
+                socket.emit('setDoorLock', { 
+                    gx: activeDoorCoords.gx, 
+                    gy: activeDoorCoords.gy, 
+                    locked: true 
+                });
+            }
+        };
+    }
+
+    const unlockDoorBtn = document.getElementById('door-unlock-btn');
+    if (unlockDoorBtn) {
+        unlockDoorBtn.onclick = () => {
+            if (activeDoorCoords && socket) {
+                socket.emit('setDoorLock', { 
+                    gx: activeDoorCoords.gx, 
+                    gy: activeDoorCoords.gy, 
+                    locked: false 
+                });
+            }
+        };
+    }
 
     // --- 🦊 MAIN MENU LOGIN SYSTEMS ---
     const mainConnectBtn = document.getElementById('main-connect-btn');
@@ -2222,3 +2259,22 @@ window.assignHobbitJob = (jobName) => {
         }
     });
 };
+
+export function openDoorControlMenu(gx, gy, roomID) {
+    activeDoorCoords = { gx, gy, roomID };
+    document.getElementById('door-menu-title').innerText = `🚪 ROOM #${roomID}`;
+    document.getElementById('door-menu').classList.remove('hidden');
+    
+    // Request current state from the server
+    if (socket) socket.emit('requestDoorState', { gx, gy });
+}
+
+export function updateDoorControlUI(gx, gy, locked) {
+    if (activeDoorCoords && activeDoorCoords.gx === gx && activeDoorCoords.gy === gy) {
+        const label = document.getElementById('door-status-label');
+        if (label) {
+            label.innerText = locked ? "LOCKED" : "UNLOCKED";
+            label.style.color = locked ? "#d95757" : "var(--highlight)";
+        }
+    }
+}

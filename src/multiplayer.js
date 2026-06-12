@@ -13,6 +13,8 @@ export let playerWallet = null;
 export let serverProjectiles = [];
 export let globalUnlockedSystems = ["4_4"];
 
+export const doorStates = new Map(); // key: "gx_gy", value: { locked: boolean }
+
 // 🎯 THE FIX: Track the chest actively requested by the player's GUI
 export let playerRequestedChestId = null;
 export function setPlayerRequestedChestId(id) {
@@ -346,6 +348,22 @@ export function initMultiplayer() {
                     }
                 });
             });
+        });
+
+        socket.on('initDoorStates', (data) => {
+            for (let key in data) {
+                doorStates.set(key, data[key]);
+            }
+        });
+
+        socket.on('doorState', (data) => {
+            doorStates.set(`${data.gx}_${data.gy}`, { locked: data.locked });
+            import('./uiManager.js').then(m => m.updateDoorControlUI(data.gx, data.gy, data.locked));
+        });
+
+        socket.on('doorStateUpdated', (data) => {
+            doorStates.set(`${data.gx}_${data.gy}`, { locked: data.locked });
+            import('./uiManager.js').then(m => m.updateDoorControlUI(data.gx, data.gy, data.locked));
         });
 
         socket.on('position', (data) => {

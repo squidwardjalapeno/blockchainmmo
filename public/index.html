@@ -480,6 +480,20 @@
             </div>
         </div>
 
+        <!-- DOOR CONTROL MENU -->
+        <div id="door-menu" class="hidden menu-modal" style="z-index: 3000;">
+            <div class="pixel-panel" style="width: 320px; text-align: center;">
+                <h2 style="margin-top: 0; color: var(--banana-dark);" id="door-menu-title">🚪 DOOR CONTROL</h2>
+                <p style="font-size: 8px; color: #555; margin-bottom: 20px;">Manage access for this building.</p>
+                <div style="background: #fff; padding: 15px; border: 4px solid var(--bg-dark); margin-bottom: 20px;">
+                    <div style="font-size: 10px; margin-bottom: 5px;">STATUS: <span id="door-status-label" style="color: var(--highlight);">UNLOCKED</span></div>
+                </div>
+                <button id="door-lock-btn" class="pixel-btn" style="width: 100%; margin-bottom: 10px;">LOCK DOOR</button>
+                <button id="door-unlock-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 10px;">UNLOCK DOOR</button>
+                <button id="close-door-btn" class="pixel-btn cancel" style="width: 100%;">CLOSE</button>
+            </div>
+        </div>
+
         <!-- SPLIT STACK MENU -->
         <div id="split-stack-menu" class="hidden menu-modal" style="z-index: 3000;">
             <div class="pixel-panel" style="width: 300px; text-align: center;">

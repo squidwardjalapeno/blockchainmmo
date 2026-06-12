@@ -3,7 +3,7 @@ import { CONFIG } from './config.js';
 import { getObjectAt, solidTiles } from './staticObjects.js'; 
 import { roomMetadata } from './cellDecorator.js';
 import { hero } from './entities.js'; 
-import { socket, remotePlayers } from './multiplayer.js'; 
+import { socket, remotePlayers, doorStates } from './multiplayer.js'; 
 
 // 🎯 THE FIX: Explicit door state close translations (Never morphs gates to barn doors)
 const DOOR_TRANSITIONS = {
@@ -12,6 +12,11 @@ const DOOR_TRANSITIONS = {
     23: 22, // Opened Vert Gate -> Closed Vert Gate
     20: 19  // Opened Horiz Gate -> Closed Horiz Gate
 };
+
+export function isDoorUnlocked(gx, gy) {
+    const state = doorStates.get(`${gx}_${gy}`);
+    return state ? !state.locked : false; // Locked by default
+}
 
 // 🎯 THE FIX: Blocks automatic closures if any client is near the tile
 function isAnyPlayerNearDoor(doorGX, doorGY) {
@@ -93,10 +98,12 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
                     const near = getTileData(x + (dx * 8), y + (dy * 8), worldMatrix, roomMatrix);
                     const nearIdx = (near.ly * 100) + near.lx;
 
-                    // Houses & Barns (Require Keys)
+                    // Houses & Barns (Require Keys OR Unlocked status)
                     if (near.tileID === 49 || near.tileID === 12) {
                         const hasKey = entity.inventory && entity.inventory.some(item => item.isKey && item.houseId === near.roomID);
-                        if (hasKey) {
+                        const unlocked = isDoorUnlocked(near.gx, near.gy);
+                        
+                        if (hasKey || unlocked) {
                             const newTile = (near.tileID === 49) ? 35 : 13;
                             worldMatrix[near.cx][near.cy][nearIdx] = newTile;
                             

@@ -254,14 +254,16 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
         }
 
         // B. PHYSICAL TILE ACTIONS (Doors/Mining)
-        if (target && (target.tileID === 49 || target.tileID === 12) && target.roomID !== 0) {
-            if (!hero.inventory.some(item => item.isKey && item.houseId === target.roomID)) {
-                
-                // 🛑 NEW: Check if the door is already claimed!
-                const cx = Math.floor(tx / 100);
-                const cy = Math.floor(ty / 100);
-                const lx = ((tx % 100) + 100) % 100;
-                const ly = ((ty % 100) + 100) % 100;
+        if (target && [49, 12, 35, 13].includes(target.tileID) && target.roomID !== 0) {
+            const closedTileID = [35, 49].includes(target.tileID) ? 49 : 12;
+            const hasKey = hero.inventory.some(item => item.isKey && item.houseId === target.roomID);
+
+            if (!hasKey) {
+                // If they don't have the key, allow them to claim it
+                const cx = Math.floor(target.gx / 100);
+                const cy = Math.floor(target.gy / 100);
+                const lx = ((target.gx % 100) + 100) % 100;
+                const ly = ((target.gy % 100) + 100) % 100;
                 
                 if (fertilityMatrix[cx][cy][(ly * 100) + lx] === 254) {
                     console.log("🔒 This door is already claimed by someone else!");
@@ -273,17 +275,22 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
                 if (hero.inventory.length < hero.maxSlots) {
                     const newKey = createItem(ITEM_TYPES.KEY);
                     newKey.houseId = target.roomID;
-                    newKey.name = `Key to ${(target.tileID === 12) ? "Barn" : "House"} #${target.roomID}`;
+                    newKey.name = `Key to ${(closedTileID === 12) ? "Barn" : "House"} #${target.roomID}`;
                     giveItemToHero(newKey);
                     
-                    // 🛑 NEW: Mark the door as claimed so it doesn't dispense infinite keys!
                     fertilityMatrix[cx][cy][(ly * 100) + lx] = 254;
                     
-                    console.log(`🔑 Claimed ${(target.tileID === 12) ? "Barn" : "House"} #${target.roomID}!`);
+                    console.log(`🔑 Claimed ${(closedTileID === 12) ? "Barn" : "House"} #${target.roomID}!`);
                     inputState.interact = false;
                     inputState.action = false;
                     return;
                 }
+            } else {
+                // Player already HAS the key -> Open Door Control UI!
+                import('./uiManager.js').then(m => m.openDoorControlMenu(target.gx, target.gy, target.roomID));
+                inputState.interact = false;
+                inputState.action = false;
+                return;
             }
         }
 

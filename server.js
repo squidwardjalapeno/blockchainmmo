@@ -320,6 +320,14 @@ let anvilDb = {};
 let kitchenDb = {};
 // Initialize the database near your other database variables in server.js:
 let hayTableDb = {};
+let doorDb = {};
+
+if (fs.existsSync('doors.json')) {
+    try { doorDb = JSON.parse(fs.readFileSync('doors.json', 'utf8')); } catch(err){}
+}
+function saveDoors() {
+    fs.writeFileSync('doors.json', JSON.stringify(doorDb, null, 2));
+}
 
 // 📖 DAILY ACTIVITY LEDGER
 let activityLog = [];
@@ -1501,6 +1509,24 @@ socket.on('collectAnvil', (data) => {
         }
 
         socket.emit('chunkPlantsData', { cx, cy, plants: chunkPlants });
+    });
+
+    // --- DOOR ACCESS CONTROL ---
+    socket.emit('initDoorStates', doorDb);
+
+    socket.on('requestDoorState', (data) => {
+        const { gx, gy } = data;
+        const key = `${gx}_${gy}`;
+        const door = doorDb[key] || { locked: true };
+        socket.emit('doorState', { gx, gy, locked: door.locked });
+    });
+
+    socket.on('setDoorLock', (data) => {
+        const { gx, gy, locked } = data;
+        const key = `${gx}_${gy}`;
+        doorDb[key] = { locked };
+        saveDoors();
+        io.emit('doorStateUpdated', { gx, gy, locked });
     });
 
     // 🎯 UPDATE MOVEMENT (Includes isLunge)
