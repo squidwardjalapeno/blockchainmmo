@@ -207,10 +207,13 @@ var update = function (modifier) {
 
         // ... (rest of your slow-tick loop remains the same) ...
 
-        // 🌾 Run standard world simulations
-        if (DEBUG_FLAGS.ENABLE_WORLD_SIM) {
-            updatePlants(1.0, fertilityMatrix, worldMatrix, roomMatrix); 
-            updateBacteria(worldMatrix, fertilityMatrix);
+        // Locate the world-sim block inside update() in src/game.js (around line 170) and change:
+        if (logicTick % 3 === 0) {
+            if (DEBUG_FLAGS.ENABLE_WORLD_SIM) {
+                // 🎯 THE FIX: Pass modifier * 3 (actual elapsed seconds) instead of 1.0
+                updatePlants(modifier * 3, fertilityMatrix, worldMatrix, roomMatrix); 
+                updateBacteria(worldMatrix, fertilityMatrix);
+            }
         }
 
         // 🐟 Replenish global fish population
