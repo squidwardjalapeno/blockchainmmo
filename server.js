@@ -1046,21 +1046,31 @@ socket.on('collectAnvil', (data) => {
             return;
         }
 
-        const def = SERVER_PLANT_DEFS[plant.type];
-        // 🎯 CHANGE THIS LINE: Fall back to 95% if harvestThreshold is undefined
-        const threshold = (def && def.harvestThreshold !== undefined) ? def.harvestThreshold : 95;
-        
-        // Calculate growth securely
-        const elapsedSeconds = plant.timestamp ? (Date.now() - plant.timestamp) / 1000 : 0;
-        let startGrowth = plant.growth !== undefined ? parseFloat(plant.growth) : 0;
-        if (isNaN(startGrowth)) startGrowth = 0;
-        let gRate = plant.growthRate !== undefined ? parseFloat(plant.growthRate) : 0.4;
-        if (isNaN(gRate)) gRate = 0.4;
+        // Locate socket.on('requestHarvest') inside server.js and replace the growth calculation with this:
+            const def = SERVER_PLANT_DEFS[plant.type];
+            
+            const elapsedSeconds = plant.timestamp ? (Date.now() - plant.timestamp) / 1000 : 0;
+            
+            // 🎯 THE SUREFIRE FIX: Strict isNaN guards for startGrowth
+            let startGrowth = 0;
+            if (plant.growth !== undefined && plant.growth !== null) {
+                startGrowth = parseFloat(plant.growth);
+            }
+            if (isNaN(startGrowth)) {
+                startGrowth = 0;
+            }
+            
+            // 🎯 THE SUREFIRE FIX: Strict isNaN guards for growthRate
+            let gRate = 0.4;
+            if (plant.growthRate !== undefined && plant.growthRate !== null) {
+                gRate = parseFloat(plant.growthRate);
+            }
+            if (isNaN(gRate)) {
+                gRate = def?.growthRate || 0.4;
+            }
 
-        const currentGrowth = startGrowth + (gRate * 0.1 * elapsedSeconds);
-
-        // 🎯 CHANGE THIS LINE: Use the identical visual-stage helper instead of a flat threshold!
-        const isMature = isServerPlantMature(plant, currentGrowth);
+            const currentGrowth = startGrowth + (gRate * 2.0 * elapsedSeconds);
+            const isMature = isServerPlantMature(plant, currentGrowth);
 
         // Locate this block in server.js -> socket.on('requestHarvest')
         if (isMature) {
@@ -1432,23 +1442,42 @@ socket.on('collectAnvil', (data) => {
             generateServerFloraForChunk(cx, cy);
         }
 
-        // Gather all active plants inside this chunk
-        const chunkPlants = [];
-        for (let [key, plant] of serverPlants) {
-            const pCX = Math.floor(plant.gx / 100);
-            const pCY = Math.floor(plant.gy / 100);
-            if (pCX === cx && pCY === cy) {
-                const elapsed = (Date.now() - plant.timestamp) / 1000;
-                const currentGrowth = Math.min(100, plant.growth + (plant.growthRate * 0.1 * elapsed));
-                
-                chunkPlants.push({
-                    gx: plant.gx,
-                    gy: plant.gy,
-                    type: plant.type,
-                    growth: currentGrowth
-                });
+        // Locate socket.on('requestChunkPlants') inside server.js and replace the loop body with this:
+            const chunkPlants = [];
+            for (let [key, plant] of serverPlants) {
+                const pCX = Math.floor(plant.gx / 100);
+                const pCY = Math.floor(plant.gy / 100);
+                if (pCX === cx && pCY === cy) {
+                    const elapsed = (Date.now() - plant.timestamp) / 1000;
+                    
+                    // 🎯 THE SUREFIRE FIX: Strict isNaN guards for growthRate
+                    let gRate = 0.4;
+                    if (plant.growthRate !== undefined && plant.growthRate !== null) {
+                        gRate = parseFloat(plant.growthRate);
+                    }
+                    if (isNaN(gRate)) {
+                        gRate = SERVER_PLANT_DEFS[plant.type]?.growthRate || 0.4;
+                    }
+
+                    // 🎯 THE SUREFIRE FIX: Strict isNaN guards for starting growth
+                    let startGrowth = 0;
+                    if (plant.growth !== undefined && plant.growth !== null) {
+                        startGrowth = parseFloat(plant.growth);
+                    }
+                    if (isNaN(startGrowth)) {
+                        startGrowth = 0;
+                    }
+
+                    const currentGrowth = Math.min(100, startGrowth + (gRate * 2.0 * elapsed));
+                    
+                    chunkPlants.push({
+                        gx: plant.gx,
+                        gy: plant.gy,
+                        type: plant.type,
+                        growth: currentGrowth
+                    });
+                }
             }
-        }
 
         socket.emit('chunkPlantsData', { cx, cy, plants: chunkPlants });
     });
