@@ -191,6 +191,7 @@ export function updatePlants(modifier, fertilityMatrix, worldMatrix, roomMatrix)
 
         // --- 1. GROWTH PHASE ---
         if (plant.growth < 100) {
+            // 🎯 THE FIX: Restored the * 0.1 multiplier
             const ratePerSec = plant.growthRate * 0.1; 
             const growthAdded = ratePerSec * simulatedTime;
             const def = PLANT_DEFS[plant.type];

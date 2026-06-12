@@ -981,162 +981,9 @@ socket.on('collectAnvil', (data) => {
     }
 });
 
-// A. Plant Seed Request
-    socket.on('requestPlantSeed', (data) => {
-        const { tx, ty, index } = data;
-        const player = players[socket.id];
-        if (!player || !player.inventory) return;
 
-        const item = player.inventory[index];
-        if (!item || !(item.seedType.includes("_seed") || item.seedType === "potato_item")) return;
 
-        // Distance validation
-        const px = Math.floor(player.x / 16);
-        const py = Math.floor(player.y / 16);
-        if (Math.abs(px - tx) + Math.abs(py - ty) > 5) return;
 
-        const plantKey = `${tx}_${ty}`;
-        if (serverPlants.has(plantKey)) return; // Spot occupied
-
-        const plantType = item.seedType.replace("_seed", "").replace("_item", "");
-        
-        // Register securely on the server
-        serverPlants.set(plantKey, {
-            gx: tx, gy: ty,
-            type: plantType,
-            growth: 0,
-            timestamp: Date.now()
-        });
-
-        // Deduct seed from server inventory
-        item.count--;
-        if (item.count <= 0) {
-            player.inventory.splice(index, 1);
-        }
-
-        syncPlayerAndSave(socket.id);
-        socket.emit('updateInventory', player.inventory);
-
-        // Broadcast the new plant to all nearby players
-        io.emit('plantCreated', { gx: tx, gy: ty, type: plantType, growth: 0 });
-    });
-
-    // Replace the requestHarvest socket listener inside server.js with this:
-
-    // Replace the requestHarvest socket listener inside server.js with this:
-
-    // Replace the requestHarvest socket listener inside server.js with this:
-
-    socket.on('requestHarvest', (data) => {
-        const { tx, ty } = data;
-        const player = players[socket.id];
-        if (!player || !player.inventory) return;
-
-        const plantKey = `${tx}_${ty}`;
-        const plant = serverPlants.get(plantKey);
-        if (!plant) return; 
-
-        // Distance validation
-        const px = Math.floor(player.x / 16);
-        const py = Math.floor(player.y / 16);
-        if (Math.abs(px - tx) + Math.abs(py - ty) > 5) return;
-
-        if (player.inventory.length >= 10) {
-            socket.emit('inventoryFull');
-            return;
-        }
-
-        // Locate socket.on('requestHarvest') inside server.js and replace the growth calculation with this:
-            const def = SERVER_PLANT_DEFS[plant.type];
-            
-            const elapsedSeconds = plant.timestamp ? (Date.now() - plant.timestamp) / 1000 : 0;
-            
-            // 🎯 THE SUREFIRE FIX: Strict isNaN guards for startGrowth
-            let startGrowth = 0;
-            if (plant.growth !== undefined && plant.growth !== null) {
-                startGrowth = parseFloat(plant.growth);
-            }
-            if (isNaN(startGrowth)) {
-                startGrowth = 0;
-            }
-            
-            // 🎯 THE SUREFIRE FIX: Strict isNaN guards for growthRate
-            let gRate = 0.4;
-            if (plant.growthRate !== undefined && plant.growthRate !== null) {
-                gRate = parseFloat(plant.growthRate);
-            }
-            if (isNaN(gRate)) {
-                gRate = def?.growthRate || 0.4;
-            }
-
-            const currentGrowth = startGrowth + (gRate * 2.0 * elapsedSeconds);
-            const isMature = isServerPlantMature(plant, currentGrowth);
-
-        // Locate this block in server.js -> socket.on('requestHarvest')
-        if (isMature) {
-            // ==========================================
-            // 🍇 1. SECURE MATURE HARVEST
-            // ==========================================
-            const yieldMap = {
-                'turnip': 'TURNIP_ITEM', 'tomato': 'TOMATO_ITEM',
-                'eggplant': 'EGGPLANT_ITEM', 'strawberry': 'STRAWBERRY_ITEM',
-                'pumpkin': 'PUMPKIN_ITEM', 'watermelon': 'WATERMELON_ITEM',
-                'corn': 'CORN_ITEM', 'pineapple': 'PINEAPPLE_ITEM',
-                'potato': 'POTATO_ITEM', 'wheat': 'WHEAT_ITEM',
-                'grass': 'PLANT_MATTER', 'rose': 'PLANT_MATTER',
-                'violet': 'PLANT_MATTER', 'sunflower': 'PLANT_MATTER'
-            };
-
-            const itemTypeName = yieldMap[plant.type] || 'PLANT_MATTER';
-            const cropTemplate = SERVER_ITEM_TYPES[itemTypeName];
-            
-            if (cropTemplate) {
-                giveItemToServerInventory(player, createServerItem(cropTemplate));
-            }
-
-            // 🎯 THE FIX: Do not drop seeds for farm crops (only drop for wild flowers/grass)
-            const farmCrops = ['turnip', 'tomato', 'eggplant', 'strawberry', 'pumpkin', 'watermelon', 'corn', 'pineapple', 'potato', 'wheat'];
-            if (!farmCrops.includes(plant.type)) {
-                const seedConstName = `${plant.type.toUpperCase()}_SEED`;
-                const seedTemplate = SERVER_ITEM_TYPES[seedConstName];
-                if (seedTemplate) {
-                    const seedCount = Math.floor(Math.random() * 2) + 1; 
-                    const seedItem = createServerItem(seedTemplate);
-                    seedItem.count = seedCount;
-                    giveItemToServerInventory(player, seedItem);
-                }
-            }
-
-            // Cyclical check
-            if (def && def.isCyclical) {
-                plant.growth = def.resetGrowth;
-                plant.timestamp = Date.now(); 
-                io.emit('plantReset', { gx: tx, gy: ty, growth: def.resetGrowth }); 
-            } else {
-                serverPlants.delete(plantKey);
-                io.emit('plantRemoved', { gx: tx, gy: ty }); 
-            }
-        } 
-        else {
-            // ==========================================
-            // 🍂 2. SECURE IMMATURE EARLY HARVEST (Wither/Destroy)
-            // ==========================================
-            console.log(`🍂 Early Pick! ${player.wallet} pulled immature ${plant.type} at [${tx}, ${ty}]`);
-            
-            // Give exactly 1x ruined Plant Matter securely
-            const template = SERVER_ITEM_TYPES.PLANT_MATTER;
-            if (template) {
-                giveItemToServerInventory(player, createServerItem(template));
-            }
-
-            // Early-picked plants are always permanently deleted (never cyclical)
-            serverPlants.delete(plantKey);
-            io.emit('plantRemoved', { gx: tx, gy: ty }); 
-        }
-
-        syncPlayerAndSave(socket.id);
-        socket.emit('updateInventory', player.inventory);
-    });
     // ==========================================
     // 🎣 SECURE SERVER-AUTHORITATIVE FISHING
     // ==========================================
@@ -1428,56 +1275,230 @@ socket.on('collectAnvil', (data) => {
     });
 
 
+    // A. Plant Seed Request
+    socket.on('requestPlantSeed', (data) => {
+        const { tx, ty, index } = data;
+        const player = players[socket.id];
+        if (!player) return;
 
-    // Inside io.on('connection', (socket) => { ... }) in server.js:
+        // 🎯 THE FIX: Read from main hand if equipped, otherwise fall back to inventory
+        let item = player.equipment?.mainHand;
+        let isEquipped = true;
 
-    // 🎯 DYNAMIC CHUNK PLANT SYSTEM
+        if (!item || !(item.seedType.includes("_seed") || item.seedType === "potato_item")) {
+            item = player.inventory[index];
+            isEquipped = false;
+        }
+
+        if (!item || !(item.seedType.includes("_seed") || item.seedType === "potato_item")) return;
+
+        // Distance validation
+        const px = Math.floor(player.x / 16);
+        const py = Math.floor(player.y / 16);
+        if (Math.abs(px - tx) + Math.abs(py - ty) > 5) return;
+
+        const plantKey = `${tx}_${ty}`;
+        if (serverPlants.has(plantKey)) return; // Spot occupied
+
+        const plantType = item.seedType.replace("_seed", "").replace("_item", "");
+        
+        // Register securely on the server
+        serverPlants.set(plantKey, {
+            gx: tx, gy: ty,
+            type: plantType,
+            growth: 0,
+            timestamp: Date.now()
+        });
+
+        // Deduct seed securely from either the active hand slot or backpack
+        if (isEquipped) {
+            player.equipment.mainHand.count--;
+            if (player.equipment.mainHand.count <= 0) {
+                player.equipment.mainHand = null;
+            }
+            socket.emit('updateEquipment', player.equipment);
+        } else {
+            item.count--;
+            if (item.count <= 0) {
+                player.inventory.splice(index, 1);
+            }
+            socket.emit('updateInventory', player.inventory);
+        }
+
+        syncPlayerAndSave(socket.id);
+
+        // Broadcast the new plant to all nearby players
+        io.emit('plantCreated', { gx: tx, gy: ty, type: plantType, growth: 0 });
+    });
+
+    // C. Register Wild Plant Request (Client-notified procedural spawner)
+    socket.on('registerWildPlant', (data) => {
+        const { gx, gy, type, growth } = data;
+        const plantKey = `${gx}_${gy}`;
+        
+        // 🎯 THE FIX: Overwrite server-side random flora with the accurate client overworld plant
+        serverPlants.set(plantKey, {
+            gx: gx, gy: gy,
+            type: type,
+            growth: growth || 0,
+            timestamp: Date.now()
+        });
+    });
+
+    socket.on('requestHarvest', (data) => {
+        const { tx, ty } = data;
+        const player = players[socket.id];
+        if (!player || !player.inventory) return;
+
+        const plantKey = `${tx}_${ty}`;
+        const plant = serverPlants.get(plantKey);
+        if (!plant) return; 
+
+        // Distance validation
+        const px = Math.floor(player.x / 16);
+        const py = Math.floor(player.y / 16);
+        if (Math.abs(px - tx) + Math.abs(py - ty) > 5) return;
+
+        if (player.inventory.length >= 10) {
+            socket.emit('inventoryFull');
+            return;
+        }
+
+        const def = SERVER_PLANT_DEFS[plant.type];
+        const elapsedSeconds = plant.timestamp ? (Date.now() - plant.timestamp) / 1000 : 0;
+        
+        // Strict isNaN guards for startGrowth
+        let startGrowth = 0;
+        if (plant.growth !== undefined && plant.growth !== null) {
+            startGrowth = parseFloat(plant.growth);
+        }
+        if (isNaN(startGrowth)) {
+            startGrowth = 0;
+        }
+        
+        // Strict isNaN guards for growthRate
+        let gRate = 0.4;
+        if (plant.growthRate !== undefined && plant.growthRate !== null) {
+            gRate = parseFloat(plant.growthRate);
+        }
+        if (isNaN(gRate)) {
+            gRate = def?.growthRate || 0.4;
+        }
+
+        // 🎯 THE FIX: Adjusted to the 0.1x growth multiplier to match the client's speed
+        const currentGrowth = startGrowth + (gRate * 0.1 * elapsedSeconds);
+        const isMature = isServerPlantMature(plant, currentGrowth);
+
+        if (isMature) {
+            // ==========================================
+            // 🍇 1. SECURE MATURE HARVEST
+            // ==========================================
+            const yieldMap = {
+                'turnip': 'TURNIP_ITEM', 'tomato': 'TOMATO_ITEM',
+                'eggplant': 'EGGPLANT_ITEM', 'strawberry': 'STRAWBERRY_ITEM',
+                'pumpkin': 'PUMPKIN_ITEM', 'watermelon': 'WATERMELON_ITEM',
+                'corn': 'CORN_ITEM', 'pineapple': 'PINEAPPLE_ITEM',
+                'potato': 'POTATO_ITEM', 'wheat': 'WHEAT_ITEM',
+                'grass': 'PLANT_MATTER', 'rose': 'PLANT_MATTER',
+                'violet': 'PLANT_MATTER', 'sunflower': 'PLANT_MATTER'
+            };
+
+            const itemTypeName = yieldMap[plant.type] || 'PLANT_MATTER';
+            const cropTemplate = SERVER_ITEM_TYPES[itemTypeName];
+            
+            if (cropTemplate) {
+                giveItemToServerInventory(player, createServerItem(cropTemplate));
+            }
+
+            // Do not drop seeds for farm crops (only drop for wild flowers/grass)
+            const farmCrops = ['turnip', 'tomato', 'eggplant', 'strawberry', 'pumpkin', 'watermelon', 'corn', 'pineapple', 'potato', 'wheat'];
+            if (!farmCrops.includes(plant.type)) {
+                const seedConstName = `${plant.type.toUpperCase()}_SEED`;
+                const seedTemplate = SERVER_ITEM_TYPES[seedConstName];
+                if (seedTemplate) {
+                    const seedCount = Math.floor(Math.random() * 2) + 1; 
+                    const seedItem = createServerItem(seedTemplate);
+                    seedItem.count = seedCount;
+                    giveItemToServerInventory(player, seedItem);
+                }
+            }
+
+            // Cyclical check
+            if (def && def.isCyclical) {
+                plant.growth = def.resetGrowth;
+                plant.timestamp = Date.now(); 
+                io.emit('plantReset', { gx: tx, gy: ty, growth: def.resetGrowth }); 
+            } else {
+                serverPlants.delete(plantKey);
+                io.emit('plantRemoved', { gx: tx, gy: ty }); 
+            }
+        } 
+        else {
+            // ==========================================
+            // 🍂 2. SECURE IMMATURE EARLY HARVEST (Wither/Destroy)
+            // ==========================================
+            console.log(`🍂 Early Pick! ${player.wallet} pulled immature ${plant.type} at [${tx}, ${ty}]`);
+            
+            // Give exactly 1x ruined Plant Matter securely
+            const template = SERVER_ITEM_TYPES.PLANT_MATTER;
+            if (template) {
+                giveItemToServerInventory(player, createServerItem(template));
+            }
+
+            // Early-picked plants are always permanently deleted
+            serverPlants.delete(plantKey);
+            io.emit('plantRemoved', { gx: tx, gy: ty }); 
+        }
+
+        syncPlayerAndSave(socket.id);
+        socket.emit('updateInventory', player.inventory);
+    });
+
     socket.on('requestChunkPlants', (data) => {
         const { cx, cy } = data;
         const chunkKey = `${cx}_${cy}`;
 
-        // If this chunk has never been populated on the server, spawn it now!
         if (!chunkPlantsGenerated.has(chunkKey)) {
             chunkPlantsGenerated.add(chunkKey);
             generateServerFloraForChunk(cx, cy);
         }
 
-        // Locate socket.on('requestChunkPlants') inside server.js and replace the loop body with this:
-            const chunkPlants = [];
-            for (let [key, plant] of serverPlants) {
-                const pCX = Math.floor(plant.gx / 100);
-                const pCY = Math.floor(plant.gy / 100);
-                if (pCX === cx && pCY === cy) {
-                    const elapsed = (Date.now() - plant.timestamp) / 1000;
-                    
-                    // 🎯 THE SUREFIRE FIX: Strict isNaN guards for growthRate
-                    let gRate = 0.4;
-                    if (plant.growthRate !== undefined && plant.growthRate !== null) {
-                        gRate = parseFloat(plant.growthRate);
-                    }
-                    if (isNaN(gRate)) {
-                        gRate = SERVER_PLANT_DEFS[plant.type]?.growthRate || 0.4;
-                    }
-
-                    // 🎯 THE SUREFIRE FIX: Strict isNaN guards for starting growth
-                    let startGrowth = 0;
-                    if (plant.growth !== undefined && plant.growth !== null) {
-                        startGrowth = parseFloat(plant.growth);
-                    }
-                    if (isNaN(startGrowth)) {
-                        startGrowth = 0;
-                    }
-
-                    const currentGrowth = Math.min(100, startGrowth + (gRate * 2.0 * elapsed));
-                    
-                    chunkPlants.push({
-                        gx: plant.gx,
-                        gy: plant.gy,
-                        type: plant.type,
-                        growth: currentGrowth
-                    });
+        const chunkPlants = [];
+        for (let [key, plant] of serverPlants) {
+            const pCX = Math.floor(plant.gx / 100);
+            const pCY = Math.floor(plant.gy / 100);
+            if (pCX === cx && pCY === cy) {
+                const elapsed = (Date.now() - plant.timestamp) / 1000;
+                
+                // Strict isNaN guards for growthRate
+                let gRate = 0.4;
+                if (plant.growthRate !== undefined && plant.growthRate !== null) {
+                    gRate = parseFloat(plant.growthRate);
                 }
+                if (isNaN(gRate)) {
+                    gRate = SERVER_PLANT_DEFS[plant.type]?.growthRate || 0.4;
+                }
+
+                // Strict isNaN guards for starting growth
+                let startGrowth = 0;
+                if (plant.growth !== undefined && plant.growth !== null) {
+                    startGrowth = parseFloat(plant.growth);
+                }
+                if (isNaN(startGrowth)) {
+                    startGrowth = 0;
+                }
+
+                // 🎯 THE FIX: Adjusted to the 0.1x growth multiplier to match the client's speed
+                const currentGrowth = Math.min(100, startGrowth + (gRate * 0.1 * elapsed));
+                
+                chunkPlants.push({
+                    gx: plant.gx,
+                    gy: plant.gy,
+                    type: plant.type,
+                    growth: currentGrowth
+                });
             }
+        }
 
         socket.emit('chunkPlantsData', { cx, cy, plants: chunkPlants });
     });
@@ -1632,22 +1653,6 @@ socket.on('requestActivityLog', () => {
     // Inside io.on('connection', (socket) => { ... }) in server.js:
 
     // Inside io.on('connection', (socket) => { ... }) in server.js:
-
-    // C. Register Wild Plant Request (Client-notified procedural spawner)
-    socket.on('registerWildPlant', (data) => {
-        const { gx, gy, type, growth } = data;
-        const plantKey = `${gx}_${gy}`;
-        
-        // Register the plant if it is not already tracked by the server
-        if (!serverPlants.has(plantKey)) {
-            serverPlants.set(plantKey, {
-                gx: gx, gy: gy,
-                type: type,
-                growth: growth || 0,
-                timestamp: Date.now()
-            });
-        }
-    });
 
     // ==========================================
     // 🎒 SECURE SERVER-AUTHORITATIVE INVENTORY
