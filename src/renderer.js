@@ -537,7 +537,6 @@ export function drawDroppedItems() {
 
             const offset = Math.floor((16 - drawSize) / 2);
 
-            // Locate this block near the bottom of drawDroppedItems() inside src/renderer.js:
             if (typeID === 16) { 
                 const eggCount = Math.min(8, hTraits); 
                 for (let i = 0; i < eggCount; i++) {
@@ -560,20 +559,6 @@ export function drawDroppedItems() {
                     screenX + offset, screenY + offset, 
                     drawSize, drawSize 
                 );
-
-                // 🎯 THE FIX: Draw a tiny durability bar under dropped Hay (Type ID 17)
-                if (typeID === 17) {
-                    const pct = hTraits / 100;
-                    const barW = 12;
-                    const barH = 1.5;
-                    const bx = screenX + 2;
-                    const by = screenY + 14;
-
-                    ctx2.fillStyle = "black";
-                    ctx2.fillRect(bx, by, barW, barH);
-                    ctx2.fillStyle = "#8a9a5b"; // Soft green
-                    ctx2.fillRect(bx, by, barW * pct, barH);
-                }
             }
         }
     }
