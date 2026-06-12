@@ -254,16 +254,26 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
         }
 
         // B. PHYSICAL TILE ACTIONS (Doors/Mining)
+        let doorTarget = null;
         if (target && [49, 12, 35, 13].includes(target.tileID) && target.roomID !== 0) {
-            const closedTileID = [35, 49].includes(target.tileID) ? 49 : 12;
-            const hasKey = hero.inventory.some(item => item.isKey && item.houseId === target.roomID);
+            doorTarget = target;
+        } else {
+            // 🎯 THE FIX: Fallback to feet tile if standing directly in an open doorway
+            const feetTile = getTileData(hero.x + 8, hero.y + 15, worldMatrix, roomMatrix);
+            if (feetTile && [35, 13].includes(feetTile.tileID) && feetTile.roomID !== 0) {
+                doorTarget = feetTile;
+            }
+        }
+
+        if (doorTarget) {
+            const closedTileID = [35, 49].includes(doorTarget.tileID) ? 49 : 12;
+            const hasKey = hero.inventory.some(item => item.isKey && item.houseId === doorTarget.roomID);
 
             if (!hasKey) {
-                // If they don't have the key, allow them to claim it
-                const cx = Math.floor(target.gx / 100);
-                const cy = Math.floor(target.gy / 100);
-                const lx = ((target.gx % 100) + 100) % 100;
-                const ly = ((target.gy % 100) + 100) % 100;
+                const cx = Math.floor(doorTarget.gx / 100);
+                const cy = Math.floor(doorTarget.gy / 100);
+                const lx = ((doorTarget.gx % 100) + 100) % 100;
+                const ly = ((doorTarget.gy % 100) + 100) % 100;
                 
                 if (fertilityMatrix[cx][cy][(ly * 100) + lx] === 254) {
                     console.log("🔒 This door is already claimed by someone else!");
@@ -274,20 +284,20 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
 
                 if (hero.inventory.length < hero.maxSlots) {
                     const newKey = createItem(ITEM_TYPES.KEY);
-                    newKey.houseId = target.roomID;
-                    newKey.name = `Key to ${(closedTileID === 12) ? "Barn" : "House"} #${target.roomID}`;
+                    newKey.houseId = doorTarget.roomID;
+                    newKey.name = `Key to ${(closedTileID === 12) ? "Barn" : "House"} #${doorTarget.roomID}`;
                     giveItemToHero(newKey);
                     
                     fertilityMatrix[cx][cy][(ly * 100) + lx] = 254;
                     
-                    console.log(`🔑 Claimed ${(closedTileID === 12) ? "Barn" : "House"} #${target.roomID}!`);
+                    console.log(`🔑 Claimed ${(closedTileID === 12) ? "Barn" : "House"} #${doorTarget.roomID}!`);
                     inputState.interact = false;
                     inputState.action = false;
                     return;
                 }
             } else {
                 // Player already HAS the key -> Open Door Control UI!
-                import('./uiManager.js').then(m => m.openDoorControlMenu(target.gx, target.gy, target.roomID));
+                import('./uiManager.js').then(m => m.openDoorControlMenu(doorTarget.gx, doorTarget.gy, doorTarget.roomID));
                 inputState.interact = false;
                 inputState.action = false;
                 return;
