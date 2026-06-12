@@ -1892,6 +1892,7 @@ let touchTimer = null;
 let dragClone = null;
 let dragData = null;
 
+// Locate showTooltip() inside src/uiManager.js and modify the stat check:
 function showTooltip(itemEl, x, y) {
     const item = getItemFromDOM(itemEl.dataset.source, parseInt(itemEl.dataset.index));
     if (item) {
@@ -1901,6 +1902,10 @@ function showTooltip(itemEl, x, y) {
         const statsEl = document.getElementById('tt-stats');
         if (item.energy) statsEl.innerText = `Nutrition: +${item.energy} Energy`;
         else if (item.ad) statsEl.innerText = `Damage: +${item.ad} ATK`;
+        // 🎯 THE FIX: Output remaining bites for Hay bundles in the inventory
+        else if (item.isFodder) {
+            statsEl.innerText = `Bites Left: ${Math.ceil(item.health / 10)} / 10`;
+        }
         else statsEl.innerText = "";
         
         document.getElementById('tt-desc').innerText = item.description || "No description available.";

@@ -1566,14 +1566,26 @@ socket.on('requestActivityLog', () => {
             return;
         }
 
+        // Locate socket.on('requestPickup') inside server.js and modify the item creation:
         const newItem = createServerItem(template);
+        
+        // 🎯 THE FIX: Retrieve the exact remaining bites/health from server memory
+        const key = `${itemData.tx}_${itemData.ty}`;
+        if (serverBacteria.has(key)) {
+            const traits = serverBacteria.get(key);
+            const hTraits = traits & 0xFF; // Remaining health (0-100)
+            if (hTraits > 0) {
+                newItem.health = hTraits; // Carry over exact durability
+            }
+        }
+
         if (template.isKey) {
             newItem.houseId = itemData.houseId;
             newItem.name = `Key to House #${itemData.houseId}`;
         }
 
         const success = giveItemToServerInventory(player, newItem);
-
+        
         if (success) {
             // Wipe the ground tile
             io.emit('syncTile', { gx: itemData.tx, gy: itemData.ty, traits: 0 });
