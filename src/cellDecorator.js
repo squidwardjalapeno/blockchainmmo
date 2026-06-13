@@ -431,9 +431,10 @@ export function drawGeneralStore(gx, gy, worldMatrix, roomMatrix, fertilityMatri
     }
 
     // 3. LOGIC REGISTRY
-    // Register the Trade Counter (Tile 34) at the back of the store
-    // We'll place it at gx+2 (middle-right) and gy-2 (the row before the back wall)
     registerObject(gx + 2, gy - 2, 'STORE_COUNTER', { houseId: currentId });
+
+    // 🎯 THE FIX: Spawn a dedicated Trader hobbit outside the door
+    import('./hobbits.js').then(m => m.spawnHobbit(gx + 2, gy + 1, currentId, gx + 2, gy - 1, 'Trader'));
 }
 
 // js/cellDecorator.js

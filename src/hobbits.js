@@ -3,7 +3,7 @@ import { viewport } from './viewport.js';
 import { moveEntity, getTileData } from './physics.js'; 
 import { hero } from './entities.js'; 
 import { getObjectAt, staticObjects, solidTiles } from './staticObjects.js';
-import { socket } from './multiplayer.js';
+import { socket, doorStates } from './multiplayer.js';
 import { worldTime } from './clock.js'; 
 import { plants, PLANT_DEFS, createPlant } from './plants.js';
 import { ITEM_TYPES, createItem } from './items.js';
@@ -42,7 +42,7 @@ const yieldMap = {
     'violet': 'PLANT_MATTER', 'sunflower': 'PLANT_MATTER'
 };
 
-export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null) {
+export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null, defaultJob = 'Forager') {
 
     // Generate deterministic name using coordinate-based hashing
     const seed = (gx * 31) + gy;
@@ -67,8 +67,8 @@ export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null) 
 
     hobbits.push({
         id: 'hobbit_' + Math.random().toString(36).substr(2, 9),
-        name: proceduralName, // 👈 Assigned name
-        job: 'Forager',       // 👈 Default job
+        name: proceduralName,
+        job: defaultJob, // 🎯 THE FIX: Allow customized jobs on spawn
         isHobbit: true,
         x: gx * 16, 
         y: gy * 16,
@@ -92,19 +92,18 @@ export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null) 
         chestX: houseId ? homeX - 2 : null, // gx
         chestY: houseId ? homeY : null,     // gy - 1
 
-        // Tight collision profiles for 16px doorways
         hitboxLeft: 4,
         hitboxRight: 12, 
         hitboxTop: 10,
         hitboxBottom: 15,
 
-        state: 'idle',     // 'idle', 'walking', 'attacking'
-        goal: 'wander',    // 'wander', 'engage', 'gohome', 'deposit', 'harvest'
+        state: 'idle',     
+        goal: 'wander',    
         dir: 'South',
         frame: 0,
         animTimer: 0,
         moveTimer: Math.random() * 3,
-        attackTimer: 0,    // Tracks active attack duration
+        attackTimer: 0,    
         path: [],
         targetPlant: null, 
         lastUpdated: Date.now(),
@@ -256,6 +255,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         // Initialize elapsed time
         if (!hobbit.lastUpdated) hobbit.lastUpdated = now;
         let deltaSeconds = (now - hobbit.lastUpdated) / 1000;
+        if (deltaSeconds < 0) deltaSeconds = 0;
         hobbit.lastUpdated = now;
 
         // ==========================================
@@ -290,6 +290,40 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             const next = path[Math.min(path.length - 1, 3)]; 
                             simX = next.x;
                             simY = next.y;
+                        }
+                    }
+                } else if (hobbit.job === 'Trader' && hobbit.houseId) {
+                    const doorKey = `${hobbit.doorX}_${hobbit.doorY}`;
+                    const doorState = doorStates.get(doorKey);
+                    const isLocked = doorState ? doorState.locked : true;
+
+                    if (!worldTime.isNight) {
+                        if (isLocked) {
+                            if (simX !== hobbit.doorX || simY !== hobbit.doorY) {
+                                const path = findPathToCoords(simX, simY, hobbit.doorX, hobbit.doorY, worldMatrix, roomMatrix, hobbit);
+                                if (path && path.length > 0) {
+                                    const next = path[Math.min(path.length - 1, 3)];
+                                    simX = next.x; simY = next.y;
+                                }
+                            }
+                        }
+                    } else {
+                        if (!isLocked) {
+                            if (simX !== hobbit.doorX || simY !== hobbit.doorY) {
+                                const path = findPathToCoords(simX, simY, hobbit.doorX, hobbit.doorY, worldMatrix, roomMatrix, hobbit);
+                                if (path && path.length > 0) {
+                                    const next = path[Math.min(path.length - 1, 3)];
+                                    simX = next.x; simY = next.y;
+                                }
+                            }
+                        } else {
+                            if (simX !== hobbit.homeX || simY !== hobbit.homeY) {
+                                const path = findPathToCoords(simX, simY, hobbit.homeX, hobbit.homeY, worldMatrix, roomMatrix, hobbit);
+                                if (path && path.length > 0) {
+                                    const next = path[Math.min(path.length - 1, 3)];
+                                    simX = next.x; simY = next.y;
+                                }
+                            }
                         }
                     }
                 } else if (worldTime.isNight && hobbit.houseId) {
@@ -361,6 +395,53 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             hobbit.path = path;
                             hobbit.goal = 'engage';
                         }
+                    } else if (hobbit.job === 'Trader' && hobbit.houseId) {
+                        const doorKey = `${hobbit.doorX}_${hobbit.doorY}`;
+                        const doorState = doorStates.get(doorKey);
+                        const isLocked = doorState ? doorState.locked : true;
+
+                        if (!worldTime.isNight) {
+                            if (isLocked) {
+                                if (currTX === hobbit.doorX && currTY === hobbit.doorY) {
+                                    if (socket && socket.connected) {
+                                        socket.emit('setDoorLock', { gx: hobbit.doorX, gy: hobbit.doorY, locked: false });
+                                    }
+                                } else {
+                                    const path = findPathToCoords(currTX, currTY, hobbit.doorX, hobbit.doorY, worldMatrix, roomMatrix, hobbit);
+                                    if (path) {
+                                        hobbit.path = path;
+                                        hobbit.goal = 'unlock_door';
+                                    }
+                                }
+                            } else {
+                                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                                hobbit.goal = 'wander';
+                            }
+                        } else {
+                            if (!isLocked) {
+                                if (currTX === hobbit.doorX && currTY === hobbit.doorY) {
+                                    if (socket && socket.connected) {
+                                        socket.emit('setDoorLock', { gx: hobbit.doorX, gy: hobbit.doorY, locked: true });
+                                    }
+                                } else {
+                                    const path = findPathToCoords(currTX, currTY, hobbit.doorX, hobbit.doorY, worldMatrix, roomMatrix, hobbit);
+                                    if (path) {
+                                        hobbit.path = path;
+                                        hobbit.goal = 'lock_door';
+                                    }
+                                }
+                            } else {
+                                if (currTX === hobbit.homeX && currTY === hobbit.homeY) {
+                                    hobbit.goal = 'sleep';
+                                } else {
+                                    const path = findPathToCoords(currTX, currTY, hobbit.homeX, hobbit.homeY, worldMatrix, roomMatrix, hobbit);
+                                    if (path) {
+                                        hobbit.path = path;
+                                        hobbit.goal = 'sleep';
+                                    }
+                                }
+                            }
+                        }
                     } else if (worldTime.isNight && hobbit.houseId) {
                         if (currTX !== hobbit.homeX || currTY !== hobbit.homeY) {
                             if (currTX === hobbit.doorX && currTY === hobbit.doorY) {
@@ -430,6 +511,18 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
                         hobbit.path = [];
                     }
+                    else if (hobbit.goal === 'unlock_door' && hobbit.x === hobbit.doorX * 16 && hobbit.y === hobbit.doorY * 16) {
+                        if (socket && socket.connected) {
+                            socket.emit('setDoorLock', { gx: hobbit.doorX, gy: hobbit.doorY, locked: false });
+                        }
+                        hobbit.path = [];
+                    }
+                    else if (hobbit.goal === 'lock_door' && hobbit.x === hobbit.doorX * 16 && hobbit.y === hobbit.doorY * 16) {
+                        if (socket && socket.connected) {
+                            socket.emit('setDoorLock', { gx: hobbit.doorX, gy: hobbit.doorY, locked: true });
+                        }
+                        hobbit.path = [];
+                    }
                     else if (hobbit.goal === 'deposit' && hobbit.x === hobbit.chestX * 16 && hobbit.y === hobbit.chestY * 16) {
                         hobbit.inventory = hobbit.inventory.filter(i => i.isKey);
                         hobbit.path = [];
@@ -490,6 +583,82 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 }
             }
         } 
+        // 🎯 THE FIX: High-priority Day/Night door-toggling logic for Traders
+        else if (hobbit.job === 'Trader' && hobbit.houseId) {
+            const doorKey = `${hobbit.doorX}_${hobbit.doorY}`;
+            const doorState = doorStates.get(doorKey);
+            const isLocked = doorState ? doorState.locked : true;
+
+            if (!worldTime.isNight) {
+                // Daytime: Ensure General Store is unlocked
+                if (isLocked) {
+                    hobbit.goal = 'unlock_door';
+                    if (currTX === hobbit.doorX && currTY === hobbit.doorY) {
+                        hobbit.state = 'idle';
+                        hobbit.path = [];
+                        if (socket && socket.connected) {
+                            socket.emit('setDoorLock', { gx: hobbit.doorX, gy: hobbit.doorY, locked: false });
+                            console.log(`🏪 ${hobbit.name} (Trader) unlocked the General Store door.`);
+                        }
+                    } else {
+                        if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
+                            const path = findPathToCoords(currTX, currTY, hobbit.doorX, hobbit.doorY, worldMatrix, roomMatrix, hobbit);
+                            if (path) {
+                                hobbit.path = path;
+                                hobbit.state = 'walking';
+                            }
+                        }
+                    }
+                } else {
+                    // Already unlocked: Wander around store counter
+                    hobbit.goal = 'wander';
+                    if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
+                        hobbit.moveTimer -= modifier;
+                        if (hobbit.moveTimer <= 0) {
+                            assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                            hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
+                            hobbit.moveTimer = 2 + Math.random() * 3;
+                        }
+                    }
+                }
+            } else {
+                // Nighttime: Lock the General Store and head inside to sleep
+                if (!isLocked) {
+                    hobbit.goal = 'lock_door';
+                    if (currTX === hobbit.doorX && currTY === hobbit.doorY) {
+                        hobbit.state = 'idle';
+                        hobbit.path = [];
+                        if (socket && socket.connected) {
+                            socket.emit('setDoorLock', { gx: hobbit.doorX, gy: hobbit.doorY, locked: true });
+                            console.log(`🏪 ${hobbit.name} (Trader) locked the General Store door for the night.`);
+                        }
+                    } else {
+                        if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
+                            const path = findPathToCoords(currTX, currTY, hobbit.doorX, hobbit.doorY, worldMatrix, roomMatrix, hobbit);
+                            if (path) {
+                                hobbit.path = path;
+                                hobbit.state = 'walking';
+                            }
+                        }
+                    }
+                } else {
+                    // Already locked: Move to home/bed tile inside
+                    hobbit.goal = 'sleep';
+                    if (currTX === hobbit.homeX && currTY === hobbit.homeY) {
+                        hobbit.state = 'idle';
+                        hobbit.path = [];
+                    } else {
+                        if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
+                            const path = findPathToCoords(currTX, currTY, hobbit.homeX, hobbit.homeY, worldMatrix, roomMatrix, hobbit);
+                            if (path) {
+                                hobbit.path = path;
+                                hobbit.state = 'walking';
+                            }
+                        }
+                    }
+                }
+            }
+        }
         else if (worldTime.isNight && hobbit.houseId) {
             hobbit.goal = 'gohome';
             if (currTX === hobbit.homeX && currTY === hobbit.homeY) {
@@ -680,7 +849,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 }
             }
             else {
-                // 'Idle' Job: Peacefully wander near home outside
                 hobbit.goal = 'wander';
                 
                 if (roomID !== 0 && roomID !== 9999) {
