@@ -787,12 +787,12 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 const chestItems = chestCache.get(chestId) || [];
                 const isChestFull = (chestItems.length >= 8);
 
-                // 🎯 THE TRADING LOOP: Trade on player-driven active store listings
-                if (hasLoot && isChestFull && hobbit.inventory.some(i => i.seedType === 'plant_matter')) {
+                // 🎯 State 1: We have Plant Matter and the chest is full -> Go trade it at the General Store!
+                if (hasPM && isChestFull) {
                     hobbit.goal = 'sell_pm';
                     const counter = findNearestStoreCounter(hobbit);
                     if (counter) {
-                        // 🎯 THE FIX: Stand in front of the counter (gy - 1) instead of on top of it, matching chest offsets
+                        // Stand in front of the counter (gy - 1) instead of on top of it, matching chest offsets
                         const standX = counter.x;
                         const standY = counter.y + 1; 
 
