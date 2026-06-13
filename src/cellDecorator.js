@@ -539,49 +539,42 @@ export function drawBarn(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, world
     console.log(`🚜 Building Barn at ${gx}, ${gy} (ID: ${currentId})`);
 
     // 1. FILL FOOTPRINT (T-Shape Flooring)
-    // Base 4x3 area
     for (let i = 0; i < 4; i++) {
         for (let j = -2; j <= 0; j++) {
             setGlobalTile(gx + i, gy + j, 42, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
             plants.delete(`${gx + i}_${gy + j}`);
         }
     }
-    // Top Middle 2x1 segment (The "High Wall" area)
     for (let i = 1; i <= 2; i++) {
         setGlobalTile(gx + i, gy - 3, 42, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
         plants.delete(`${gx + i}_${gy - 3}`);
     }
 
-    // 2. EXTERIOR STRUCTURE (Row by Row)
-    
-    // Row 0 (Front): [5, 12, 5, 5]
+    // 2. EXTERIOR STRUCTURE
     setGlobalTile(gx, gy, 5, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     setGlobalTile(gx + 1, gy, 12, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap); // Barn Door
     setGlobalTile(gx + 2, gy, 5, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     setGlobalTile(gx + 3, gy, 5, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
 
-    // Row -1: [48, 5, 5, 48]
     setGlobalTile(gx, gy - 1, 48, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     setGlobalTile(gx + 1, gy - 1, 5, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     setGlobalTile(gx + 2, gy - 1, 5, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     setGlobalTile(gx + 3, gy - 1, 48, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
 
-    // Row -2: [40, 48, 48, 40]
     setGlobalTile(gx, gy - 2, 40, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     setGlobalTile(gx + 1, gy - 2, 48, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     setGlobalTile(gx + 2, gy - 2, 48, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     setGlobalTile(gx + 3, gy - 2, 40, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
 
-    // Row -3 (Top segment): [none, 40, 40, none]
     setGlobalTile(gx + 1, gy - 3, 40, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     setGlobalTile(gx + 2, gy - 3, 40, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
 
     // 3. LOGIC REGISTRY
-    // Let's add some hay storage in the barn
     registerObject(gx + 3, gy - 1, 'HAY_STORAGE', { houseId: currentId });
-
-    // 🆕 ADD THE HAY TABLE
     registerObject(gx + 1, gy - 1, 'HAY_TABLE', { houseId: currentId });
+
+    // 🎯 THE FIX: Spawn the Farmer hobbit for each Barn
+    import('./hobbits.js').then(m => m.spawnHobbit(gx + 2, gy + 1, currentId, gx + 2, gy - 1, 'Farmer'));
 }
 
 // js/cellDecorator.js
