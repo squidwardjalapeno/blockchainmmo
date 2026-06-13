@@ -1267,7 +1267,7 @@ export function handleFinancialActions() {
 // Helper to map IDs back to types
 function getSeedTypeFromID(id) {
     if (id === 1) return "fish";
-    if (id === 3) return "grass_item";
+    if (id === 3) return "plant_matter"; // 🎯 FIXED
     if (id === 4) return "chicken_poop";
     if (id === 5) return "cooked_fish";
     return null;

@@ -927,7 +927,7 @@ let currentStoreTab = 'market';
 const typeNames = {
     "fish": "River Bass",
     "cooked_fish": "Cooked Bass",
-    "grass_item": "Uprooted Grass",
+    "plant_matter": "Plant Matter", // 🎯 FIXED
     "grass_seed": "Grass Seed", // 👈 NEW
     "rose_seed": "Rose Seed",           // 👈 NEW
     "violet_seed": "Violet Seed",       // 👈 NEW

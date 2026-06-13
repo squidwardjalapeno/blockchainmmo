@@ -18,9 +18,8 @@ export const BACTERIA_TYPES = {
     "turnip_item": 6, "tomato_item": 7, "eggplant_item": 8,
     "strawberry_item": 9, "pumpkin_item": 10, "watermelon_item": 11,
     "corn_item": 12, "pineapple_item": 13, "potato_item": 14,
-    "wheat_item": 15, "egg": 16,     "hay": 17, // 🎯 Added Type ID 17 for dropped hay
+    "wheat_item": 15, "egg": 16,     "hay": 17, 
 
-    
     "grass_seed": 20, "turnip_seed": 21, "tomato_seed": 22, "eggplant_seed": 23,
     "strawberry_seed": 24, "pumpkin_seed": 25, "watermelon_seed": 26, "corn_seed": 27,
     "pineapple_seed": 28, "potato_seed": 29, "wheat_seed": 30,
@@ -35,11 +34,9 @@ export const BACTERIA_TYPES = {
     "key": 61,
 };
 
-// Replace the handleRemoteTileUpdate function in src/bacteria.js with this specific fix:
 export function handleRemoteTileUpdate(data, worldMatrix) {
     const { gx, gy, traits } = data;
     
-    // 🎯 THE FIX: Intercept tile-clearing immediately so it does not paint Sand (Terrain 0)
     if (traits === 0) {
         const { data: chunkData, idx } = getBacteriaData(gx, gy);
         if (chunkData) {
@@ -121,7 +118,8 @@ export function catchUpChunkBacteria(cx, cy, deltaSeconds, fertilityMatrix) {
         if (traits === 0) continue;
 
         let typeID = (traits >> 20) & 0xFF;
-        if (typeID === 60 || typeID === 61) continue; 
+        // 🎯 THE FIX: Exempt Keys, Weapons, Eggs, and Hay from catch-up decay
+        if (typeID === 60 || typeID === 61 || typeID === 16 || typeID === 17) continue; 
 
         let h = traits & 0xFF;
         let v = (traits >> 8) & 0xFF;
@@ -178,7 +176,7 @@ function processCellSpread(cx, cy, worldMatrix, fertilityMatrix) {
         if (traits === 0) continue;
 
         let typeID = (traits >> 20) & 0xFF;
-        if (typeID === 60 || typeID === 61) continue; 
+        if (typeID === 60 || typeID === 61 || typeID === 16 || typeID === 17) continue; 
 
         let h = traits & 0xFF;
         let v = (traits >> 8) & 0xFF;
@@ -315,7 +313,8 @@ function processCellSpread(cx, cy, worldMatrix, fertilityMatrix) {
             const tempV = (data[j] >> 8) & 0xFF;
             const tempType = (data[j] >> 20) & 0xFF; 
 
-            if (tempType === 60 || tempType === 61) {
+            // 🎯 THE FIX: Exempt Keys, Weapons, Eggs, and Hay from deep-clean wipes
+            if (tempType === 60 || tempType === 61 || tempType === 16 || tempType === 17) {
                 activeCount++;
                 continue;
             }
