@@ -59,56 +59,6 @@ function findNearestStoreCounter(hobbit, range = 500) {
     return nearest;
 }
 
-// Search for dropped chicken eggs nearby
-function findNearestEgg(hobbit, range = 160) {
-    const currTX = Math.floor((hobbit.x + 8) / 16);
-    const currTY = Math.floor((hobbit.y + 8) / 16);
-    let nearest = null;
-    let minDist = Infinity;
-
-    for (let ox = -10; ox <= 10; ox++) {
-        for (let oy = -10; oy <= 10; oy++) {
-            const tx = currTX + ox;
-            const ty = currTY + oy;
-            const bac = getBacteriaData(tx, ty);
-            if (bac && bac.data) {
-                const traits = bac.data[bac.idx];
-                if (traits > 0) {
-                    const typeID = (traits >> 20) & 0xFF;
-                    if (typeID === 16) { // Egg TypeID
-                        const dist = Math.hypot((tx * 16 + 8) - (hobbit.x + 8), (ty * 16 + 8) - (hobbit.y + 8));
-                        if (dist < range && dist < minDist) {
-                            minDist = dist;
-                            nearest = { gx: tx, gy: ty };
-                        }
-                    }
-                }
-            }
-        }
-    }
-    return nearest;
-}
-
-// Filter mature harvests to agricultural/farm crops only
-function findNearestMatureFarmCrop(hobbit, range = 160) {
-    let nearest = null;
-    let minDist = Infinity;
-    const farmCrops = ['turnip', 'tomato', 'eggplant', 'strawberry', 'pumpkin', 'watermelon', 'corn', 'pineapple', 'potato', 'wheat'];
-
-    for (let [key, plant] of plants) {
-        if (!farmCrops.includes(plant.type)) continue;
-        const px = plant.gx * 16 + 8;
-        const py = plant.gy * 16 + 8;
-        const dist = Math.hypot(px - hobbit.x, py - hobbit.y);
-        
-        if (dist < range && dist < minDist && plant.growth >= 100) {
-            minDist = dist;
-            nearest = plant;
-        }
-    }
-    return nearest;
-}
-
 function tryHobbitTrade(hobbit, counterX, counterY) {
     const storeId = `store_${counterX}_${counterY}`;
     const storeData = storeDbCache.get(storeId);
@@ -118,7 +68,7 @@ function tryHobbitTrade(hobbit, counterX, counterY) {
     const pmItem = hobbit.inventory.find(i => i.seedType === 'plant_matter');
 
     if (hobbit.job === 'Forager' && pmItem) {
-        // Forager wants to buy FOOD using PLANT_MATTER
+        // Forager buys FOOD from the player's active market using PLANT_MATTER
         const match = storeData.listings.find(l => 
             l.wantedType === 'plant_matter' && 
             ['egg', 'tomato_item', 'turnip_item', 'strawberry_item', 'corn_item', 'potato_item', 'watermelon_item', 'pumpkin_item', 'eggplant_item', 'pineapple_item', 'wheat_item'].includes(l.offeredItem.seedType)
@@ -144,39 +94,8 @@ function tryHobbitTrade(hobbit, counterX, counterY) {
             return true;
         }
     } 
-    else if (hobbit.job === 'Farmer') {
-        // Farmer wants to buy PLANT_MATTER using FOOD
-        const foodItem = hobbit.inventory.find(i => !i.isKey && i.seedType !== 'plant_matter');
-        if (foodItem) {
-            const match = storeData.listings.find(l => 
-                l.wantedType === foodItem.seedType && 
-                l.offeredItem.seedType === 'plant_matter'
-            );
-
-            if (match) {
-                foodItem.count--;
-                if (foodItem.count <= 0) {
-                    hobbit.inventory = hobbit.inventory.filter(i => i !== foodItem);
-                }
-
-                const pmItem = createItem(ITEM_TYPES.PLANT_MATTER);
-                hobbit.inventory.push(pmItem);
-
-                if (socket && socket.connected) {
-                    socket.emit('buyListing', {
-                        storeId,
-                        listingId: match.id,
-                        buyerWallet: playerWallet,
-                        paymentItem: createItem(ITEM_TYPES[foodItem.seedType.toUpperCase()])
-                    });
-                }
-                return true;
-            }
-        }
-    }
     return false;
 }
-
 const yieldMap = {
     'turnip': 'TURNIP_ITEM', 'tomato': 'TOMATO_ITEM',
     'eggplant': 'EGGPLANT_ITEM', 'strawberry': 'STRAWBERRY_ITEM',
@@ -732,7 +651,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     hobbit.path = path;
                     hobbit.state = 'walking';
                 } else {
-                    // 🎯 THE FIX: Pathblocked fallback
                     assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
                     hobbit.goal = 'wander';
                     hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
@@ -764,7 +682,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 hobbit.path = path;
                                 hobbit.state = 'walking';
                             } else {
-                                // 🎯 THE FIX: Pathblocked fallback
                                 assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
                                 hobbit.goal = 'wander';
                                 hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
@@ -800,7 +717,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 hobbit.path = path;
                                 hobbit.state = 'walking';
                             } else {
-                                // 🎯 THE FIX: Pathblocked fallback
                                 assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
                                 hobbit.goal = 'wander';
                                 hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
@@ -820,180 +736,9 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 hobbit.path = path;
                                 hobbit.state = 'walking';
                             } else {
-                                // 🎯 THE FIX: Pathblocked fallback
                                 assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
                                 hobbit.goal = 'wander';
                                 hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        else if (hobbit.job === 'Farmer' && hobbit.houseId) {
-            const hasFood = hobbit.inventory.some(item => !item.isKey && item.seedType !== 'plant_matter');
-            
-            if (hasFood) {
-                hobbit.goal = 'sell_food';
-                const counter = findNearestStoreCounter(hobbit);
-                if (counter) {
-                    const dist = Math.hypot((counter.x * 16 + 8) - (hobbit.x + 8), (counter.y * 16 + 8) - (hobbit.y + 8));
-                    if (dist <= 24) {
-                        hobbit.state = 'idle';
-                        hobbit.path = [];
-                        
-                        const tradedMarket = tryHobbitTrade(hobbit, counter.x, counter.y);
-                        
-                        if (!tradedMarket) {
-                            const keys = hobbit.inventory.filter(i => i.isKey);
-                            const foodCount = hobbit.inventory.filter(i => !i.isKey && i.seedType !== 'plant_matter').reduce((acc, i) => acc + (i.count || 1), 0);
-                            if (foodCount > 0) {
-                                const pmItem = createItem(ITEM_TYPES.PLANT_MATTER);
-                                pmItem.count = foodCount;
-                                hobbit.inventory = [...keys, pmItem];
-                                console.log(`🏪 ${hobbit.name} (Farmer) traded ${foodCount}x food for Plant Matter at General Store!`);
-                            }
-                        }
-                    } else {
-                        if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
-                            hobbit.pathTimer = 2.0;
-                            const path = findPathToCoords(currTX, currTY, counter.x, counter.y, worldMatrix, roomMatrix, hobbit);
-                            if (path) {
-                                hobbit.path = path;
-                                hobbit.state = 'walking';
-                            } else {
-                                // 🎯 THE FIX: Pathblocked fallback
-                                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                                hobbit.goal = 'wander';
-                                hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
-                            }
-                        }
-                    }
-                }
-            }
-            else if (hobbit.inventory.some(item => item.seedType === 'plant_matter')) {
-                hobbit.goal = 'deposit_pm';
-                const depositTX = hobbit.chestX + 1;
-                const depositTY = hobbit.chestY;
-
-                if (currTX === depositTX && currTY === depositTY) {
-                    hobbit.state = 'idle';
-                    hobbit.path = [];
-
-                    const chestId = `chest_${hobbit.chestX}_${hobbit.chestY}`;
-                    if (!chestCache.has(chestId)) {
-                        if (socket && socket.connected) socket.emit('requestChest', chestId);
-                    } else {
-                        const chestItems = chestCache.get(chestId) || [];
-                        const pmItem = hobbit.inventory.find(i => i.seedType === 'plant_matter');
-                        const keys = hobbit.inventory.filter(i => i.isKey);
-
-                        if (pmItem) {
-                            const existing = chestItems.find(i => i.seedType === 'plant_matter' && i.count < (i.maxStack || 8));
-                            if (existing) {
-                                existing.count = Math.min(existing.maxStack || 8, existing.count + pmItem.count);
-                            } else {
-                                chestItems.push(pmItem);
-                            }
-                        }
-                        if (socket && socket.connected) {
-                            socket.emit('updateChest', { chestId, items: chestItems });
-                        }
-                        hobbit.inventory = keys; 
-                    }
-                } else {
-                    if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
-                        hobbit.pathTimer = 2.0;
-                        const path = findPathToCoords(currTX, currTY, depositTX, depositTY, worldMatrix, roomMatrix, hobbit);
-                        if (path) {
-                            hobbit.path = path;
-                            hobbit.state = 'walking';
-                        } else {
-                            // 🎯 THE FIX: Pathblocked fallback
-                            assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                            hobbit.goal = 'wander';
-                            hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
-                        }
-                    }
-                }
-            }
-            else {
-                const egg = findNearestEgg(hobbit);
-                if (egg) {
-                    hobbit.goal = 'collect_egg';
-                    const dist = Math.hypot((egg.gx * 16 + 8) - (hobbit.x + 8), (egg.gy * 16 + 8) - (hobbit.y + 8));
-                    if (dist <= 24) {
-                        hobbit.state = 'idle';
-                        hobbit.path = [];
-                        
-                        const eggItem = createItem(ITEM_TYPES.EGG);
-                        hobbit.inventory.push(eggItem);
-                        
-                        // 🎯 THE FIX: Instantly clear egg tile locally to prevent double pickup loop
-                        const { data: chunkData, idx } = getBacteriaData(egg.gx, egg.gy);
-                        if (chunkData) {
-                            chunkData[idx] = 0;
-                        }
-
-                        if (socket && socket.connected) {
-                            socket.emit('syncTile', { gx: egg.gx, gy: egg.gy, traits: 0 });
-                        }
-                    } else {
-                        if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
-                            hobbit.pathTimer = 2.0;
-                            const path = findPathToCoords(currTX, currTY, egg.gx, egg.gy, worldMatrix, roomMatrix, hobbit);
-                            if (path) {
-                                hobbit.path = path;
-                                hobbit.state = 'walking';
-                            } else {
-                                // 🎯 THE FIX: Pathblocked fallback
-                                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                                hobbit.goal = 'wander';
-                                hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
-                            }
-                        }
-                    }
-                } else {
-                    const nearest = findNearestMatureFarmCrop(hobbit);
-                    if (nearest) {
-                        hobbit.goal = 'harvest_farm';
-                        const dist = Math.hypot((nearest.gx * 16 + 8) - (hobbit.x + 8), (nearest.gy * 16 + 8) - (hobbit.y + 8));
-                        if (dist <= 24) {
-                            hobbit.state = 'idle';
-                            hobbit.path = [];
-                            
-                            const keyName = yieldMap[nearest.type];
-                            if (keyName && ITEM_TYPES[keyName]) {
-                                const harvestedItem = createItem(ITEM_TYPES[keyName]);
-                                hobbit.inventory.push(harvestedItem);
-                            }
-                            plants.delete(`${nearest.gx}_${nearest.gy}`);
-                            if (socket && socket.connected) {
-                                socket.emit('syncTile', { gx: nearest.gx, gy: nearest.gy, traits: 0 });
-                            }
-                        } else {
-                            if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
-                                hobbit.pathTimer = 2.0;
-                                const path = findPathToCoords(currTX, currTY, nearest.gx, nearest.gy, worldMatrix, roomMatrix, hobbit);
-                                if (path) {
-                                    hobbit.path = path;
-                                    hobbit.state = 'walking';
-                                } else {
-                                    // 🎯 THE FIX: Pathblocked fallback
-                                    assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                                    hobbit.goal = 'wander';
-                                    hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
-                                }
-                            }
-                        }
-                    } else {
-                        hobbit.goal = 'wander';
-                        if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
-                            hobbit.moveTimer -= modifier;
-                            if (hobbit.moveTimer <= 0) {
-                                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                                hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
-                                hobbit.moveTimer = 2 + Math.random() * 3;
                             }
                         }
                     }
@@ -1023,7 +768,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         hobbit.path = path;
                         hobbit.state = 'walking';
                     } else {
-                        // 🎯 THE FIX: Pathblocked fallback
                         assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
                         hobbit.goal = 'wander';
                         hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
@@ -1074,7 +818,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                     hobbit.path = path;
                                     hobbit.state = 'walking';
                                 } else {
-                                    // 🎯 THE FIX: Pathblocked fallback
                                     assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
                                     hobbit.goal = 'wander';
                                     hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
@@ -1134,7 +877,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 hobbit.path = path;
                                 hobbit.state = 'walking';
                             } else {
-                                // 🎯 THE FIX: Pathblocked fallback
                                 assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
                                 hobbit.goal = 'wander';
                                 hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
@@ -1158,7 +900,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 hobbit.path = path;
                                 hobbit.state = 'walking';
                             } else {
-                                // 🎯 THE FIX: Pathblocked fallback
                                 assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
                                 hobbit.goal = 'wander';
                                 hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
