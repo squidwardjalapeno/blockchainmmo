@@ -792,33 +792,65 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     hobbit.goal = 'sell_pm';
                     const counter = findNearestStoreCounter(hobbit);
                     if (counter) {
-                        // Stand in front of the counter (gy - 1) instead of on top of it, matching chest offsets
+                        // Resolve the store room ID and doorway coordinates dynamically
+                        const storeId = getTileData(counter.x * 16 + 8, counter.y * 16 + 8, worldMatrix, roomMatrix).roomID;
+                        const storeDoorX = counter.x - 1;
+                        const storeDoorY = counter.y + 2;
                         const standX = counter.x;
-                        const standY = counter.y + 1; 
+                        const standY = counter.y + 1;
 
-                        const dist = Math.hypot((standX * 16 + 8) - (hobbit.x + 8), (standY * 16 + 8) - (hobbit.y + 8));
-                        if (dist <= 24) {
-                            hobbit.state = 'idle';
-                            hobbit.path = [];
+                        // 🎯 HOUSE DOORWAY LOGIC: Check if we are already inside the General Store room
+                        if (roomID === storeId) {
+                            const dist = Math.hypot((standX * 16 + 8) - (hobbit.x + 8), (standY * 16 + 8) - (hobbit.y + 8));
+                            if (dist <= 24) {
+                                hobbit.state = 'idle';
+                                hobbit.path = [];
 
-                            const tradedMarket = tryHobbitTrade(hobbit, counter.x, counter.y);
+                                const tradedMarket = tryHobbitTrade(hobbit, counter.x, counter.y);
 
-                            if (!tradedMarket) {
-                                const keys = hobbit.inventory.filter(i => i.isKey);
-                                const pmCount = hobbit.inventory.filter(i => i.seedType === 'plant_matter').reduce((acc, i) => acc + (i.count || 1), 0);
-                                if (pmCount > 0) {
-                                    const cropList = ['egg', 'tomato_item', 'turnip_item', 'strawberry_item', 'corn_item', 'potato_item'];
-                                    const randomFood = cropList[Math.floor(Math.random() * cropList.length)];
-                                    const foodItem = createItem(ITEM_TYPES[randomFood.toUpperCase()]);
-                                    foodItem.count = pmCount;
-                                    hobbit.inventory = [...keys, foodItem];
-                                    console.log(`🏪 ${hobbit.name} (Forager) traded ${pmCount}x Plant Matter for food at General Store.`);
+                                if (!tradedMarket) {
+                                    const keys = hobbit.inventory.filter(i => i.isKey);
+                                    const pmCount = hobbit.inventory.filter(i => i.seedType === 'plant_matter').reduce((acc, i) => acc + (i.count || 1), 0);
+                                    if (pmCount > 0) {
+                                        const cropList = ['egg', 'tomato_item', 'turnip_item', 'strawberry_item', 'corn_item', 'potato_item'];
+                                        const randomFood = cropList[Math.floor(Math.random() * cropList.length)];
+                                        const foodItem = createItem(ITEM_TYPES[randomFood.toUpperCase()]);
+                                        foodItem.count = pmCount;
+                                        hobbit.inventory = [...keys, foodItem];
+                                        console.log(`🏪 ${hobbit.name} (Forager) traded ${pmCount}x Plant Matter for food at General Store.`);
+                                    }
+                                }
+                            } else {
+                                if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
+                                    hobbit.pathTimer = 2.0;
+                                    const path = findPathToCoords(currTX, currTY, standX, standY, worldMatrix, roomMatrix, hobbit);
+                                    if (path) {
+                                        hobbit.path = path;
+                                        hobbit.state = 'walking';
+                                    } else {
+                                        assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                                        hobbit.goal = 'wander';
+                                        hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
+                                    }
                                 }
                             }
-                        } else {
+                        } 
+                        // 🎯 HOUSE DOORWAY LOGIC: If standing exactly in the store doorway, step inside
+                        else if (currTX === storeDoorX && currTY === storeDoorY) {
+                            if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
+                                hobbit.path = [
+                                    { x: storeDoorX, y: storeDoorY - 1 }, // Step 1 tile inside
+                                    { x: standX, y: standY }              // Head to the counter stand tile
+                                ];
+                                hobbit.state = 'walking';
+                                console.log(`🚪 ${hobbit.name} is crossing the General Store doorway...`);
+                            }
+                        } 
+                        // 🎯 HOUSE DOORWAY LOGIC: Otherwise, pathfind to the store door first
+                        else {
                             if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
                                 hobbit.pathTimer = 2.0;
-                                const path = findPathToCoords(currTX, currTY, standX, standY, worldMatrix, roomMatrix, hobbit);
+                                const path = findPathToCoords(currTX, currTY, storeDoorX, storeDoorY, worldMatrix, roomMatrix, hobbit);
                                 if (path) {
                                     hobbit.path = path;
                                     hobbit.state = 'walking';
