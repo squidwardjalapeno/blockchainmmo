@@ -780,14 +780,15 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             // 🌾 DAYTIME TASK ALLOCATOR (Job Sensitive)
             // ==========================================
             if (hobbit.job === 'Forager') {
-                const hasLoot = hobbit.inventory.some(item => !item.isKey);
+                const hasPM = hobbit.inventory.some(i => i.seedType === 'plant_matter');
+                const hasOtherLoot = hobbit.inventory.some(i => !i.isKey && i.seedType !== 'plant_matter');
                 
                 const chestId = `chest_${hobbit.chestX}_${hobbit.chestY}`;
                 const chestItems = chestCache.get(chestId) || [];
                 const isChestFull = (chestItems.length >= 8);
 
-                // 🎯 THE TRADING LOOP: Trade on player-driven active store listings
-                if (hasLoot && isChestFull && hobbit.inventory.some(i => i.seedType === 'plant_matter')) {
+                // 🎯 State 1: We have Plant Matter and the chest is full -> Go trade it at the General Store!
+                if (hasPM && isChestFull) {
                     hobbit.goal = 'sell_pm';
                     const counter = findNearestStoreCounter(hobbit);
                     if (counter) {
@@ -826,7 +827,64 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
                     }
                 }
-                else if (hasLoot) {
+                // 🎯 State 2: Chest is full, but we have NO Plant Matter in inventory -> Go withdraw it from the home chest!
+                else if (isChestFull && !hasPM && !hasOtherLoot) {
+                    hobbit.goal = 'withdraw_pm';
+                    const depositTX = hobbit.chestX + 1;
+                    const depositTY = hobbit.chestY;
+
+                    if (currTX === depositTX && currTY === depositTY) {
+                        hobbit.state = 'idle';
+                        hobbit.path = [];
+
+                        if (!chestCache.has(chestId)) {
+                            if (socket && socket.connected) {
+                                socket.emit('requestChest', chestId);
+                            }
+                        } else {
+                            const pmIdx = chestItems.findIndex(i => i.seedType === 'plant_matter');
+                            if (pmIdx !== -1) {
+                                const pmItemInChest = chestItems[pmIdx];
+                                const amountToWithdraw = Math.min(4, pmItemInChest.count || 1);
+                                
+                                pmItemInChest.count -= amountToWithdraw;
+                                if (pmItemInChest.count <= 0) {
+                                    chestItems.splice(pmIdx, 1);
+                                }
+
+                                if (socket && socket.connected) {
+                                    socket.emit('updateChest', { chestId, items: chestItems });
+                                }
+
+                                const keys = hobbit.inventory.filter(i => i.isKey);
+                                const pmItemForHobbit = createItem(ITEM_TYPES.PLANT_MATTER);
+                                pmItemForHobbit.count = amountToWithdraw;
+                                hobbit.inventory = [...keys, pmItemForHobbit];
+                                
+                                console.log(`📦 ${hobbit.name} (Forager) withdrew ${amountToWithdraw}x Plant Matter from chest to go trade.`);
+                            } else {
+                                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                                hobbit.goal = 'wander';
+                                hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
+                            }
+                        }
+                    } else {
+                        if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
+                            hobbit.pathTimer = 2.0;
+                            const path = findPathToCoords(currTX, currTY, depositTX, depositTY, worldMatrix, roomMatrix, hobbit);
+                            if (path) {
+                                hobbit.path = path;
+                                hobbit.state = 'walking';
+                            } else {
+                                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                                hobbit.goal = 'wander';
+                                hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
+                            }
+                        }
+                    }
+                }
+                // 🎯 State 3: We have other loot (seeds/crops) to deposit, deposit normally
+                else if (hasOtherLoot || (hasPM && !isChestFull)) {
                     hobbit.goal = 'deposit';
                     const depositTX = hobbit.chestX + 1;
                     const depositTY = hobbit.chestY;
@@ -907,6 +965,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
                     }
                 }
+                // 🎯 State 4: Inventory is empty, chest is not full -> Harvest normally
                 else {
                     hobbit.goal = 'harvest';
 
