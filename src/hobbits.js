@@ -86,7 +86,7 @@ export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null, 
         
         // Explicitly target the door entrance
         doorX: houseId ? homeX - 1 : null,  // gx + 1
-        doorY: houseId ? homeY + 2 : null,  // gy + 1
+        doorY: houseId ? homeY + 1 : null,  // gy (🎯 THE FIX: Aligned with physical door tile)
         
         // Exact coordinate of the house chest
         chestX: houseId ? homeX - 2 : null, // gx
@@ -399,10 +399,11 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         const doorKey = `${hobbit.doorX}_${hobbit.doorY}`;
                         const doorState = doorStates.get(doorKey);
                         const isLocked = doorState ? doorState.locked : true;
+                        const distToDoor = Math.max(Math.abs(currTX - hobbit.doorX), Math.abs(currTY - hobbit.doorY));
 
                         if (!worldTime.isNight) {
                             if (isLocked) {
-                                if (currTX === hobbit.doorX && currTY === hobbit.doorY) {
+                                if (distToDoor <= 1) {
                                     if (socket && socket.connected) {
                                         socket.emit('setDoorLock', { gx: hobbit.doorX, gy: hobbit.doorY, locked: false });
                                     }
@@ -419,7 +420,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             }
                         } else {
                             if (!isLocked) {
-                                if (currTX === hobbit.doorX && currTY === hobbit.doorY) {
+                                if (distToDoor <= 1) {
                                     if (socket && socket.connected) {
                                         socket.emit('setDoorLock', { gx: hobbit.doorX, gy: hobbit.doorY, locked: true });
                                     }
@@ -589,11 +590,14 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             const doorState = doorStates.get(doorKey);
             const isLocked = doorState ? doorState.locked : true;
 
+            // 🎯 THE FIX: Within 1 tile distance tolerance
+            const distToDoor = Math.max(Math.abs(currTX - hobbit.doorX), Math.abs(currTY - hobbit.doorY));
+
             if (!worldTime.isNight) {
                 // Daytime: Ensure General Store is unlocked
                 if (isLocked) {
                     hobbit.goal = 'unlock_door';
-                    if (currTX === hobbit.doorX && currTY === hobbit.doorY) {
+                    if (distToDoor <= 1) {
                         hobbit.state = 'idle';
                         hobbit.path = [];
                         if (socket && socket.connected) {
@@ -625,7 +629,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 // Nighttime: Lock the General Store and head inside to sleep
                 if (!isLocked) {
                     hobbit.goal = 'lock_door';
-                    if (currTX === hobbit.doorX && currTY === hobbit.doorY) {
+                    if (distToDoor <= 1) {
                         hobbit.state = 'idle';
                         hobbit.path = [];
                         if (socket && socket.connected) {
