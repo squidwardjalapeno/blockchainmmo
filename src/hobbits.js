@@ -697,7 +697,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             targetDist = distToHero;
         }
 
-        // 🎯 THE FIX: Pathfinder Rate-Limiting Tick Down
+        // Pathfinder Rate-Limiting Tick Down
         if (hobbit.pathTimer > 0) {
             hobbit.pathTimer -= modifier;
         }
@@ -724,13 +724,18 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         else if (target && targetDist > 20) {
             hobbit.goal = 'engage';
             if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
-                hobbit.pathTimer = 2.0; // Put pathfinder on 2s cooldown
+                hobbit.pathTimer = 2.0; 
                 const tTX = Math.floor((target.x + 8) / 16);
                 const tTY = Math.floor((target.y + 8) / 16);
                 const path = findPathToCoords(currTX, currTY, tTX, tTY, worldMatrix, roomMatrix, hobbit);
                 if (path) {
                     hobbit.path = path;
                     hobbit.state = 'walking';
+                } else {
+                    // 🎯 THE FIX: Pathblocked fallback
+                    assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                    hobbit.goal = 'wander';
+                    hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
                 }
             }
         } 
@@ -758,6 +763,11 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             if (path) {
                                 hobbit.path = path;
                                 hobbit.state = 'walking';
+                            } else {
+                                // 🎯 THE FIX: Pathblocked fallback
+                                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                                hobbit.goal = 'wander';
+                                hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
                             }
                         }
                     }
@@ -789,6 +799,11 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             if (path) {
                                 hobbit.path = path;
                                 hobbit.state = 'walking';
+                            } else {
+                                // 🎯 THE FIX: Pathblocked fallback
+                                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                                hobbit.goal = 'wander';
+                                hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
                             }
                         }
                     }
@@ -804,6 +819,11 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             if (path) {
                                 hobbit.path = path;
                                 hobbit.state = 'walking';
+                            } else {
+                                // 🎯 THE FIX: Pathblocked fallback
+                                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                                hobbit.goal = 'wander';
+                                hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
                             }
                         }
                     }
@@ -822,11 +842,9 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         hobbit.state = 'idle';
                         hobbit.path = [];
                         
-                        // 🎯 THE FIX: Try player-driven active store listings first
                         const tradedMarket = tryHobbitTrade(hobbit, counter.x, counter.y);
                         
                         if (!tradedMarket) {
-                            // Fallback to local default simulation trade
                             const keys = hobbit.inventory.filter(i => i.isKey);
                             const foodCount = hobbit.inventory.filter(i => !i.isKey && i.seedType !== 'plant_matter').reduce((acc, i) => acc + (i.count || 1), 0);
                             if (foodCount > 0) {
@@ -843,6 +861,11 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             if (path) {
                                 hobbit.path = path;
                                 hobbit.state = 'walking';
+                            } else {
+                                // 🎯 THE FIX: Pathblocked fallback
+                                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                                hobbit.goal = 'wander';
+                                hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
                             }
                         }
                     }
@@ -885,6 +908,11 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         if (path) {
                             hobbit.path = path;
                             hobbit.state = 'walking';
+                        } else {
+                            // 🎯 THE FIX: Pathblocked fallback
+                            assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                            hobbit.goal = 'wander';
+                            hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
                         }
                     }
                 }
@@ -901,6 +929,12 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         const eggItem = createItem(ITEM_TYPES.EGG);
                         hobbit.inventory.push(eggItem);
                         
+                        // 🎯 THE FIX: Instantly clear egg tile locally to prevent double pickup loop
+                        const { data: chunkData, idx } = getBacteriaData(egg.gx, egg.gy);
+                        if (chunkData) {
+                            chunkData[idx] = 0;
+                        }
+
                         if (socket && socket.connected) {
                             socket.emit('syncTile', { gx: egg.gx, gy: egg.gy, traits: 0 });
                         }
@@ -912,7 +946,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 hobbit.path = path;
                                 hobbit.state = 'walking';
                             } else {
-                                // 🎯 THE FIX: Pathblocked fallback to wander to prevent lockups
+                                // 🎯 THE FIX: Pathblocked fallback
                                 assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
                                 hobbit.goal = 'wander';
                                 hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
@@ -988,6 +1022,11 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     if (path) {
                         hobbit.path = path;
                         hobbit.state = 'walking';
+                    } else {
+                        // 🎯 THE FIX: Pathblocked fallback
+                        assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                        hobbit.goal = 'wander';
+                        hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
                     }
                 }
             }
@@ -1013,11 +1052,9 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             hobbit.state = 'idle';
                             hobbit.path = [];
 
-                            // 🎯 THE FIX: Try to trade on active store listing first
                             const tradedMarket = tryHobbitTrade(hobbit, counter.x, counter.y);
 
                             if (!tradedMarket) {
-                                // Local fallback trade simulation
                                 const keys = hobbit.inventory.filter(i => i.isKey);
                                 const pmCount = hobbit.inventory.filter(i => i.seedType === 'plant_matter').reduce((acc, i) => acc + (i.count || 1), 0);
                                 if (pmCount > 0) {
@@ -1036,6 +1073,11 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 if (path) {
                                     hobbit.path = path;
                                     hobbit.state = 'walking';
+                                } else {
+                                    // 🎯 THE FIX: Pathblocked fallback
+                                    assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                                    hobbit.goal = 'wander';
+                                    hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
                                 }
                             }
                         }
@@ -1091,6 +1133,11 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             if (path) {
                                 hobbit.path = path;
                                 hobbit.state = 'walking';
+                            } else {
+                                // 🎯 THE FIX: Pathblocked fallback
+                                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                                hobbit.goal = 'wander';
+                                hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
                             }
                         }
                     }
@@ -1110,6 +1157,11 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             if (path) {
                                 hobbit.path = path;
                                 hobbit.state = 'walking';
+                            } else {
+                                // 🎯 THE FIX: Pathblocked fallback
+                                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                                hobbit.goal = 'wander';
+                                hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
                             }
                         }
                     }
