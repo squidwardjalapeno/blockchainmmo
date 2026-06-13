@@ -1792,7 +1792,6 @@ socket.on('requestActivityLog', () => {
         socket.emit('updateInventory', player.inventory);
     });
 
-    // Locate socket.on('requestChestTransfer') inside server.js and replace its logic with this:
     socket.on('requestChestTransfer', (data) => {
         const { chestId, index, direction } = data;
         const player = players[socket.id];
@@ -1813,9 +1812,15 @@ socket.on('requestActivityLog', () => {
             const item = player.inventory[index];
             if (!item) return;
 
+            // 🎯 THE FIX: Limit chest storage to 8 slots
+            if (chestItems.length >= 8) {
+                socket.emit('oreMessage', "This chest is full! Maximum 8 slots.");
+                return;
+            }
+
             player.inventory.splice(index, 1);
 
-            // 🎯 THE FIX: Try to merge with an existing stack in the chest first
+            // Try to merge with an existing stack in the chest first
             let merged = false;
             if (item.maxStack > 1) {
                 const existing = chestItems.find(i => i.seedType === item.seedType && i.count < item.maxStack);
@@ -1840,7 +1845,6 @@ socket.on('requestActivityLog', () => {
 
             chestItems.splice(index, 1);
 
-            // 🎯 THE FIX: Use our secure stacking helper to merge into player's backpack
             const success = giveItemToServerInventory(player, item);
             if (!success) {
                 chestItems.push(item); // Refund chest if backpack full
