@@ -787,12 +787,16 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 const chestItems = chestCache.get(chestId) || [];
                 const isChestFull = (chestItems.length >= 8);
 
-                // 🎯 State 1: We have Plant Matter and the chest is full -> Go trade it at the General Store!
-                if (hasPM && isChestFull) {
+                // 🎯 THE TRADING LOOP: Trade on player-driven active store listings
+                if (hasLoot && isChestFull && hobbit.inventory.some(i => i.seedType === 'plant_matter')) {
                     hobbit.goal = 'sell_pm';
                     const counter = findNearestStoreCounter(hobbit);
                     if (counter) {
-                        const dist = Math.hypot((counter.x * 16 + 8) - (hobbit.x + 8), (counter.y * 16 + 8) - (hobbit.y + 8));
+                        // 🎯 THE FIX: Stand in front of the counter (gy - 1) instead of on top of it, matching chest offsets
+                        const standX = counter.x;
+                        const standY = counter.y + 1; 
+
+                        const dist = Math.hypot((standX * 16 + 8) - (hobbit.x + 8), (standY * 16 + 8) - (hobbit.y + 8));
                         if (dist <= 24) {
                             hobbit.state = 'idle';
                             hobbit.path = [];
@@ -814,7 +818,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         } else {
                             if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
                                 hobbit.pathTimer = 2.0;
-                                const path = findPathToCoords(currTX, currTY, counter.x, counter.y, worldMatrix, roomMatrix, hobbit);
+                                const path = findPathToCoords(currTX, currTY, standX, standY, worldMatrix, roomMatrix, hobbit);
                                 if (path) {
                                     hobbit.path = path;
                                     hobbit.state = 'walking';
