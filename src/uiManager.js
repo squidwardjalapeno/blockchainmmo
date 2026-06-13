@@ -1107,7 +1107,12 @@ window.createListing = () => {
     const wantedType = document.getElementById('wanted-select').value;
     if (invIdx !== "" && wantedType) {
         const itemToOffer = hero.inventory.splice(invIdx, 1)[0]; 
+        
         socket.emit('createListing', { storeId: activeStoreId, wallet: playerWallet, offeredItem: itemToOffer, wantedType });
+        
+        // 🎯 THE FIX: Force the server to sync the deducted inventory immediately!
+        syncInventoryWithServer(); 
+        
         renderStoreUI(); 
     }
 };
