@@ -88,7 +88,8 @@ function tryHobbitTrade(hobbit, counterX, counterY) {
                     storeId,
                     listingId: match.id,
                     buyerWallet: playerWallet,
-                    paymentItem: createItem(ITEM_TYPES.PLANT_MATTER)
+                    paymentItem: createItem(ITEM_TYPES.PLANT_MATTER),
+                    isHobbit: true // 🎯 THE FIX: Mark that a hobbit is physically carrying the item away
                 });
             }
             return true;
@@ -919,7 +920,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
                     }
                 }
-                // 🎯 State 3: We have other loot (seeds/crops) to deposit, deposit normally
                 else if (hasOtherLoot || (hasPM && !isChestFull)) {
                     hobbit.goal = 'deposit';
                     const depositTX = hobbit.chestX + 1;
@@ -939,28 +939,31 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             const depositItems = hobbit.inventory.filter(item => !item.isKey);
                             const keyItems = hobbit.inventory.filter(item => item.isKey);
 
+                            // 🎯 THE FIX: Strictly limit deposit additions to 8 total chest slots
                             depositItems.forEach(dep => {
                                 const existing = chestItems.find(i => i.seedType === dep.seedType && i.count < (i.maxStack || 8));
                                 if (existing) {
                                     const space = (existing.maxStack || 8) - existing.count;
                                     if (dep.count <= space) {
                                         existing.count += dep.count;
+                                        hobbit.inventory = hobbit.inventory.filter(i => i !== dep);
                                     } else {
                                         existing.count = existing.maxStack || 8;
-                                        dep.count -= space;
-                                        chestItems.push(dep);
+                                        dep.count -= space; 
                                     }
                                 } else {
-                                    chestItems.push(dep);
+                                    if (chestItems.length < 8) {
+                                        chestItems.push(dep);
+                                        hobbit.inventory = hobbit.inventory.filter(i => i !== dep);
+                                    } else {
+                                        console.log("🔒 Chest is full! Remaining items kept in backpack.");
+                                    }
                                 }
                             });
 
                             if (socket && socket.connected) {
                                 socket.emit('updateChest', { chestId, items: chestItems });
                             }
-
-                            hobbit.inventory = keyItems; 
-                            console.log(`📦 Hobbit deposited harvest into house chest ${chestId}`);
                         }
                     }
                     else if (roomID === hobbit.houseId) {

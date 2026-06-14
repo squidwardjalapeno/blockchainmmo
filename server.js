@@ -1100,15 +1100,14 @@ socket.on('collectAnvil', (data) => {
     });
 
     socket.on('updateChest', (data) => {
-        // 1. Update the Server RAM
-        chestDb[data.chestId] = data.items;
-        
-        // 2. Write to disk
-        fs.writeFileSync('chests.json', JSON.stringify(chestDb, null, 2));
-
-        // 3. 📡 Broadcast to everyone ELSE in case they are looking in the same chest!
-        socket.broadcast.emit('chestUpdated', data);
-    });
+            // 🎯 THE FIX: Hard-cap chest storage array to 8 elements
+            if (data.items && data.items.length > 8) {
+                data.items = data.items.slice(0, 8);
+            }
+            chestDb[data.chestId] = data.items;
+            fs.writeFileSync('chests.json', JSON.stringify(chestDb, null, 2));
+            socket.broadcast.emit('chestUpdated', data);
+        });
 
     // ==========================================
     // 🆕 GENERAL STORE (TRADE COUNTER) SYSTEM
@@ -1136,26 +1135,31 @@ socket.on('collectAnvil', (data) => {
     });
 
     socket.on('buyListing', (data) => {
-        const { storeId, listingId, buyerWallet, paymentItem } = data;
-        const store = storeDb[storeId];
-        const listIdx = store.listings.findIndex(l => l.id === listingId);
-        
-        if (listIdx !== -1) {
-            const listing = store.listings[listIdx];
-            // 1. Move the listed item to the Buyer's storage
-            if (!store.storage[buyerWallet]) store.storage[buyerWallet] = [];
-            store.storage[buyerWallet].push(listing.offeredItem);
+            const { storeId, listingId, buyerWallet, paymentItem, isHobbit } = data;
+            const store = storeDb[storeId];
+            const listIdx = store.listings.findIndex(l => l.id === listingId);
             
-            // 2. Move the payment to the Seller's storage
-            if (!store.storage[listing.seller]) store.storage[listing.seller] = [];
-            store.storage[listing.seller].push(paymentItem);
+            if (listIdx !== -1) {
+                const listing = store.listings[listIdx];
+                
+                // 1. Move the listed item to the Buyer's storage ONLY if it's NOT a hobbit!
+                if (!isHobbit) {
+                    if (!store.storage[buyerWallet]) store.storage[buyerWallet] = [];
+                    store.storage[buyerWallet].push(listing.offeredItem);
+                }
+                
+                // 2. Move the payment to the Seller's storage
+                if (!store.storage[listing.seller]) store.storage[listing.seller] = [];
+                store.storage[listing.seller].push(paymentItem);
 
-            // 3. Remove listing
-            store.listings.splice(listIdx, 1);
-            saveStores();
-            io.emit('storeUpdated', { storeId, data: store });
-        }
-    });
+                // 3. Remove listing
+                store.listings.splice(listIdx, 1);
+                saveStores();
+                io.emit('storeUpdated', { storeId, data: store });
+            }
+        });
+
+        
 
     socket.on('makeCounterOffer', (data) => {
         const { storeId, listingId, buyerWallet, counterItem } = data;
