@@ -572,6 +572,9 @@ export function drawBarn(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, world
     // 3. LOGIC REGISTRY
     registerObject(gx + 3, gy - 1, 'HAY_STORAGE', { houseId: currentId });
     registerObject(gx + 1, gy - 1, 'HAY_TABLE', { houseId: currentId });
+
+    import('./hobbits.js').then(m => m.spawnHobbit(gx + 2, gy + 1, currentId, gx + 2, gy - 1, 'Farmer'));
+
 }
 
 // js/cellDecorator.js
