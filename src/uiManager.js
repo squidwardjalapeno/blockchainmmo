@@ -933,6 +933,8 @@ const typeNames = {
     "violet_seed": "Violet Seed",       // 👈 NEW
     "sunflower_seed": "Sunflower Seed", // 👈 NEW
 
+    "egg": "Farm Egg", // 🎯 THE FIX: Added Egg to store dictionary
+
     "turnip_item": "Turnip",
     "turnip_seed": "Turnip Seed",
 
