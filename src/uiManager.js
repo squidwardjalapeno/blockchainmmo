@@ -132,8 +132,7 @@ export function handleRemoteAnvilUpdate(jobId, data) {
 }
 
 const VALID_FOOD_TYPES = ["fish", "cooked_fish", "grass_item"];
-const VALID_HAY_TYPES = ["hay"]; 
-
+const VALID_HAY_TYPES = ["hay", "plant_matter"]; // 🎯 THE FIX: Add plant_matter to the valid hay storage list
 // ==========================================
 // 🆕 PALADIN SKILLS DATABASE
 // ==========================================
@@ -327,6 +326,7 @@ export function initUI() {
         activeHayStorageId = null; 
     });
 
+    // --- HAY STORAGE UNLOAD BUTTON ---
     document.getElementById('unload-hay-btn').addEventListener('click', () => {
         if (!activeHayStorageId || hero.inventory.length === 0) return;
         
@@ -334,7 +334,7 @@ export function initUI() {
         const otherItems = hero.inventory.filter(i => !VALID_HAY_TYPES.includes(i.seedType));
 
         if (hayItems.length === 0) {
-            alert("No hay in backpack to unload!");
+            alert("No Hay or Plant Matter in backpack to unload!");
             return;
         }
 
@@ -1688,10 +1688,10 @@ function transferHayStorageItem(index, source) {
     if (source === 'hero-hay') {
         const item = hero.inventory[index];
         if (!VALID_HAY_TYPES.includes(item.seedType)) {
-            alert("Only Dried Hay can be stored here!");
+            alert("Only Dried Hay or Plant Matter can be stored here!");
             return;
         }
-        // 🎯 THE SECURE FIX: Send hay-transfer requests
+        // Send transfer request to server
         if (socket) socket.emit('requestHayTransfer', { hayStorageId: activeHayStorageId, index: index, direction: 'to_storage' });
     } else {
         if (socket) socket.emit('requestHayTransfer', { hayStorageId: activeHayStorageId, index: index, direction: 'to_hero' });

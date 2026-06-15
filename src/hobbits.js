@@ -18,6 +18,8 @@ const HOBBIT_LAST_NAMES = ["Baggins", "Gamgee", "Brandybuck", "Took", "Gardner",
 
 export const storeDbCache = new Map(); // Dynamic network mirrors of store data
 
+export const hayStorageCache = new Map(); // Dynamic network mirrors of hay storage
+
 if (typeof window !== 'undefined') {
     import('./multiplayer.js').then(m => {
         const checkSocket = setInterval(() => {
@@ -29,12 +31,18 @@ if (typeof window !== 'undefined') {
                 m.socket.on('chestUpdated', (data) => {
                     chestCache.set(data.chestId, data.items);
                 });
-                // 🎯 THE FIX: Dynamically track store inventories
                 m.socket.on('storeData', (data) => {
                     storeDbCache.set(data.storeId, data.data);
                 });
                 m.socket.on('storeUpdated', (data) => {
                     storeDbCache.set(data.storeId, data.data);
+                });
+                // 🎯 THE FIX: Dynamically cache Hay Storage inventories
+                m.socket.on('hayStorageData', (data) => {
+                    hayStorageCache.set(data.hayStorageId, data.items);
+                });
+                m.socket.on('hayStorageUpdated', (data) => {
+                    hayStorageCache.set(data.hayStorageId, data.items);
                 });
             }
         }, 100);
@@ -59,15 +67,29 @@ function findNearestStoreCounter(hobbit, range = 500) {
     return nearest;
 }
 
-// Search for dropped chicken eggs nearby
-function findNearestEgg(hobbit, range = 160) {
+// Locate the Hay Storage object registered for this hobbit's Barn
+function findHomeHayStorage(hobbit) {
+    if (!hobbit.houseId) return null;
+    for (let [key, obj] of staticObjects) {
+        if (obj.type === 'HAY_STORAGE' && obj.houseId === hobbit.houseId) {
+            const tx = Math.floor(key / 10000);
+            const ty = key % 10000;
+            return { x: tx, y: ty };
+        }
+    }
+    return null;
+}
+
+// Search for dropped chicken eggs in a broad 25-tile radius
+function findNearestEgg(hobbit, range = 400) {
     const currTX = Math.floor((hobbit.x + 8) / 16);
     const currTY = Math.floor((hobbit.y + 8) / 16);
     let nearest = null;
     let minDist = Infinity;
 
-    for (let ox = -10; ox <= 10; ox++) {
-        for (let oy = -10; oy <= 10; oy++) {
+    // 🎯 THE FIX: Expanded loop from 10 to 25 tiles to cover the entire pasture/ranch
+    for (let ox = -25; ox <= 25; ox++) {
+        for (let oy = -25; oy <= 25; oy++) {
             const tx = currTX + ox;
             const ty = currTY + oy;
             const bac = getBacteriaData(tx, ty);
@@ -88,7 +110,6 @@ function findNearestEgg(hobbit, range = 160) {
     }
     return nearest;
 }
-
 // Filter mature harvests to agricultural/farm crops only
 function findNearestMatureFarmCrop(hobbit, range = 160) {
     let nearest = null;
@@ -904,58 +925,78 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     }
                 }
             }
-            // B. If carrying plant matter, head back to Barn to deposit it!
-            else if (hobbit.inventory.some(item => item.seedType === 'plant_matter')) {
+            // 🎯 B. If carrying plant matter, head back to Barn to deposit it into the Hay Storage!
+            else if (hasPM) {
                 hobbit.goal = 'deposit_pm';
-                const depositTX = hobbit.chestX + 1;
-                const depositTY = hobbit.chestY;
+                const storage = findHomeHayStorage(hobbit);
 
-                // 🎯 DOORWAY LOGIC: Standing on the barn doorway? Step inside
-                if (currTX === hobbit.doorX && currTY === hobbit.doorY) {
-                    if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
-                        hobbit.path = [
-                            { x: hobbit.doorX, y: hobbit.doorY - 1 },
-                            { x: hobbit.homeX, y: hobbit.homeY }
-                        ];
-                        hobbit.state = 'walking';
+                if (storage) {
+                    const depositTX = storage.x;
+                    const depositTY = storage.y;
+
+                    // DOORWAY LOGIC: Standing on the barn doorway? Step inside
+                    if (currTX === hobbit.doorX && currTY === hobbit.doorY) {
+                        if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
+                            hobbit.path = [
+                                { x: hobbit.doorX, y: hobbit.doorY - 1 },
+                                { x: hobbit.homeX, y: hobbit.homeY }
+                            ];
+                            hobbit.state = 'walking';
+                        }
                     }
-                }
-                // Inside the Barn? Walk to chest
-                else if (roomID === hobbit.houseId) {
-                    if (currTX === depositTX && currTY === depositTY) {
-                        hobbit.state = 'idle';
-                        hobbit.path = [];
+                    // Inside the Barn? Walk to Hay Storage
+                    else if (roomID === hobbit.houseId) {
+                        const dist = Math.hypot((depositTX * 16 + 8) - (hobbit.x + 8), (depositTY * 16 + 8) - (hobbit.y + 8));
+                        if (dist <= 24) {
+                            hobbit.state = 'idle';
+                            hobbit.path = [];
 
-                        const chestId = `chest_${hobbit.chestX}_${hobbit.chestY}`;
-                        if (!chestCache.has(chestId)) {
-                            if (socket && socket.connected) socket.emit('requestChest', chestId);
-                        } else {
-                            const chestItems = chestCache.get(chestId) || [];
-                            const pmItem = hobbit.inventory.find(i => i.seedType === 'plant_matter');
-                            const keys = hobbit.inventory.filter(i => i.isKey);
+                            const storageId = `hay_${depositTX}_${depositTY}`;
+                            if (!hayStorageCache.has(storageId)) {
+                                if (socket && socket.connected) socket.emit('requestHayStorage', storageId);
+                            } else {
+                                const hayItems = hayStorageCache.get(storageId) || [];
+                                const pmItem = hobbit.inventory.find(i => i.seedType === 'plant_matter');
+                                const keys = hobbit.inventory.filter(i => i.isKey);
 
-                            if (pmItem) {
-                                const existing = chestItems.find(i => i.seedType === 'plant_matter' && i.count < (i.maxStack || 8));
-                                if (existing) {
-                                    existing.count = Math.min(existing.maxStack || 8, existing.count + pmItem.count);
-                                    hobbit.inventory = hobbit.inventory.filter(i => i !== pmItem);
-                                } else {
-                                    if (chestItems.length < 8) {
-                                        chestItems.push(pmItem);
+                                if (pmItem) {
+                                    const existing = hayItems.find(i => i.seedType === 'plant_matter' && i.count < (i.maxStack || 64));
+                                    if (existing) {
+                                        existing.count += pmItem.count;
                                         hobbit.inventory = hobbit.inventory.filter(i => i !== pmItem);
                                     } else {
-                                        console.log("🔒 Barn chest is full! Plant Matter kept in backpack.");
+                                        if (hayItems.length < 8) {
+                                            hayItems.push(pmItem);
+                                            hobbit.inventory = hobbit.inventory.filter(i => i !== pmItem);
+                                        } else {
+                                            console.log("🔒 Barn Hay Storage is full! Leftovers kept in backpack.");
+                                        }
                                     }
                                 }
+                                if (socket && socket.connected) {
+                                    socket.emit('updateHayStorage', { hayStorageId: storageId, items: hayItems });
+                                }
                             }
-                            if (socket && socket.connected) {
-                                socket.emit('updateChest', { chestId, items: chestItems });
+                        } else {
+                            if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
+                                hobbit.pathTimer = 2.0;
+                                const path = findPathToCoords(currTX, currTY, depositTX, depositTY, worldMatrix, roomMatrix, hobbit);
+                                if (path) {
+                                    hobbit.path = path;
+                                    hobbit.state = 'walking';
+                                } else {
+                                    assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                                    hobbit.goal = 'wander';
+                                    hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
+                                }
                             }
                         }
-                    } else {
+                    } 
+                    // Outside? Walk to the barn door first!
+                    else {
                         if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
                             hobbit.pathTimer = 2.0;
-                            const path = findPathToCoords(currTX, currTY, depositTX, depositTY, worldMatrix, roomMatrix, hobbit);
+                            const path = findPathToCoords(currTX, currTY, hobbit.doorX, hobbit.doorY, worldMatrix, roomMatrix, hobbit);
                             if (path) {
                                 hobbit.path = path;
                                 hobbit.state = 'walking';
@@ -964,21 +1005,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 hobbit.goal = 'wander';
                                 hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
                             }
-                        }
-                    }
-                } 
-                // Outside? Walk to the barn door first!
-                else {
-                    if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
-                        hobbit.pathTimer = 2.0;
-                        const path = findPathToCoords(currTX, currTY, hobbit.doorX, hobbit.doorY, worldMatrix, roomMatrix, hobbit);
-                        if (path) {
-                            hobbit.path = path;
-                            hobbit.state = 'walking';
-                        } else {
-                            assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                            hobbit.goal = 'wander';
-                            hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
                         }
                     }
                 }

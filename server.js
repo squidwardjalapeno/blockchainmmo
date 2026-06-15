@@ -1909,7 +1909,8 @@ socket.on('requestActivityLog', () => {
 
         if (direction === 'to_storage') {
             const item = player.inventory[index];
-            if (!item || item.seedType !== 'hay') return;
+            // 🎯 THE FIX: Allow both 'hay' and 'plant_matter' to be transferred to the storage
+            if (!item || (item.seedType !== 'hay' && item.seedType !== 'plant_matter')) return;
 
             player.inventory.splice(index, 1);
             hayItems.push(item);
