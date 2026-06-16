@@ -60,8 +60,8 @@ const yieldMap = {
 // 🧠 SEARCH & TRADE HELPERS
 // ==========================================
 
-// Search for the nearest General Store trade counter
-function findNearestStoreCounter(hobbit, range = 500) {
+// Search for the nearest General Store trade counter in a broad regional radius
+function findNearestStoreCounter(hobbit, range = 3200) { // 🎯 THE FIX: Expanded from 500 to 3200px
     let nearest = null;
     let minDist = range;
     for (let [key, obj] of staticObjects) {
@@ -816,6 +816,14 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     const standX = counter.x;
                     const standY = counter.y + 1;
 
+                    // 🎯 THE FIX: Automatically request General Store database state before arriving
+                    const storeDataId = `store_${counter.x}_${counter.y}`;
+                    if (!storeDbCache.has(storeDataId)) {
+                        if (socket && socket.connected) {
+                            socket.emit('requestStore', storeDataId);
+                        }
+                    }
+
                     // DOORWAY LOGIC: Inside the store? Go straight to the counter
                     if (roomID === storeId) {
                         const dist = Math.hypot((standX * 16 + 8) - (hobbit.x + 8), (standY * 16 + 8) - (hobbit.y + 8));
@@ -961,7 +969,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     }
                 }
             }
-            // C. Empty-handed: actively search for eggs or wait at Barn
+            // C. Empty-handed: actively search for eggs!
             else {
                 const egg = findNearestEgg(hobbit);
                 if (egg) {
@@ -997,45 +1005,13 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
                     }
                 } else {
-                    // 🎯 THE FIX: No eggs to collect? Go wait patiently inside the Barn instead of wandering overworld
-                    hobbit.goal = 'wait_at_barn';
-                    if (currTX === hobbit.homeX && currTY === hobbit.homeY) {
-                        hobbit.state = 'idle';
-                        hobbit.path = [];
-                    } else {
-                        // Standard doorway routing to go inside the Barn
-                        if (currTX === hobbit.doorX && currTY === hobbit.doorY) {
-                            if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
-                                hobbit.path = [
-                                    { x: hobbit.doorX, y: hobbit.doorY - 1 },
-                                    { x: hobbit.homeX, y: hobbit.homeY }
-                                ];
-                                hobbit.state = 'walking';
-                            }
-                        } else if (roomID === hobbit.houseId) {
-                            if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
-                                hobbit.pathTimer = 2.0;
-                                const path = findPathToCoords(currTX, currTY, hobbit.homeX, hobbit.homeY, worldMatrix, roomMatrix, hobbit);
-                                if (path) {
-                                    hobbit.path = path;
-                                    hobbit.state = 'walking';
-                                } else {
-                                    assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                                    hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
-                                }
-                            }
-                        } else {
-                            if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
-                                hobbit.pathTimer = 2.0;
-                                const path = findPathToCoords(currTX, currTY, hobbit.doorX, hobbit.doorY, worldMatrix, roomMatrix, hobbit);
-                                if (path) {
-                                    hobbit.path = path;
-                                    hobbit.state = 'walking';
-                                } else {
-                                    assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                                    hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
-                                }
-                            }
+                    hobbit.goal = 'wander';
+                    if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
+                        hobbit.moveTimer -= modifier;
+                        if (hobbit.moveTimer <= 0) {
+                            assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                            hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
+                            hobbit.moveTimer = 2 + Math.random() * 3;
                         }
                     }
                 }
@@ -1093,6 +1069,14 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         const storeDoorY = counter.y + 2;
                         const standX = counter.x;
                         const standY = counter.y + 1;
+
+                        // 🎯 THE FIX: Automatically request General Store database state before arriving
+                        const storeDataId = `store_${counter.x}_${counter.y}`;
+                        if (!storeDbCache.has(storeDataId)) {
+                            if (socket && socket.connected) {
+                                socket.emit('requestStore', storeDataId);
+                            }
+                        }
 
                         // 🎯 DOORWAY LOGIC: Inside the store? Go straight to the counter
                         if (roomID === storeId) {
