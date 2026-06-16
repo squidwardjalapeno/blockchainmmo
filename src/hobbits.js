@@ -784,7 +784,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     const standX = counter.x;
                     const standY = counter.y + 1;
 
-                    // 🎯 THE FIX: Automatically request General Store database state before arriving
+                    // 🎯 THE FIX: Automatically request General Store database state before arriving on a 2s cooldown
                     const storeDataId = `store_${counter.x}_${counter.y}`;
                     if (!storeDbCache.has(storeDataId)) {
                         if (socket && socket.connected) {
@@ -799,6 +799,14 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             hobbit.state = 'idle';
                             hobbit.path = [];
                             
+                            // 🎯 THE FIX: Forcefully request fresh real-time store data on a 2s cooldown
+                            if (hobbit.pathTimer <= 0) {
+                                hobbit.pathTimer = 2.0; 
+                                if (socket && socket.connected) {
+                                    socket.emit('requestStore', storeDataId);
+                                }
+                            }
+
                             const tradedMarket = tryHobbitTrade(hobbit, counter.x, counter.y);
                             
                             if (!tradedMarket) {
@@ -1052,6 +1060,14 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             if (dist <= 24) {
                                 hobbit.state = 'idle';
                                 hobbit.path = [];
+
+                                // 🎯 THE FIX: Query the server for fresh ledger updates on a 2s cooldown
+                                if (hobbit.pathTimer <= 0) {
+                                    hobbit.pathTimer = 2.0;
+                                    if (socket && socket.connected) {
+                                        socket.emit('requestStore', storeDataId);
+                                    }
+                                }
 
                                 const tradedMarket = tryHobbitTrade(hobbit, counter.x, counter.y);
 
