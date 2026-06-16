@@ -3,7 +3,7 @@ import { viewport } from './viewport.js';
 import { moveEntity, getTileData } from './physics.js'; 
 import { hero } from './entities.js'; 
 import { getObjectAt, staticObjects, solidTiles } from './staticObjects.js';
-import { socket, doorStates, playerWallet } from './multiplayer.js';
+import { socket, doorStates, storeDbCache, playerWallet } from './multiplayer.js'; 
 import { worldTime } from './clock.js'; 
 import { plants, PLANT_DEFS, createPlant } from './plants.js';
 import { ITEM_TYPES, createItem } from './items.js';
@@ -11,15 +11,13 @@ import { getBacteriaData } from './bacteria.js';
 
 export const hobbits = [];
 export const chestCache = new Map(); // Dynamic network mirrors of chest inventories
+export const hayStorageCache = new Map(); // Dynamic network mirrors of hay storage
+export const storeDbCache = new Map(); // Dynamic network mirrors of store data
 
-// Add these arrays to the top of src/hobbits.js:
 const HOBBIT_FIRST_NAMES = ["Bilbo", "Frodo", "Samwise", "Merry", "Pippin", "Bango", "Bungo", "Drogo", "Hamfast", "Longo", "Olo", "Paladin", "Rufus", "Sancho", "Tobold", "Wilibald"];
 const HOBBIT_LAST_NAMES = ["Baggins", "Gamgee", "Brandybuck", "Took", "Gardner", "Greenhand", "Grubb", "Chubb", "Proudfoot", "Bolger", "Boffin", "Sandyman", "Cotton", "Twofoot", "Underhill", "Hornblower"];
 
-export const storeDbCache = new Map(); // Dynamic network mirrors of store data
-
-export const hayStorageCache = new Map(); // Dynamic network mirrors of hay storage
-
+// Securely tap into the socket connection to cache inventories in real time
 if (typeof window !== 'undefined') {
     import('./multiplayer.js').then(m => {
         const checkSocket = setInterval(() => {
@@ -37,7 +35,6 @@ if (typeof window !== 'undefined') {
                 m.socket.on('storeUpdated', (data) => {
                     storeDbCache.set(data.storeId, data.data);
                 });
-                // 🎯 THE FIX: Dynamically cache Hay Storage inventories
                 m.socket.on('hayStorageData', (data) => {
                     hayStorageCache.set(data.hayStorageId, data.items);
                 });
@@ -48,6 +45,20 @@ if (typeof window !== 'undefined') {
         }, 100);
     });
 }
+
+const yieldMap = {
+    'turnip': 'TURNIP_ITEM', 'tomato': 'TOMATO_ITEM',
+    'eggplant': 'EGGPLANT_ITEM', 'strawberry': 'STRAWBERRY_ITEM',
+    'pumpkin': 'PUMPKIN_ITEM', 'watermelon': 'WATERMELON_ITEM',
+    'corn': 'CORN_ITEM', 'pineapple': 'PINEAPPLE_ITEM',
+    'potato': 'POTATO_ITEM', 'wheat': 'WHEAT_ITEM',
+    'grass': 'PLANT_MATTER', 'rose': 'PLANT_MATTER',
+    'violet': 'PLANT_MATTER', 'sunflower': 'PLANT_MATTER'
+};
+
+// ==========================================
+// 🧠 SEARCH & TRADE HELPERS
+// ==========================================
 
 // Search for the nearest General Store trade counter
 function findNearestStoreCounter(hobbit, range = 500) {
@@ -87,7 +98,6 @@ function findNearestEgg(hobbit, range = 400) {
     let nearest = null;
     let minDist = Infinity;
 
-    // 🎯 THE FIX: Expanded loop from 10 to 25 tiles to cover the entire pasture/ranch
     for (let ox = -25; ox <= 25; ox++) {
         for (let oy = -25; oy <= 25; oy++) {
             const tx = currTX + ox;
@@ -97,7 +107,7 @@ function findNearestEgg(hobbit, range = 400) {
                 const traits = bac.data[bac.idx];
                 if (traits > 0) {
                     const typeID = (traits >> 20) & 0xFF;
-                    if (typeID === 16) { // Egg TypeID
+                    if (typeID === 16) { // Egg
                         const dist = Math.hypot((tx * 16 + 8) - (hobbit.x + 8), (ty * 16 + 8) - (hobbit.y + 8));
                         if (dist < range && dist < minDist) {
                             minDist = dist;
@@ -106,25 +116,6 @@ function findNearestEgg(hobbit, range = 400) {
                     }
                 }
             }
-        }
-    }
-    return nearest;
-}
-// Filter mature harvests to agricultural/farm crops only
-function findNearestMatureFarmCrop(hobbit, range = 160) {
-    let nearest = null;
-    let minDist = Infinity;
-    const farmCrops = ['turnip', 'tomato', 'eggplant', 'strawberry', 'pumpkin', 'watermelon', 'corn', 'pineapple', 'potato', 'wheat'];
-
-    for (let [key, plant] of plants) {
-        if (!farmCrops.includes(plant.type)) continue;
-        const px = plant.gx * 16 + 8;
-        const py = plant.gy * 16 + 8;
-        const dist = Math.hypot(px - hobbit.x, py - hobbit.y);
-        
-        if (dist < range && dist < minDist && plant.growth >= 100) {
-            minDist = dist;
-            nearest = plant;
         }
     }
     return nearest;
@@ -166,53 +157,111 @@ function tryHobbitTrade(hobbit, counterX, counterY) {
             return true;
         }
     } 
-    else if (hobbit.job === 'Farmer') {
-        // 🎯 THE FIX: Farmer buys PLANT_MATTER from market using FOOD
-        const foodItem = hobbit.inventory.find(i => !i.isKey && i.seedType !== 'plant_matter');
-        if (foodItem) {
-            const match = storeData.listings.find(l => 
-                l.wantedType === foodItem.seedType && 
-                l.offeredItem.seedType === 'plant_matter'
-            );
-
-            if (match) {
-                foodItem.count--;
-                if (foodItem.count <= 0) {
-                    hobbit.inventory = hobbit.inventory.filter(i => i !== foodItem);
-                }
-
-                const pmItem = createItem(ITEM_TYPES.PLANT_MATTER);
-                hobbit.inventory.push(pmItem);
-
-                if (socket && socket.connected) {
-                    socket.emit('buyListing', {
-                        storeId,
-                        listingId: match.id,
-                        buyerWallet: playerWallet,
-                        paymentItem: createItem(ITEM_TYPES[foodItem.seedType.toUpperCase()]),
-                        isHobbit: true
-                    });
-                }
-                return true;
-            }
-        }
-    }
     return false;
 }
 
-const yieldMap = {
-    'turnip': 'TURNIP_ITEM', 'tomato': 'TOMATO_ITEM',
-    'eggplant': 'EGGPLANT_ITEM', 'strawberry': 'STRAWBERRY_ITEM',
-    'pumpkin': 'PUMPKIN_ITEM', 'watermelon': 'WATERMELON_ITEM',
-    'corn': 'CORN_ITEM', 'pineapple': 'PINEAPPLE_ITEM',
-    'potato': 'POTATO_ITEM', 'wheat': 'WHEAT_ITEM',
-    'grass': 'PLANT_MATTER', 'rose': 'PLANT_MATTER',
-    'violet': 'PLANT_MATTER', 'sunflower': 'PLANT_MATTER'
-};
+// ==========================================
+// 🚶 PATHFINDING & WALKING UTILITIES
+// ==========================================
+
+function isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix, hobbit = null, fromX = null, fromY = null) {
+    if (solidTiles.has(`${tx}_${ty}`)) return false;
+
+    const obj = getObjectAt(tx, ty);
+    if (obj && obj.type === 'FOREST_TREE') return false;
+    const leftObj = getObjectAt(tx - 1, ty);
+    if (leftObj && leftObj.type === 'FOREST_TREE') return false;
+
+    const data = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix);
+    if (!data || data.tileID === undefined) return false;
+
+    const absoluteWalls = [40, 50, 52, 1, 3, 5, 41, 43, 27, 46, 47, 17, 18, 19, 21, 24];
+    if (absoluteWalls.includes(data.tileID)) return false;
+
+    if (fromX !== null && fromY !== null) {
+        const fromData = getTileData(fromX * 16 + 8, fromY * 16 + 8, worldMatrix, roomMatrix);
+        const cRoom = (fromData.roomID === 9999) ? 0 : fromData.roomID;
+        const tRoom = (data.roomID === 9999) ? 0 : data.roomID;
+        
+        if (cRoom !== tRoom) {
+            const doors = [35, 13, 23, 20, 49, 12, 22, 19];
+            if (!doors.includes(data.tileID) && !doors.includes(fromData.tileID)) {
+                return false; 
+            }
+        }
+    }
+
+    return true;
+}
+
+function assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix) {
+    const dirs = [[0,-1], [0,1], [-1,0], [1,0]];
+    const valid = dirs.filter(d => isWalkableForHobbit(currTX + d[0], currTY + d[1], worldMatrix, roomMatrix, hobbit));
+    if (valid.length > 0) {
+        const pick = valid[Math.floor(Math.random() * valid.length)];
+        hobbit.path = [{ x: currTX + pick[0], y: currTY + pick[1] }];
+    }
+}
+
+function findPathToCoords(startTX, startTY, targetTX, targetTY, worldMatrix, roomMatrix, hobbit = null) {
+    const queue = [{ x: startTX, y: startTY, path: [] }];
+    const visited = new Set([`${startTX}_${startTY}`]);
+    const maxDepth = 40; 
+
+    while (queue.length > 0) {
+        const curr = queue.shift();
+
+        if (curr.x === targetTX && curr.y === targetTY) {
+            return curr.path;
+        }
+
+        if (curr.path.length >= maxDepth) continue;
+
+        const neighbors = [
+            { x: curr.x, y: curr.y - 1 }, { x: curr.x, y: curr.y + 1 },
+            { x: curr.x - 1, y: curr.y }, { x: curr.x + 1, y: curr.y }
+        ];
+
+        for (let n of neighbors) {
+            const key = `${n.x}_${n.y}`;
+            if (!visited.has(key)) {
+                visited.add(key);
+                if (isWalkableForHobbit(n.x, n.y, worldMatrix, roomMatrix, hobbit, curr.x, curr.y)) {
+                    queue.push({ x: n.x, y: n.y, path: [...curr.path, { x: n.x, y: n.y }] });
+                }
+            }
+        }
+    }
+    return null;
+}
+
+function findNearestMaturePlant(hobbit, range = 160) {
+    let nearest = null;
+    let minDist = Infinity;
+    
+    for (let [key, plant] of plants) {
+        const px = plant.gx * 16 + 8;
+        const py = plant.gy * 16 + 8;
+        const dist = Math.hypot(px - hobbit.x, py - hobbit.y);
+        
+        if (dist < range && dist < minDist) {
+            const def = PLANT_DEFS[plant.type];
+            if (def) {
+                if (plant.growth >= 100) {
+                    minDist = dist;
+                    nearest = plant;
+                }
+            }
+        }
+    }
+    return nearest;
+}
+
+// ==========================================
+// 🤝 HOBBIT SPAWNING
+// ==========================================
 
 export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null, defaultJob = 'Forager') {
-
-    // Generate deterministic name using coordinate-based hashing
     const seed = (gx * 31) + gy;
     const hash = Math.abs(Math.sin(seed) * 10000);
     const firstName = HOBBIT_FIRST_NAMES[Math.floor(hash) % HOBBIT_FIRST_NAMES.length];
@@ -269,7 +318,7 @@ export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null, 
         frame: 0,
         animTimer: 0,
         moveTimer: Math.random() * 3,
-        pathTimer: 0,      // 🎯 THE FIX: Pathfinder cooldown timer
+        pathTimer: 0,      
         attackTimer: 0,    
         path: [],
         targetPlant: null, 
@@ -278,116 +327,16 @@ export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null, 
     });
 }
 
-// Replace isWalkableForHobbit inside src/hobbits.js:
-function isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix, hobbit = null, fromX = null, fromY = null) {
-    if (solidTiles.has(`${tx}_${ty}`)) return false;
-
-    const obj = getObjectAt(tx, ty);
-    if (obj && obj.type === 'FOREST_TREE') return false;
-    const leftObj = getObjectAt(tx - 1, ty);
-    if (leftObj && leftObj.type === 'FOREST_TREE') return false;
-
-    const data = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix);
-    if (!data || data.tileID === undefined) return false;
-
-    // Solid wall tiles must ALWAYS block pathfinding to force doorway usage
-    const absoluteWalls = [40, 50, 52, 1, 3, 5, 41, 43, 27, 46, 47, 17, 18, 19, 21, 24];
-    if (absoluteWalls.includes(data.tileID)) return false;
-
-    // 🎯 THE FIX: Force the pathfinder to respect room boundaries, matching physics.js
-    if (fromX !== null && fromY !== null) {
-        const fromData = getTileData(fromX * 16 + 8, fromY * 16 + 8, worldMatrix, roomMatrix);
-        const cRoom = (fromData.roomID === 9999) ? 0 : fromData.roomID;
-        const tRoom = (data.roomID === 9999) ? 0 : data.roomID;
-        
-        if (cRoom !== tRoom) {
-            const doors = [35, 13, 23, 20, 49, 12, 22, 19];
-            if (!doors.includes(data.tileID) && !doors.includes(fromData.tileID)) {
-                return false; 
-            }
-        }
-    }
-
-    return true;
-}
-// Update assignRandomWalk inside src/hobbits.js:
-function assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix) {
-    const dirs = [[0,-1], [0,1], [-1,0], [1,0]];
-    const valid = dirs.filter(d => isWalkableForHobbit(currTX + d[0], currTY + d[1], worldMatrix, roomMatrix, hobbit));
-    if (valid.length > 0) {
-        const pick = valid[Math.floor(Math.random() * valid.length)];
-        hobbit.path = [{ x: currTX + pick[0], y: currTY + pick[1] }];
-    }
-}
-
-// Update findPathToCoords inside src/hobbits.js:
-function findPathToCoords(startTX, startTY, targetTX, targetTY, worldMatrix, roomMatrix, hobbit = null) {
-    const queue = [{ x: startTX, y: startTY, path: [] }];
-    const visited = new Set([`${startTX}_${startTY}`]);
-    const maxDepth = 40; 
-
-    while (queue.length > 0) {
-        const curr = queue.shift();
-
-        if (curr.x === targetTX && curr.y === targetTY) {
-            return curr.path;
-        }
-
-        if (curr.path.length >= maxDepth) continue;
-
-        const neighbors = [
-            { x: curr.x, y: curr.y - 1 }, { x: curr.x, y: curr.y + 1 },
-            { x: curr.x - 1, y: curr.y }, { x: curr.x + 1, y: curr.y }
-        ];
-
-        // Update only the neighbor-loop block inside findPathToCoords in src/hobbits.js:
-        for (let n of neighbors) {
-            const key = `${n.x}_${n.y}`;
-            if (!visited.has(key)) {
-                visited.add(key);
-                // 🎯 THE FIX: Pass curr.x, curr.y as the fromX, fromY parameters to evaluate boundaries
-                if (isWalkableForHobbit(n.x, n.y, worldMatrix, roomMatrix, hobbit, curr.x, curr.y)) {
-                    queue.push({ x: n.x, y: n.y, path: [...curr.path, { x: n.x, y: n.y }] });
-                }
-            }
-        }
-    }
-    return null;
-}
-
-function findNearestMaturePlant(hobbit, range = 160) {
-    let nearest = null;
-    let minDist = Infinity;
-    
-    for (let [key, plant] of plants) {
-        const px = plant.gx * 16 + 8;
-        const py = plant.gy * 16 + 8;
-        const dx = px - hobbit.x;
-        const dy = py - hobbit.y;
-        const dist = Math.hypot(dx, dy);
-        
-        if (dist < range && dist < minDist) {
-            const def = PLANT_DEFS[plant.type];
-            if (def) {
-                // If the plant is fully grown (100%), it is ready for harvest
-                if (plant.growth >= 100) {
-                    minDist = dist;
-                    nearest = plant;
-                }
-            }
-        }
-    }
-    return nearest;
-}
+// ==========================================
+// ⚙️ MAIN AI BEHAVIOR HEARTBEAT LOOP
+// ==========================================
 
 export function updateHobbits(modifier, worldMatrix, roomMatrix) {
     const heroCX = Math.floor(hero.x / 1600);
     const heroCY = Math.floor(hero.y / 1600);
     const now = Date.now();
 
-    // ==========================================
-    // 💀 CLEANUP DEAD HOBBITS & DROP LOOT
-    // ==========================================
+    // Cleanup dead hobbits
     for (let i = hobbits.length - 1; i >= 0; i--) {
         const hob = hobbits[i];
         if (hob.hp <= 0) {
@@ -413,21 +362,16 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         const hobbitCX = Math.floor(hobbit.x / 1600);
         const hobbitCY = Math.floor(hobbit.y / 1600);
 
-        // ==========================================
-        // ❄️ TIER 3: FROZEN ZONE (Outside 3x3 Chunks)
-        // ==========================================
+        // Frozen Zone (Outside 3x3 active chunks)
         const isInsideActiveChunks = Math.abs(hobbitCX - heroCX) <= 1 && Math.abs(hobbitCY - heroCY) <= 1;
         if (!isInsideActiveChunks) return;
 
-        // Initialize elapsed time
         if (!hobbit.lastUpdated) hobbit.lastUpdated = now;
         let deltaSeconds = (now - hobbit.lastUpdated) / 1000;
         if (deltaSeconds < 0) deltaSeconds = 0;
         hobbit.lastUpdated = now;
 
-        // ==========================================
-        // 🕰️ TIER 3: CATCH-UP (Step-In Fast Forward)
-        // ==========================================
+        // Catch-Up Fast Forward
         if (deltaSeconds > 2.0) {
             let timeRemaining = Math.min(deltaSeconds, 86400); 
             let simX = Math.floor(hobbit.x / 16);
@@ -520,7 +464,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             return;
         }
 
-        // Viewport presence calculation
+        // Viewport presence check
         const pad = 32; 
         const screenX = hobbit.x + viewport.offset[0];
         const screenY = hobbit.y + viewport.offset[1];
