@@ -92,19 +92,33 @@ function findNearestEgg(hobbit, range = 400) {
 function tryHobbitTrade(hobbit, counterX, counterY) {
     const storeId = `store_${counterX}_${counterY}`;
     const storeData = storeDbCache.get(storeId);
-    if (!storeData || !storeData.listings) return false;
+    
+    console.log(`[TRADE DEBUG] 🏪 ${hobbit.name} checking store counter at ${storeId}...`);
+    
+    if (!storeData) {
+        console.warn(`[TRADE DEBUG] ❌ No store database found in client cache for ${storeId}.`);
+        return false;
+    }
+    if (!storeData.listings) {
+        console.warn(`[TRADE DEBUG] ❌ Store listings array is uninitialized.`);
+        return false;
+    }
 
+    console.log(`[TRADE DEBUG] 📜 Store has ${storeData.listings.length} active listings on the market.`);
+    
     const keys = hobbit.inventory.filter(i => i.isKey);
     const pmItem = hobbit.inventory.find(i => i.seedType === 'plant_matter');
 
     if (hobbit.job === 'Forager' && pmItem) {
-        // Forager buys FOOD from market using PLANT_MATTER
-        const match = storeData.listings.find(l => 
-            l.wantedType === 'plant_matter' && 
-            ['egg', 'tomato_item', 'turnip_item', 'strawberry_item', 'corn_item', 'potato_item', 'watermelon_item', 'pumpkin_item', 'eggplant_item', 'pineapple_item', 'wheat_item'].includes(l.offeredItem.seedType)
-        );
+        console.log(`[TRADE DEBUG] 🌿 Forager has Plant Matter to trade.`);
+        const match = storeData.listings.find(l => {
+            console.log(`[TRADE DEBUG] Comparing listing (ID: ${l.id}) Offered: ${l.offeredItem.seedType}, Wants: ${l.wantedType}`);
+            return l.wantedType === 'plant_matter' && 
+                   ['egg', 'tomato_item', 'turnip_item', 'strawberry_item', 'corn_item', 'potato_item', 'watermelon_item', 'pumpkin_item', 'eggplant_item', 'pineapple_item', 'wheat_item'].includes(l.offeredItem.seedType);
+        });
 
         if (match) {
+            console.log(`[TRADE DEBUG] 🎯 Match found! Purchasing Listing ID: ${match.id}`);
             pmItem.count--;
             if (pmItem.count <= 0) {
                 hobbit.inventory = hobbit.inventory.filter(i => i !== pmItem);
@@ -123,8 +137,49 @@ function tryHobbitTrade(hobbit, counterX, counterY) {
                 });
             }
             return true;
+        } else {
+            console.log(`[TRADE DEBUG] ❌ No matching player listings found for: Plant Matter -> Food.`);
         }
     } 
+    else if (hobbit.job === 'Farmer') {
+        const foodItem = hobbit.inventory.find(i => !i.isKey && i.seedType !== 'plant_matter');
+        if (!foodItem) {
+            console.warn(`[TRADE DEBUG] ❌ Farmer has no agricultural yields in inventory to trade.`);
+            return false;
+        }
+        
+        console.log(`[TRADE DEBUG] 🥚 Farmer is holding: ${foodItem.seedType} (x${foodItem.count})`);
+
+        const match = storeData.listings.find(l => {
+            console.log(`[TRADE DEBUG] Comparing listing (ID: ${l.id}) Offered: ${l.offeredItem.seedType}, Wants: ${l.wantedType}`);
+            return l.wantedType === foodItem.seedType && 
+                   l.offeredItem.seedType === 'plant_matter';
+        });
+
+        if (match) {
+            console.log(`[TRADE DEBUG] 🎯 Match found! Purchasing Listing ID: ${match.id}`);
+            foodItem.count--;
+            if (foodItem.count <= 0) {
+                hobbit.inventory = hobbit.inventory.filter(i => i !== foodItem);
+            }
+
+            const pmItem = createItem(ITEM_TYPES.PLANT_MATTER);
+            hobbit.inventory.push(pmItem);
+
+            if (socket && socket.connected) {
+                socket.emit('buyListing', {
+                    storeId,
+                    listingId: match.id,
+                    buyerWallet: playerWallet,
+                    paymentItem: createItem(ITEM_TYPES[foodItem.seedType.toUpperCase()]),
+                    isHobbit: true
+                });
+            }
+            return true;
+        } else {
+            console.log(`[TRADE DEBUG] ❌ No matching player listings found for: ${foodItem.seedType} -> Plant Matter.`);
+        }
+    }
     return false;
 }
 
