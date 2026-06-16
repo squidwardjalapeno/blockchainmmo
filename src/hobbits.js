@@ -3,48 +3,16 @@ import { viewport } from './viewport.js';
 import { moveEntity, getTileData } from './physics.js'; 
 import { hero } from './entities.js'; 
 import { getObjectAt, staticObjects, solidTiles } from './staticObjects.js';
-import { socket, doorStates, playerWallet } from './multiplayer.js'; 
+import { socket, doorStates, storeDbCache, hayStorageCache, chestCache, playerWallet } from './multiplayer.js';
 import { worldTime } from './clock.js'; 
 import { plants, PLANT_DEFS, createPlant } from './plants.js';
 import { ITEM_TYPES, createItem } from './items.js';
 import { getBacteriaData } from './bacteria.js';
 
 export const hobbits = [];
-export const chestCache = new Map(); // Dynamic network mirrors of chest inventories
-export const hayStorageCache = new Map(); // Dynamic network mirrors of hay storage
-export const storeDbCache = new Map(); // Dynamic network mirrors of store data
 
 const HOBBIT_FIRST_NAMES = ["Bilbo", "Frodo", "Samwise", "Merry", "Pippin", "Bango", "Bungo", "Drogo", "Hamfast", "Longo", "Olo", "Paladin", "Rufus", "Sancho", "Tobold", "Wilibald"];
 const HOBBIT_LAST_NAMES = ["Baggins", "Gamgee", "Brandybuck", "Took", "Gardner", "Greenhand", "Grubb", "Chubb", "Proudfoot", "Bolger", "Boffin", "Sandyman", "Cotton", "Twofoot", "Underhill", "Hornblower"];
-
-// Securely tap into the socket connection to cache inventories in real time
-if (typeof window !== 'undefined') {
-    import('./multiplayer.js').then(m => {
-        const checkSocket = setInterval(() => {
-            if (m.socket) {
-                clearInterval(checkSocket);
-                m.socket.on('chestData', (data) => {
-                    chestCache.set(data.chestId, data.items);
-                });
-                m.socket.on('chestUpdated', (data) => {
-                    chestCache.set(data.chestId, data.items);
-                });
-                m.socket.on('storeData', (data) => {
-                    storeDbCache.set(data.storeId, data.data);
-                });
-                m.socket.on('storeUpdated', (data) => {
-                    storeDbCache.set(data.storeId, data.data);
-                });
-                m.socket.on('hayStorageData', (data) => {
-                    hayStorageCache.set(data.hayStorageId, data.items);
-                });
-                m.socket.on('hayStorageUpdated', (data) => {
-                    hayStorageCache.set(data.hayStorageId, data.items);
-                });
-            }
-        }, 100);
-    });
-}
 
 const yieldMap = {
     'turnip': 'TURNIP_ITEM', 'tomato': 'TOMATO_ITEM',

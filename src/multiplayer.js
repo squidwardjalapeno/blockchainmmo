@@ -15,6 +15,11 @@ export let globalUnlockedSystems = ["4_4"];
 
 export const doorStates = new Map(); // key: "gx_gy", value: { locked: boolean }
 
+export const storeDbCache = new Map(); // 🎯 THE FIX: Centrally declared and exported
+export const hayStorageCache = new Map(); // 🎯 THE FIX: Centrally declared and exported
+export const chestCache = new Map(); // 🎯 THE FIX: Centrally declared and exported
+
+
 // 🎯 THE FIX: Track the chest actively requested by the player's GUI
 export let playerRequestedChestId = null;
 export function setPlayerRequestedChestId(id) {
@@ -176,17 +181,24 @@ export function initMultiplayer() {
 
         socket.on('balanceUpdated', (data) => { hero.inGameUni = data.inGameUni; });
         
-        // 🎯 THE FIX: Only trigger the UI modal if the incoming dataset was requested by the human player
         socket.on('chestData', (data) => { 
+            // 🎯 THE FIX: Centralized cache update
+            chestCache.set(data.chestId, data.items);
+
             if (data.chestId === playerRequestedChestId) {
                 openChestMenu(data.chestId, data.items); 
                 playerRequestedChestId = null; // Consume the trigger
             }
         });
 
-        socket.on('chestUpdated', (data) => { handleRemoteChestUpdate(data.chestId, data.items); });
+        socket.on('chestUpdated', (data) => { 
+            // 🎯 THE FIX: Centralized cache update
+            chestCache.set(data.chestId, data.items);
+            handleRemoteChestUpdate(data.chestId, data.items); 
+        });
+        
         socket.on('storeData', (data) => { 
-            // 🎯 THE FIX: Always cache the incoming data, but only open UI on manual request
+            // 🎯 THE FIX: Store data cached centrally, UI opens only on player manual request
             storeDbCache.set(data.storeId, data.data);
 
             if (window.isManualStoreRequest) {
@@ -194,12 +206,27 @@ export function initMultiplayer() {
                 openStoreMenu(data.storeId, data.data); 
             }
         });
-        socket.on('storeUpdated', (data) => { handleRemoteStoreUpdate(data.storeId, data.data); });
+
+        socket.on('storeUpdated', (data) => { 
+            storeDbCache.set(data.storeId, data.data);
+            handleRemoteStoreUpdate(data.storeId, data.data); 
+        });
+
+        socket.on('hayStorageData', (data) => { 
+            hayStorageCache.set(data.hayStorageId, data.items);
+            openHayStorageMenu(data.hayStorageId, data.items); 
+        });
+
+        socket.on('hayStorageUpdated', (data) => { 
+            hayStorageCache.set(data.hayStorageId, data.items);
+            handleRemoteHayStorageUpdate(data.hayStorageId, data.items); 
+        });
+
+
         socket.on('storageClaimed', (data) => { processClaimedStorage(data.items); });
         socket.on('cellarData', (data) => { openCellarMenu(data.cellarId, data.items); });
         socket.on('cellarUpdated', (data) => { handleRemoteCellarUpdate(data.cellarId, data.items); });
-        socket.on('hayStorageData', (data) => { openHayStorageMenu(data.hayStorageId, data.items); });
-        socket.on('hayStorageUpdated', (data) => { handleRemoteHayStorageUpdate(data.hayStorageId, data.items); });
+        
 
         socket.on('chatMessage', (data) => {
             const chatBox = document.getElementById('chat-messages');
