@@ -403,7 +403,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 }
                             }
                         } else {
-                            if (simX !== hobbit.homeX || simY !== hobbit.homeY) {
+                            if (simX !== hobbit.homeX && simY !== hobbit.homeY) {
                                 const path = findPathToCoords(simX, simY, hobbit.homeX, hobbit.homeY, worldMatrix, roomMatrix, hobbit);
                                 if (path && path.length > 0) {
                                     const next = path[Math.min(path.length - 1, 3)];
@@ -784,7 +784,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     const standX = counter.x;
                     const standY = counter.y + 1;
 
-                    // 🎯 THE FIX: Automatically request General Store database state before arriving on a 2s cooldown
+                    // Automatically request General Store database state before arriving
                     const storeDataId = `store_${counter.x}_${counter.y}`;
                     if (!storeDbCache.has(storeDataId)) {
                         if (socket && socket.connected) {
@@ -809,16 +809,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
 
                             const tradedMarket = tryHobbitTrade(hobbit, counter.x, counter.y);
                             
-                            if (!tradedMarket) {
-                                const keys = hobbit.inventory.filter(i => i.isKey);
-                                const eggCount = hobbit.inventory.filter(i => i.seedType === 'egg').reduce((acc, i) => acc + (i.count || 1), 0);
-                                if (eggCount > 0) {
-                                    const pmItem = createItem(ITEM_TYPES.PLANT_MATTER);
-                                    pmItem.count = eggCount;
-                                    hobbit.inventory = [...keys, pmItem];
-                                    console.log(`🏪 ${hobbit.name} (Farmer) traded ${eggCount}x eggs for Plant Matter at General Store!`);
-                                }
-                            }
+                            // 🎯 THE FIX: No fallback trade (must use player active listing)
                         } else {
                             if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
                                 hobbit.pathTimer = 2.0;
@@ -1046,7 +1037,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         const standX = counter.x;
                         const standY = counter.y + 1;
 
-                        // 🎯 THE FIX: Automatically request General Store database state before arriving
+                        // Automatically request General Store database state before arriving
                         const storeDataId = `store_${counter.x}_${counter.y}`;
                         if (!storeDbCache.has(storeDataId)) {
                             if (socket && socket.connected) {
@@ -1054,7 +1045,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             }
                         }
 
-                        // 🎯 DOORWAY LOGIC: Inside the store? Go straight to the counter
+                        // DOORWAY LOGIC: Inside the store? Go straight to the counter
                         if (roomID === storeId) {
                             const dist = Math.hypot((standX * 16 + 8) - (hobbit.x + 8), (standY * 16 + 8) - (hobbit.y + 8));
                             if (dist <= 24) {
@@ -1071,18 +1062,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
 
                                 const tradedMarket = tryHobbitTrade(hobbit, counter.x, counter.y);
 
-                                if (!tradedMarket) {
-                                    const keys = hobbit.inventory.filter(i => i.isKey);
-                                    const pmCount = hobbit.inventory.filter(i => i.seedType === 'plant_matter').reduce((acc, i) => acc + (i.count || 1), 0);
-                                    if (pmCount > 0) {
-                                        const cropList = ['egg', 'tomato_item', 'turnip_item', 'strawberry_item', 'corn_item', 'potato_item'];
-                                        const randomFood = cropList[Math.floor(Math.random() * cropList.length)];
-                                        const foodItem = createItem(ITEM_TYPES[randomFood.toUpperCase()]);
-                                        foodItem.count = pmCount;
-                                        hobbit.inventory = [...keys, foodItem];
-                                        console.log(`🏪 ${hobbit.name} (Forager) traded ${pmCount}x Plant Matter for food at General Store.`);
-                                    }
-                                }
+                                // 🎯 THE FIX: No fallback trade (must use player active listing)
                             } else {
                                 if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
                                     hobbit.pathTimer = 2.0;
@@ -1098,7 +1078,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 }
                             }
                         } 
-                        // 🎯 DOORWAY LOGIC: Standing exactly in the store doorway? Step inside
+                        // DOORWAY LOGIC: Standing exactly in the store doorway? Step inside
                         else if (currTX === storeDoorX && currTY === storeDoorY) {
                             if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
                                 hobbit.path = [
@@ -1108,7 +1088,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 hobbit.state = 'walking';
                             }
                         } 
-                        // 🎯 DOORWAY LOGIC: Outside? Walk to the store door first
+                        // DOORWAY LOGIC: Outside? Walk to the store door first
                         else {
                             if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
                                 hobbit.pathTimer = 2.0;
@@ -1125,7 +1105,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
                     }
                 }
-                // 🎯 State 2: Chest is full, but we have NO Plant Matter in inventory -> Go withdraw it from the home chest!
+                // State 2: Chest is full, but we have NO Plant Matter in inventory -> Go withdraw it from the home chest!
                 else if (isChestFull && !hasPM && !hasOtherLoot) {
                     hobbit.goal = 'withdraw_pm';
                     const depositTX = hobbit.chestX + 1;
@@ -1181,7 +1161,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
                     }
                 }
-                // 🎯 State 3: We have other loot (seeds/crops) to deposit, deposit normally
+                // State 3: We have other loot (seeds/crops) to deposit, deposit normally
                 else if (hasOtherLoot || (hasPM && !isChestFull)) {
                     hobbit.goal = 'deposit';
                     const depositTX = hobbit.chestX + 1;
@@ -1265,7 +1245,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
                     }
                 }
-                // 🎯 State 4: Inventory is empty, chest is not full -> Harvest normally
+                // State 4: Inventory is empty, chest is not full -> Harvest normally
                 else {
                     hobbit.goal = 'harvest';
 
