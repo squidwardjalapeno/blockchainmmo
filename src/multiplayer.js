@@ -185,7 +185,15 @@ export function initMultiplayer() {
         });
 
         socket.on('chestUpdated', (data) => { handleRemoteChestUpdate(data.chestId, data.items); });
-        socket.on('storeData', (data) => { openStoreMenu(data.storeId, data.data); });
+        socket.on('storeData', (data) => { 
+            // 🎯 THE FIX: Always cache the incoming data, but only open UI on manual request
+            storeDbCache.set(data.storeId, data.data);
+
+            if (window.isManualStoreRequest) {
+                window.isManualStoreRequest = false;
+                openStoreMenu(data.storeId, data.data); 
+            }
+        });
         socket.on('storeUpdated', (data) => { handleRemoteStoreUpdate(data.storeId, data.data); });
         socket.on('storageClaimed', (data) => { processClaimedStorage(data.items); });
         socket.on('cellarData', (data) => { openCellarMenu(data.cellarId, data.items); });

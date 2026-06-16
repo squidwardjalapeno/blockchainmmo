@@ -206,7 +206,7 @@ function assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix) {
 function findPathToCoords(startTX, startTY, targetTX, targetTY, worldMatrix, roomMatrix, hobbit = null) {
     const queue = [{ x: startTX, y: startTY, path: [] }];
     const visited = new Set([`${startTX}_${startTY}`]);
-    const maxDepth = 40; 
+    const maxDepth = 80; // 🎯 THE FIX: Expanded search depth from 40 to 80 tiles
 
     while (queue.length > 0) {
         const curr = queue.shift();

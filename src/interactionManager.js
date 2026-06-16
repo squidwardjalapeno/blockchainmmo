@@ -167,7 +167,11 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
 
             if (obj.type === 'STORE_COUNTER') {
                 if (!playerWallet) { alert("Connect your wallet to trade!"); return; }
-                if (socket) socket.emit('requestStore', `store_${tx}_${ty}`);
+                if (socket) {
+                    // 🎯 THE FIX: Mark as player-triggered so the UI opens on response
+                    window.isManualStoreRequest = true; 
+                    socket.emit('requestStore', `store_${tx}_${ty}`);
+                }
                 inputState.interact = false;
                 inputState.action = false;
                 return;
