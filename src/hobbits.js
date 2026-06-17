@@ -112,7 +112,6 @@ function tryHobbitTrade(hobbit, counterX, counterY) {
     if (hobbit.job === 'Forager' && pmItem) {
         console.log(`[TRADE DEBUG] 🌿 Forager has Plant Matter to trade.`);
         const match = storeData.listings.find(l => {
-            console.log(`[TRADE DEBUG] Comparing listing (ID: ${l.id}) Offered: ${l.offeredItem.seedType}, Wants: ${l.wantedType}`);
             return l.wantedType === 'plant_matter' && 
                    ['egg', 'tomato_item', 'turnip_item', 'strawberry_item', 'corn_item', 'potato_item', 'watermelon_item', 'pumpkin_item', 'eggplant_item', 'pineapple_item', 'wheat_item'].includes(l.offeredItem.seedType);
         });
@@ -139,6 +138,33 @@ function tryHobbitTrade(hobbit, counterX, counterY) {
             return true;
         } else {
             console.log(`[TRADE DEBUG] ❌ No matching player listings found for: Plant Matter -> Food.`);
+            
+            // 🎯 THE FIX: No match found, check if this village already has an active listing for Plant Matter
+            const alreadyListed = storeData.listings.some(l => 
+                l.seller === playerWallet && 
+                l.offeredItem.seedType === 'plant_matter'
+            );
+
+            if (!alreadyListed) {
+                console.log(`[TRADE DEBUG] ✍️ Forager is posting an active market listing: Plant Matter -> Egg.`);
+                
+                pmItem.count--;
+                if (pmItem.count <= 0) {
+                    hobbit.inventory = hobbit.inventory.filter(i => i !== pmItem);
+                }
+
+                if (socket && socket.connected) {
+                    socket.emit('createListing', {
+                        storeId,
+                        wallet: playerWallet,
+                        offeredItem: createItem(ITEM_TYPES.PLANT_MATTER),
+                        wantedType: 'egg'
+                    });
+                }
+                return true;
+            } else {
+                console.log(`[TRADE DEBUG] 📋 A Plant Matter listing is already active. Waiting...`);
+            }
         }
     } 
     else if (hobbit.job === 'Farmer') {
@@ -151,7 +177,6 @@ function tryHobbitTrade(hobbit, counterX, counterY) {
         console.log(`[TRADE DEBUG] 🥚 Farmer is holding: ${foodItem.seedType} (x${foodItem.count})`);
 
         const match = storeData.listings.find(l => {
-            console.log(`[TRADE DEBUG] Comparing listing (ID: ${l.id}) Offered: ${l.offeredItem.seedType}, Wants: ${l.wantedType}`);
             return l.wantedType === foodItem.seedType && 
                    l.offeredItem.seedType === 'plant_matter';
         });
@@ -178,6 +203,33 @@ function tryHobbitTrade(hobbit, counterX, counterY) {
             return true;
         } else {
             console.log(`[TRADE DEBUG] ❌ No matching player listings found for: ${foodItem.seedType} -> Plant Matter.`);
+            
+            // 🎯 THE FIX: No match found, check if this village already has an active listing for this food type
+            const alreadyListed = storeData.listings.some(l => 
+                l.seller === playerWallet && 
+                l.offeredItem.seedType === foodItem.seedType
+            );
+
+            if (!alreadyListed) {
+                console.log(`[TRADE DEBUG] ✍️ Farmer is posting an active market listing: ${foodItem.seedType} -> Plant Matter.`);
+                
+                foodItem.count--;
+                if (foodItem.count <= 0) {
+                    hobbit.inventory = hobbit.inventory.filter(i => i !== foodItem);
+                }
+
+                if (socket && socket.connected) {
+                    socket.emit('createListing', {
+                        storeId,
+                        wallet: playerWallet,
+                        offeredItem: createItem(ITEM_TYPES[foodItem.seedType.toUpperCase()]),
+                        wantedType: 'plant_matter'
+                    });
+                }
+                return true;
+            } else {
+                console.log(`[TRADE DEBUG] 📋 A ${foodItem.seedType} listing is already active. Waiting...`);
+            }
         }
     }
     return false;
