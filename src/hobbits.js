@@ -906,7 +906,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             hobbit.state = 'idle';
                             hobbit.path = [];
                             
-                            // 🎯 THE FIX: Forcefully request fresh real-time store data on a 2s cooldown
+                            // Forcefully request fresh real-time store data on a 2s cooldown
                             if (hobbit.pathTimer <= 0) {
                                 hobbit.pathTimer = 2.0; 
                                 if (socket && socket.connected) {
@@ -916,7 +916,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
 
                             const tradedMarket = tryHobbitTrade(hobbit, counter.x, counter.y);
                             
-                            // 🎯 THE FIX: No fallback trade (must use player active listing)
                         } else {
                             if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
                                 hobbit.pathTimer = 2.0;
@@ -1079,13 +1078,45 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
                     }
                 } else {
-                    hobbit.goal = 'wander';
-                    if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
-                        hobbit.moveTimer -= modifier;
-                        if (hobbit.moveTimer <= 0) {
-                            assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                            hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
-                            hobbit.moveTimer = 2 + Math.random() * 3;
+                    // No eggs to collect? Go wait patiently inside the Barn instead of wandering overworld
+                    hobbit.goal = 'wait_at_barn';
+                    if (currTX === hobbit.homeX && currTY === hobbit.homeY) {
+                        hobbit.state = 'idle';
+                        hobbit.path = [];
+                    } else {
+                        // Standard doorway routing to go inside the Barn
+                        if (currTX === hobbit.doorX && currTY === hobbit.doorY) {
+                            if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
+                                hobbit.path = [
+                                    { x: hobbit.doorX, y: hobbit.doorY - 1 },
+                                    { x: hobbit.homeX, y: hobbit.homeY }
+                                ];
+                                hobbit.state = 'walking';
+                            }
+                        } else if (roomID === hobbit.houseId) {
+                            if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
+                                hobbit.pathTimer = 2.0;
+                                const path = findPathToCoords(currTX, currTY, hobbit.homeX, hobbit.homeY, worldMatrix, roomMatrix, hobbit);
+                                if (path) {
+                                    hobbit.path = path;
+                                    hobbit.state = 'walking';
+                                } else {
+                                    assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                                    hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
+                                }
+                            }
+                        } else {
+                            if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
+                                hobbit.pathTimer = 2.0;
+                                const path = findPathToCoords(currTX, currTY, hobbit.doorX, hobbit.doorY, worldMatrix, roomMatrix, hobbit);
+                                if (path) {
+                                    hobbit.path = path;
+                                    hobbit.state = 'walking';
+                                } else {
+                                    assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                                    hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
+                                }
+                            }
                         }
                     }
                 }
@@ -1169,7 +1200,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
 
                                 const tradedMarket = tryHobbitTrade(hobbit, counter.x, counter.y);
 
-                                // 🎯 THE FIX: No fallback trade (must use player active listing)
                             } else {
                                 if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
                                     hobbit.pathTimer = 2.0;
