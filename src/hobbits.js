@@ -24,6 +24,58 @@ const yieldMap = {
     'violet': 'PLANT_MATTER', 'sunflower': 'PLANT_MATTER'
 };
 
+// 1. Add this accurate lookup map at the top of src/hobbits.js
+const HOBBIT_FOOD_VALUES = { 
+    "cooked_fish": 60,
+    "fish_muskellunge": 100,
+    "fish_trevally": 80, 
+    "fish_angler": 80, 
+    "fish_octopus": 60,
+    "fish_squid": 50, 
+    "fish_eel": 45, 
+    "fish_mackerel": 35,
+    "fish_trout": 25, 
+    "fish": 20, 
+    "fish_panfish": 15,
+    "pineapple_item": 50,
+    "eggplant_item": 40,
+    "tomato_item": 35,
+    "pumpkin_item": 30,
+    "watermelon_item": 30,
+    "potato_item": 25,
+    "corn_item": 25,
+    "turnip_item": 20,
+    "egg": 20,
+    "strawberry_item": 15,
+    "wheat_item": 10,
+    "raw_chicken": 15
+};
+
+// 2. Refactor eatFoodIfAvailable to use dynamic values
+function eatFoodIfAvailable(hobbit) {
+    const foodIndex = hobbit.inventory.findIndex(i => HOBBIT_FOOD_VALUES[i.seedType] !== undefined);
+    if (foodIndex !== -1) {
+        const food = hobbit.inventory[foodIndex];
+        const restoreAmount = HOBBIT_FOOD_VALUES[food.seedType];
+        
+        food.count--;
+        if (food.count <= 0) {
+            hobbit.inventory.splice(foodIndex, 1);
+        }
+        
+        hobbit.energy = Math.min(hobbit.maxEnergy, hobbit.energy + restoreAmount);
+        console.log(`😋 Hungry Hobbit ${hobbit.name} ate ${food.name}! Restored ${restoreAmount} energy. Current: ${hobbit.energy}`);
+        
+        if (hobbit.energy > 70) {
+            hobbit.goal = 'wander';
+            hobbit.path = [];
+            hobbit.state = 'idle';
+        }
+        return true;
+    }
+    return false;
+}
+
 // ==========================================
 // 🧠 SEARCH & TRADE HELPERS
 // ==========================================
@@ -397,6 +449,10 @@ export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null, 
         hp: 40, 
         maxHp: 40,
         ad: 2, 
+        
+        // ⚡ ENERGY & HUNGER SYSTEM FIELDS
+        energy: 100,
+        maxEnergy: 100,
 
         inventory: keyItem ? [keyItem] : [], 
         houseId: houseId,

@@ -982,27 +982,20 @@ export function drawHobbits(ctx2, activeHobbits, roomMatrix) {
     const w = canvas2.width;
     const h = canvas2.height;
 
-    // 🎯 THE FIX: Resolve the local player's room ID
     const hTX = Math.floor((hero.x + 8) / 16);
     const hTY = Math.floor((hero.y + 15) / 16);
     const rCol = roomMatrix[Math.floor(hTX / 100)]?.[Math.floor(hTY / 100)];
     const heroHouseId = rCol ? rCol[((hTY % 100 + 100) % 100 * 100) + ((hTX % 100 + 100) % 100)] : 0;
 
     activeHobbits.forEach(hobbit => {
-        // 🎯 THE FIX: Resolve each hobbit's room ID using their feet coordinate
         const pTX = Math.floor((hobbit.x + 8) / 16);
         const pTY = Math.floor((hobbit.y + 15) / 16);
         const pCol = roomMatrix[Math.floor(pTX / 100)]?.[Math.floor(pTY / 100)];
         const hobbitRoomId = pCol ? pCol[((pTY % 100 + 100) % 100 * 100) + ((pTX % 100 + 100) % 100)] : 0;
 
-        // ==========================================
-        // 🚪 INSIDE/OUTSIDE VISIBILITY PARTITION
-        // ==========================================
         if (heroHouseId !== 0 && heroHouseId !== 9999) {
-            // Player is inside: hide hobbits outside or in other rooms
             if (hobbitRoomId !== heroHouseId) return;
         } else {
-            // Player is outside: hide hobbits inside rooms
             if (hobbitRoomId !== 0 && hobbitRoomId !== 9999) return;
         }
 
@@ -1022,11 +1015,19 @@ export function drawHobbits(ctx2, activeHobbits, roomMatrix) {
             );
         }
 
+        // Draw Health Bar
         const hpPct = hobbit.hp / hobbit.maxHp;
         ctx2.fillStyle = "black";
-        ctx2.fillRect(screenX + 2, screenY, 12, 1);
+        ctx2.fillRect(screenX + 2, screenY - 4, 12, 1);
         ctx2.fillStyle = "green";
-        ctx2.fillRect(screenX + 2, screenY, 12 * Math.max(0, hpPct), 1);
+        ctx2.fillRect(screenX + 2, screenY - 4, 12 * Math.max(0, hpPct), 1);
+
+        // Draw Energy/Hunger Bar
+        const energyPct = (hobbit.energy !== undefined ? hobbit.energy : 100) / 100;
+        ctx2.fillStyle = "black";
+        ctx2.fillRect(screenX + 2, screenY - 2, 12, 1);
+        ctx2.fillStyle = "#FFD700"; // Stamina Yellow
+        ctx2.fillRect(screenX + 2, screenY - 2, 12 * Math.max(0, energyPct), 1);
     });
 }
 
