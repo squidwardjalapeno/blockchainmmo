@@ -1154,7 +1154,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         else {
             // ==========================================
             // 🌾 DAYTIME TASK ALLOCATOR (Job Sensitive)
-            // ==========================================
             if (hobbit.job === 'Forager') {
                 const nonKeyItems = hobbit.inventory.filter(i => !i.isKey);
                 const isInventoryFull = (nonKeyItems.length >= 4); // Capped at 4 slots for efficiency
@@ -1166,7 +1165,14 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 const chestItems = chestCache.get(chestId) || [];
                 const isChestFull = (chestItems.length >= 8);
 
-                // 🎯 State 1: Inventory is full, chest is full, and we carry Plant Matter -> Go trade it!
+                // 🎯 THE FIX: Query plant availability before making a decision
+                const nearestPlant = findNearestMaturePlant(hobbit);
+                const hasNearbyCrops = nearestPlant || hobbit.targetPlant;
+
+                // 🎯 THE FIX: Deposit if backpack is full OR if there's no crops left to harvest and we carry loot
+                const shouldDeposit = isInventoryFull || ((hasOtherLoot || hasPM) && !hasNearbyCrops);
+
+                // 🎯 State 1: We carry Plant Matter, the chest is full, and our inventory is full -> Go trade!
                 if (isInventoryFull && hasPM && isChestFull) {
                     hobbit.goal = 'sell_pm';
                     const counter = findNearestStoreCounter(hobbit);
@@ -1177,7 +1183,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         const standX = counter.x;
                         const standY = counter.y + 1;
 
-                        // Automatically request General Store database state before arriving
                         const storeDataId = `store_${counter.x}_${counter.y}`;
                         if (!storeDbCache.has(storeDataId)) {
                             if (socket && socket.connected) {
@@ -1185,14 +1190,12 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             }
                         }
 
-                        // DOORWAY LOGIC: Inside the store? Go straight to the counter
                         if (roomID === storeId) {
                             const dist = Math.hypot((standX * 16 + 8) - (hobbit.x + 8), (standY * 16 + 8) - (hobbit.y + 8));
                             if (dist <= 24) {
                                 hobbit.state = 'idle';
                                 hobbit.path = [];
 
-                                // Query the server for fresh ledger updates on a 2s cooldown
                                 if (hobbit.pathTimer <= 0) {
                                     hobbit.pathTimer = 2.0;
                                     if (socket && socket.connected) {
@@ -1201,7 +1204,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 }
 
                                 const tradedMarket = tryHobbitTrade(hobbit, counter.x, counter.y);
-
                             } else {
                                 if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
                                     hobbit.pathTimer = 2.0;
@@ -1217,7 +1219,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 }
                             }
                         } 
-                        // DOORWAY LOGIC: Standing exactly in the store doorway? Step inside
                         else if (currTX === storeDoorX && currTY === storeDoorY) {
                             if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
                                 hobbit.path = [
@@ -1227,7 +1228,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 hobbit.state = 'walking';
                             }
                         } 
-                        // DOORWAY LOGIC: Outside? Walk to the store door first
                         else {
                             if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
                                 hobbit.pathTimer = 2.0;
@@ -1300,8 +1300,8 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
                     }
                 }
-                // 🎯 State 3: We have other loot (seeds/crops) to deposit, and we are full -> Go home and deposit!
-                else if (isInventoryFull && (hasOtherLoot || hasPM)) {
+                // 🎯 State 3: We carry loot and are ready to unload -> Go home and deposit!
+                else if (shouldDeposit) {
                     hobbit.goal = 'deposit';
                     const depositTX = hobbit.chestX + 1;
                     const depositTY = hobbit.chestY;
@@ -1384,18 +1384,18 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
                     }
                 }
-                // State 4: Inventory is empty, chest is not full -> Harvest normally
+                // 🎯 State 4: Forage/Harvest Normally
                 else {
                     hobbit.goal = 'harvest';
 
                     if (roomID !== 0 && roomID !== 9999) {
                         if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
                             const doorInX = hobbit.doorX;
-                            const doorInY = hobbit.doorY - 1; // 🎯 THE FIX: Exactly 1 tile behind the door!
+                            const doorInY = hobbit.doorY - 1; 
 
                             if (currTX === doorInX && currTY === doorInY) {
                                 hobbit.path = [
-                                    { x: hobbit.doorX, y: hobbit.doorY } // Step directly OUTSIDE!
+                                    { x: hobbit.doorX, y: hobbit.doorY } 
                                 ];
                                 hobbit.state = 'walking';
                                 console.log(`🚪 ${hobbit.name} is stepping outside to harvest...`);
