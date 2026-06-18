@@ -310,9 +310,10 @@ function findPathToCoords(startTX, startTY, targetTX, targetTY, worldMatrix, roo
     return null;
 }
 
-function findNearestMaturePlant(hobbit, range = 160) {
+// Search for the nearest mature plant in a broad 30-tile radius
+function findNearestMaturePlant(hobbit, range = 480) { // 🎯 THE FIX: Expanded search range from 160px to 480px (30 tiles)
     let nearest = null;
-    let minDist = Infinity;
+    let minDist = range;
     
     for (let [key, plant] of plants) {
         const px = plant.gx * 16 + 8;
