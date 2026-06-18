@@ -89,6 +89,30 @@ function findNearestEgg(hobbit, range = 400) {
     return nearest;
 }
 
+// 🎯 THE FIX: Helper to handle stackable inventory additions for hobbits
+function giveItemToHobbit(hobbit, newItem) {
+    if (!newItem) return false;
+
+    // 1. Try to merge with an existing stack in the hobbit's backpack
+    if (newItem.maxStack > 1) {
+        const existing = hobbit.inventory.find(i => i.seedType === newItem.seedType && i.count < (i.maxStack || 8));
+        if (existing) {
+            const space = (existing.maxStack || 8) - existing.count;
+            if (newItem.count <= space) {
+                existing.count += newItem.count;
+                return true;
+            } else {
+                existing.count = existing.maxStack || 8;
+                newItem.count -= space;
+            }
+        }
+    }
+
+    // 2. Add as a new slot if not fully merged
+    hobbit.inventory.push(newItem);
+    return true;
+}
+
 function tryHobbitTrade(hobbit, counterX, counterY) {
     const storeId = `store_${counterX}_${counterY}`;
     const storeData = storeDbCache.get(storeId);
@@ -124,7 +148,8 @@ function tryHobbitTrade(hobbit, counterX, counterY) {
             }
 
             const foodItem = createItem(ITEM_TYPES[match.offeredItem.seedType.toUpperCase()]);
-            hobbit.inventory.push(foodItem);
+            // 🎯 THE FIX: Use stack helper instead of raw push
+            giveItemToHobbit(hobbit, foodItem); 
 
             if (socket && socket.connected) {
                 socket.emit('buyListing', {
@@ -189,7 +214,8 @@ function tryHobbitTrade(hobbit, counterX, counterY) {
             }
 
             const pmItem = createItem(ITEM_TYPES.PLANT_MATTER);
-            hobbit.inventory.push(pmItem);
+            // 🎯 THE FIX: Use stack helper instead of raw push
+            giveItemToHobbit(hobbit, pmItem); 
 
             if (socket && socket.connected) {
                 socket.emit('buyListing', {
@@ -1053,7 +1079,8 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         hobbit.path = [];
                         
                         const eggItem = createItem(ITEM_TYPES.EGG);
-                        hobbit.inventory.push(eggItem);
+                        // 🎯 THE FIX: Use stack helper instead of raw push
+                        giveItemToHobbit(hobbit, eggItem); 
                         
                         const { data: chunkData, idx } = getBacteriaData(egg.gx, egg.gy);
                         if (chunkData) {
@@ -1437,13 +1464,15 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                     const keyName = yieldMap[livePlant.type];
                                     if (keyName && ITEM_TYPES[keyName]) {
                                         const harvestedItem = createItem(ITEM_TYPES[keyName]);
-                                        hobbit.inventory.push(harvestedItem);
+                                        // 🎯 THE FIX: Use stack helper instead of raw push
+                                        giveItemToHobbit(hobbit, harvestedItem); 
                                     }
 
                                     const seedKey = `${livePlant.type.toUpperCase()}_SEED`;
                                     if (ITEM_TYPES[seedKey] && Math.random() < 0.6) {
                                         const seedItem = createItem(ITEM_TYPES[seedKey]);
-                                        hobbit.inventory.push(seedItem);
+                                        // 🎯 THE FIX: Use stack helper instead of raw push
+                                        giveItemToHobbit(hobbit, seedItem); 
                                     }
 
                                     plants.delete(plantKey);
