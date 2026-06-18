@@ -1035,7 +1035,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 hobbit.state = 'walking';
                             } else {
                                 assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                                hobbit.goal = 'wander';
                                 hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
                             }
                         }
@@ -1157,6 +1156,9 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             // 🌾 DAYTIME TASK ALLOCATOR (Job Sensitive)
             // ==========================================
             if (hobbit.job === 'Forager') {
+                const nonKeyItems = hobbit.inventory.filter(i => !i.isKey);
+                const isInventoryFull = (nonKeyItems.length >= 4); // Capped at 4 slots for efficiency
+                
                 const hasPM = hobbit.inventory.some(i => i.seedType === 'plant_matter');
                 const hasOtherLoot = hobbit.inventory.some(i => !i.isKey && i.seedType !== 'plant_matter');
                 
@@ -1164,8 +1166,8 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 const chestItems = chestCache.get(chestId) || [];
                 const isChestFull = (chestItems.length >= 8);
 
-                // 🎯 State 1: We have Plant Matter and the chest is full -> Go trade it at the General Store!
-                if (hasPM && isChestFull) {
+                // 🎯 State 1: Inventory is full, chest is full, and we carry Plant Matter -> Go trade it!
+                if (isInventoryFull && hasPM && isChestFull) {
                     hobbit.goal = 'sell_pm';
                     const counter = findNearestStoreCounter(hobbit);
                     if (counter) {
@@ -1190,7 +1192,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 hobbit.state = 'idle';
                                 hobbit.path = [];
 
-                                // 🎯 THE FIX: Query the server for fresh ledger updates on a 2s cooldown
+                                // Query the server for fresh ledger updates on a 2s cooldown
                                 if (hobbit.pathTimer <= 0) {
                                     hobbit.pathTimer = 2.0;
                                     if (socket && socket.connected) {
@@ -1242,8 +1244,8 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
                     }
                 }
-                // State 2: Chest is full, but we have NO Plant Matter in inventory -> Go withdraw it from the home chest!
-                else if (isChestFull && !hasPM && !hasOtherLoot) {
+                // 🎯 State 2: Chest is full, but we have NO Plant Matter in inventory -> Go withdraw it from the home chest!
+                else if (isChestFull && nonKeyItems.length === 0) {
                     hobbit.goal = 'withdraw_pm';
                     const depositTX = hobbit.chestX + 1;
                     const depositTY = hobbit.chestY;
@@ -1298,8 +1300,8 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
                     }
                 }
-                // State 3: We have other loot (seeds/crops) to deposit, deposit normally
-                else if (hasOtherLoot || (hasPM && !isChestFull)) {
+                // 🎯 State 3: We have other loot (seeds/crops) to deposit, and we are full -> Go home and deposit!
+                else if (isInventoryFull && (hasOtherLoot || hasPM)) {
                     hobbit.goal = 'deposit';
                     const depositTX = hobbit.chestX + 1;
                     const depositTY = hobbit.chestY;
