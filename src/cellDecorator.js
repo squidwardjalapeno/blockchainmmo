@@ -176,10 +176,26 @@ export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertility
 
     console.log(`🎪 LAZY INITIALIZING SETTLEMENT at Well [${zoneWell.x}, ${zoneWell.y}]`);
 
-    // Draw regional roads and walls (Only runs once per zone)
+    // 🎯 STEP 1: Force-load and decorate background terrain first
+    zone.forEach(c => {
+        const chunkKey = `${c.cx}_${c.cy}`;
+        if (!decoratedCells.has(chunkKey)) {
+            decorateCell(c.cx, c.cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            decoratedCells.add(chunkKey);
+        }
+    });
+
+    // 🎯 STEP 2: Draw the regional roads and walls
     drawRingRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell);
     drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell.x, zoneWell.y);
     drawTownWalls(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell);
+
+    // [Well-based spawn removed to prevent orphaned/keyless hobbits]
+
+    // 🎯 STEP 3: Stamp structures, ranches, and wells on top
+    zone.forEach(c => {
+        stampStructuresForChunk(c.cx, c.cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+    });
 }
 
 
@@ -2078,22 +2094,20 @@ export function ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix,
             const zone = zoneLookup.get(cellKey);
 
             // ==========================================
-            // 🎪 STEP 1: LAZY ROAD/WALL DRAWING (Runs once per Zone)
+            // 🎪 STEP 1: LAZY LOADING / STRUCTURE STAMPING
             // ==========================================
             if (zone) {
                 ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            } else {
+                // WILDERNESS LOADING: Load this single chunk normally (Stamping query now handled inside decorateCell)
+                if (!decoratedCells.has(cellKey)) {
+                    decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+                    decoratedCells.add(cellKey);
+                }
             }
 
             // ==========================================
-            // 🌲 STEP 2: INDIVIDUAL CHUNK DECORATION (When actually loaded in Viewport)
-            // ==========================================
-            if (!decoratedCells.has(cellKey)) {
-                decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-                decoratedCells.add(cellKey);
-            }
-
-            // ==========================================
-            // 🌟 STEP 3: AUTO-TILING LAZY LOAD
+            // 🌟 STEP 2: MODULAR AUTO-TILING LAZY LOAD
             // ==========================================
             autoTileLayerChunk(cx, cy, worldMatrix, [0, 10, 11, 17], 0, 'sand');
             autoTileLayerChunk(cx, cy, worldMatrix, [208], 208, 'stone');
