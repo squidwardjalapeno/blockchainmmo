@@ -1156,7 +1156,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             // 🌾 DAYTIME TASK ALLOCATOR (Job Sensitive)
             if (hobbit.job === 'Forager') {
                 const nonKeyItems = hobbit.inventory.filter(i => !i.isKey);
-                const isInventoryFull = (nonKeyItems.length >= 4); // Capped at 4 slots for efficiency
+                const isInventoryFull = (nonKeyItems.length >= 6); // 🎯 THE FIX: Expanded capacity from 4 to 6 slots
                 
                 const hasPM = hobbit.inventory.some(i => i.seedType === 'plant_matter');
                 const hasOtherLoot = hobbit.inventory.some(i => !i.isKey && i.seedType !== 'plant_matter');
@@ -1165,11 +1165,9 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 const chestItems = chestCache.get(chestId) || [];
                 const isChestFull = (chestItems.length >= 8);
 
-                // 🎯 THE FIX: Query plant availability before making a decision
                 const nearestPlant = findNearestMaturePlant(hobbit);
                 const hasNearbyCrops = nearestPlant || hobbit.targetPlant;
 
-                // 🎯 THE FIX: Deposit if backpack is full OR if there's no crops left to harvest and we carry loot
                 const shouldDeposit = isInventoryFull || ((hasOtherLoot || hasPM) && !hasNearbyCrops);
 
                 // 🎯 State 1: We carry Plant Matter, the chest is full, and our inventory is full -> Go trade!
@@ -1190,6 +1188,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             }
                         }
 
+                        // DOORWAY LOGIC: Inside the store? Go straight to the counter
                         if (roomID === storeId) {
                             const dist = Math.hypot((standX * 16 + 8) - (hobbit.x + 8), (standY * 16 + 8) - (hobbit.y + 8));
                             if (dist <= 24) {
@@ -1384,7 +1383,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
                     }
                 }
-                // 🎯 State 4: Forage/Harvest Normally
+                // 🎯 State 4: Forage/Harvest Normally (Includes Doorway Exit Fixes)
                 else {
                     hobbit.goal = 'harvest';
 
@@ -1393,7 +1392,16 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             const doorInX = hobbit.doorX;
                             const doorInY = hobbit.doorY - 1; 
 
-                            if (currTX === doorInX && currTY === doorInY) {
+                            // 🎯 THE FIX: If standing directly on the door threshold tile, step 1 tile OUTSIDE
+                            if (currTX === hobbit.doorX && currTY === hobbit.doorY) {
+                                hobbit.path = [
+                                    { x: hobbit.doorX, y: hobbit.doorY + 1 } // Step 1 tile South (Outside)
+                                ];
+                                hobbit.state = 'walking';
+                                console.log(`🚪 ${hobbit.name} is clearing the threshold to the outside...`);
+                            }
+                            // 🎯 THE FIX: If standing exactly behind the door, step outside
+                            else if (currTX === doorInX && currTY === doorInY) {
                                 hobbit.path = [
                                     { x: hobbit.doorX, y: hobbit.doorY } 
                                 ];
