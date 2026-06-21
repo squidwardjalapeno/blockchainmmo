@@ -23,8 +23,22 @@ const io = new Server(http, {
     }
 });
 
+// --- ADD STATIC FILE SERVING MIDDLEWARE HERE ---
+
+// Serve static assets (such as styles.css, images) from the root folder
+app.use(express.static(__dirname));
+
+// Map the virtual '/js' path used in index.html to the actual 'src' directory where the game files live
+app.use('/js', express.static(path.join(__dirname, 'src')));
+
+// Explicitly serve index.html for root requests
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
 // ==========================================
 // 💾 DATABASE PERSISTENCE & REGISTRIES
+// ==========================================
 // ==========================================
 let userDb = {};
 let authDb = {};
