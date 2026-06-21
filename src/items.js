@@ -1,217 +1,198 @@
+// js/items.js
+
+// To this:
 if (typeof window !== 'undefined') {
-    logStep("items.js loaded");
+    logStep("items.js");
 }
 
+/**
+ * 1. THE LIBRARY: Static definitions for every item type.
+ * Use this to set the "starting" values for things.
+ */
 export const ITEM_TYPES = {
-    // ==========================================
-    // 🐟 MARINE BIOLOGY (FISH TEMPLATES)
-    // ==========================================
-    BASS: { 
-        name: "River Bass", icon: "🐟", typeLabel: "Food", 
-        description: "A common scale fish found in fresh streams.", energy: 20,
-        decayRate: 2.0, seedType: "fish", baseHealth: 40, baseVirulence: 10, baseFertility: 100, 
-        spriteID: 43, tileset: "fishTileset", maxStack: 8 
-    },
-    TROUT: { 
-        name: "Trout", icon: "🐟", typeLabel: "Food", 
-        description: "Standard fresh-water trout.", energy: 25,
-        decayRate: 2.0, seedType: "fish_trout", baseHealth: 40, baseVirulence: 10, baseFertility: 120, 
-        spriteID: 16, tileset: "fishTileset", maxStack: 8 
-    },
-    PANFISH: { 
-        name: "Panfish", icon: "🐟", typeLabel: "Food", 
-        description: "A small pan-sized common fish.", energy: 15,
-        decayRate: 2.0, seedType: "fish_panfish", baseHealth: 30, baseVirulence: 10, baseFertility: 80, 
-        spriteID: 2, tileset: "fishTileset", maxStack: 8 
-    },
-    MACKEREL: { 
-        name: "Mackerel", icon: "🐟", typeLabel: "Food", 
-        description: "An organic salt-water mackerel.", energy: 35,
-        decayRate: 1.5, seedType: "fish_mackerel", baseHealth: 50, baseVirulence: 10, baseFertility: 150, 
-        spriteID: 70, tileset: "fishTileset", maxStack: 8 
-    },
-    MUSKELLUNGE: { 
-        name: "Muskellunge", icon: "🐟", typeLabel: "Food", 
-        description: "A legendary muskellunge. Highly nutritious.", energy: 100,
-        decayRate: 1.0, seedType: "fish_muskellunge", baseHealth: 100, baseVirulence: 10, baseFertility: 300, 
-        spriteID: 91, tileset: "fishTileset", maxStack: 8 
-    },
-    GIANT_TREVALLY: { 
-        name: "Giant Trevally", icon: "🐟", typeLabel: "Food", 
-        description: "A massive, powerful ocean hunter.", energy: 80,
-        decayRate: 1.0, seedType: "fish_trevally", baseHealth: 80, baseVirulence: 10, baseFertility: 250, 
-        spriteID: 35, tileset: "fishTileset", maxStack: 8 
-    },
-    SQUID: { 
-        name: "Squid", icon: "🐟", typeLabel: "Food", 
-        description: "A deep-water squid with soft meat.", energy: 50,
-        decayRate: 1.5, seedType: "fish_squid", baseHealth: 50, baseVirulence: 10, baseFertility: 180, 
-        spriteID: 84, tileset: "fishTileset", maxStack: 8 
-    },
-    OCTOPUS: { 
-        name: "Octopus", icon: "🐟", typeLabel: "Food", 
-        description: "A multi-tentacled mollusk.", energy: 60,
-        decayRate: 1.5, seedType: "fish_octopus", baseHealth: 60, baseVirulence: 10, baseFertility: 200, 
-        spriteID: 107, tileset: "fishTileset", maxStack: 8 
-    },
-    EEL: { 
-        name: "Eel", icon: "🐟", typeLabel: "Food", 
-        description: "A long, slippery fresh-water predator.", energy: 45,
-        decayRate: 1.5, seedType: "fish_eel", baseHealth: 50, baseVirulence: 10, baseFertility: 150, 
-        spriteID: 59, tileset: "fishTileset", maxStack: 8 
-    },
-    ANGLERFISH: { 
-        name: "Anglerfish", icon: "🐟", typeLabel: "Food", 
-        description: "A rare light-bearing deep ocean creature.", energy: 80,
-        decayRate: 1.0, seedType: "fish_angler", baseHealth: 80, baseVirulence: 10, baseFertility: 250, 
-        spriteID: 29, tileset: "fishTileset", maxStack: 8 
-    },
+    // ... your existing items ...
     COOKED_BASS: {
-        name: "Cooked River Bass", icon: "🍱", typeLabel: "Food",
-        description: "Crispy stream fish prepared over fire.", energy: 60,
-        decayRate: 0.6, seedType: "cooked_fish", baseHealth: 60, baseVirulence: 0, baseFertility: 80,
-        spriteID: 44, tileset: "cropTileset", maxStack: 8
+        name: "Cooked River Bass",
+        decayRate: 0.6,       // 3x slower than raw Bass (2.0)
+        seedType: "cooked_fish", // It's still organic if dropped
+        baseHealth: 60,       // Cooking "resets" and boosts the HP
+        baseVirulence: 0,      // Purified by fire
+        baseFertility: 80,
+        spriteID: 44,          // Your new Tile ID
+        maxStack: 8, // 👈 Stacks to 8
+
     },
 
-    // ==========================================
-    // 🌽 HORTICULTURE (AGRICULTURE & SEEDS)
-    // ==========================================
-    PLANT_MATTER: { 
-        name: "Plant Matter", icon: "🌿", typeLabel: "Compost",
-        description: "Ruined biological green remains, useful for compost.", 
-        decayRate: 0.5, seedType: "plant_matter", baseHealth: 12, baseVirulence: 2, baseFertility: 20, 
-        spriteID: 152, tileset: "gardenTileset", maxStack: 8 
+    // In src/items.js -> update BASS and add the new fish!
+    BASS: { name: "River Bass", decayRate: 2.0, seedType: "fish", baseHealth: 40, baseVirulence: 10, baseFertility: 100, spriteID: 43, tileset: "fishTileset", maxStack: 8 },
+    TROUT: { name: "Trout", decayRate: 2.0, seedType: "fish_trout", baseHealth: 40, baseVirulence: 10, baseFertility: 120, spriteID: 16, tileset: "fishTileset", maxStack: 8 },
+    PANFISH: { name: "Panfish", decayRate: 2.0, seedType: "fish_panfish", baseHealth: 30, baseVirulence: 10, baseFertility: 80, spriteID: 2, tileset: "fishTileset", maxStack: 8 },
+    MACKEREL: { name: "Mackerel", decayRate: 1.5, seedType: "fish_mackerel", baseHealth: 50, baseVirulence: 10, baseFertility: 150, spriteID: 70, tileset: "fishTileset", maxStack: 8 },
+    MUSKELLUNGE: { name: "Muskellunge", decayRate: 1.0, seedType: "fish_muskellunge", baseHealth: 100, baseVirulence: 10, baseFertility: 300, spriteID: 91, tileset: "fishTileset", maxStack: 8 },
+    GIANT_TREVALLY: { name: "Giant Trevally", decayRate: 1.0, seedType: "fish_trevally", baseHealth: 80, baseVirulence: 10, baseFertility: 250, spriteID: 35, tileset: "fishTileset", maxStack: 8 },
+    SQUID: { name: "Squid", decayRate: 1.5, seedType: "fish_squid", baseHealth: 50, baseVirulence: 10, baseFertility: 180, spriteID: 84, tileset: "fishTileset", maxStack: 8 },
+    OCTOPUS: { name: "Octopus", decayRate: 1.5, seedType: "fish_octopus", baseHealth: 60, baseVirulence: 10, baseFertility: 200, spriteID: 107, tileset: "fishTileset", maxStack: 8 },
+    EEL: { name: "Eel", decayRate: 1.5, seedType: "fish_eel", baseHealth: 50, baseVirulence: 10, baseFertility: 150, spriteID: 59, tileset: "fishTileset", maxStack: 8 },
+    ANGLERFISH: { name: "Anglerfish", decayRate: 1.0, seedType: "fish_angler", baseHealth: 80, baseVirulence: 10, baseFertility: 250, spriteID: 29, tileset: "fishTileset", maxStack: 8 },
+
+
+    // In src/items.js
+    PLANT_MATTER: { // 👈 Changed key
+        name: "Plant Matter", // 👈 Changed name
+        decayRate: 0.5, 
+        seedType: "plant_matter", // 👈 Changed seed type
+        baseHealth: 12, baseVirulence: 2, baseFertility: 20, spriteID: 152,                // 👈 Updated to 152
+        tileset: "gardenTileset",     // 👈 Updated to gardenTileset
+        maxStack: 8 
     },
+
+    // ... inside ITEM_TYPES ...
     GRASS_SEED: {
-        name: "Grass Seed", icon: "🌱", typeLabel: "Seed",
-        description: "A handful of wild grass seeds.", 
-        decayRate: 0.1, seedType: "grass_seed", baseHealth: 10, baseVirulence: 0, baseFertility: 5,
-        spriteID: 0, tileset: "gardenTileset", maxStack: 64
-    },
-    ROSE_SEED: {
-        name: "Rose Seed", icon: "🌹", typeLabel: "Seed",
-        description: "Prickly rose bush seed.", 
-        decayRate: 0.1, seedType: "rose_seed", baseHealth: 10, baseVirulence: 0, baseFertility: 8,
-        spriteID: 11, tileset: "cropTileset", maxStack: 64
-    },
-    VIOLET_SEED: {
-        name: "Violet Seed", icon: "🪻", typeLabel: "Seed",
-        description: "A standard blue violet flower seed.", 
-        decayRate: 0.1, seedType: "violet_seed", baseHealth: 10, baseVirulence: 0, baseFertility: 8,
-        spriteID: 23, tileset: "cropTileset", maxStack: 64
-    },
-    SUNFLOWER_SEED: {
-        name: "Sunflower Seed", icon: "🌻", typeLabel: "Seed",
-        description: "Nutritious wild sunflower seed.", 
-        decayRate: 0.1, seedType: "sunflower_seed", baseHealth: 10, baseVirulence: 0, baseFertility: 12,
-        spriteID: 119, tileset: "cropTileset", maxStack: 64
+        name: "Grass Seed",
+        decayRate: 0.1,        
+        seedType: "grass_seed", 
+        baseHealth: 10,
+        baseVirulence: 0,
+        baseFertility: 5,
+        spriteID: 0,                   // 👈 Updated to 0
+        tileset: "gardenTileset",
+        maxStack: 64
+               // 👈 Updated to gardenTileset
     },
     TURNIP_ITEM: {
-        name: "Turnip", icon: "🧅", typeLabel: "Food",
-        description: "A crisp, organic root vegetable.", energy: 20,
-        decayRate: 0.8, seedType: "turnip_item", baseHealth: 30, baseVirulence: 0, baseFertility: 15,
-        spriteID: 0, tileset: "cropTileset", maxStack: 8, drawSize: 8
+        name: "Turnip",
+        decayRate: 0.8,
+        seedType: "turnip_item", 
+        baseHealth: 30, baseVirulence: 0, baseFertility: 15,
+        spriteID: 0, tileset: "cropTileset", // 👈 Tile 0 on crops
+        maxStack: 8, // 👈 Stacks to 8
+        drawSize: 8 // 👈 ADD THIS
+
     },
     TURNIP_SEED: {
-        name: "Turnip Seed", icon: "🌰", typeLabel: "Seed",
-        description: "Small turnip seed capsule.", 
-        decayRate: 0.1, seedType: "turnip_seed", baseHealth: 10, baseVirulence: 0, baseFertility: 5,
-        spriteID: 5, tileset: "cropTileset", maxStack: 64
+        name: "Turnip Seed",
+        decayRate: 0.1,        
+        seedType: "turnip_seed", 
+        baseHealth: 10, baseVirulence: 0, baseFertility: 5,
+        spriteID: 5, tileset: "cropTileset", // 👈 Tile 5 on crops
+        maxStack: 64
     },
+
+    // ... inside ITEM_TYPES ...
     TOMATO_ITEM: {
-        name: "Tomato", icon: "🍅", typeLabel: "Food",
-        description: "A juicy, mineral-rich red crop.", energy: 35,
-        decayRate: 0.8, seedType: "tomato_item", baseHealth: 30, baseVirulence: 0, baseFertility: 25, 
-        spriteID: 24, tileset: "cropTileset", maxStack: 8, drawSize: 4
+        name: "Tomato",
+        decayRate: 0.8,
+        seedType: "tomato_item", 
+        baseHealth: 30, baseVirulence: 0, baseFertility: 25, // Tomatoes are rich compost!
+        spriteID: 24, tileset: "cropTileset", // 👈 Tile 24
+        maxStack: 8, // 👈 Stacks to 8
+
+        // 👇 NEW TOOLTIP METADATA
+        typeLabel: "Food", energy: 35, description: "A hearty fruit with seeds inside.",
+
+        drawSize: 4 // 👈 ADD THIS
+
     },
     TOMATO_SEED: {
-        name: "Tomato Seed", icon: "🌱", typeLabel: "Seed",
-        description: "Seed core of a tomato crop.", 
-        decayRate: 0.1, seedType: "tomato_seed", baseHealth: 10, baseVirulence: 0, baseFertility: 5,
-        spriteID: 29, tileset: "cropTileset", maxStack: 64
+        name: "Tomato Seed",
+        decayRate: 0.1,        
+        seedType: "tomato_seed", 
+        baseHealth: 10, baseVirulence: 0, baseFertility: 5,
+        spriteID: 29, tileset: "cropTileset", // 👈 Tile 29
+        maxStack: 64
     },
+
+    // ... inside ITEM_TYPES ...
     EGGPLANT_ITEM: {
-        name: "Eggplant", icon: "🍆", typeLabel: "Food",
-        description: "Standard nightshade eggplant crop.", energy: 40,
-        decayRate: 0.8, seedType: "eggplant_item", baseHealth: 30, baseVirulence: 0, baseFertility: 40, 
-        spriteID: 36, tileset: "cropTileset", maxStack: 8, drawSize: 8
+        name: "Eggplant", decayRate: 0.8, seedType: "eggplant_item", 
+        baseHealth: 30, baseVirulence: 0, baseFertility: 40, spriteID: 36, tileset: "cropTileset",
+        maxStack: 8, // 👈 Stacks to 8
+        drawSize: 8 // 👈 ADD THIS
+
     },
     EGGPLANT_SEED: {
-        name: "Eggplant Seed", icon: "🌱", typeLabel: "Seed",
-        description: "Standard eggplant seed cluster.", 
-        decayRate: 0.1, seedType: "eggplant_seed", baseHealth: 10, baseVirulence: 0, baseFertility: 5,
-        spriteID: 41, tileset: "cropTileset", maxStack: 64
+        name: "Eggplant Seed", decayRate: 0.1, seedType: "eggplant_seed", 
+        baseHealth: 10, baseVirulence: 0, baseFertility: 5, spriteID: 41, tileset: "cropTileset",
+        maxStack: 64
     },
     STRAWBERRY_ITEM: {
-        name: "Strawberry", icon: "🍓", typeLabel: "Food",
-        description: "A sweet wild berry snacks.", energy: 15,
-        decayRate: 0.8, seedType: "strawberry_item", baseHealth: 20, baseVirulence: 0, baseFertility: 20, 
-        spriteID: 72, tileset: "cropTileset", maxStack: 8, drawSize: 4
+        name: "Strawberry", decayRate: 0.8, seedType: "strawberry_item", 
+        baseHealth: 20, baseVirulence: 0, baseFertility: 20, spriteID: 72, tileset: "cropTileset",
+        maxStack: 8, // 👈 Stacks to 8
+        drawSize: 4 // 👈 ADD THIS
+
     },
     STRAWBERRY_SEED: {
-        name: "Strawberry Seed", icon: "🌱", typeLabel: "Seed",
-        description: "Nutritious strawberry seed cap.", 
-        decayRate: 0.1, seedType: "strawberry_seed", baseHealth: 10, baseVirulence: 0, baseFertility: 5,
-        spriteID: 77, tileset: "cropTileset", maxStack: 64
+        name: "Strawberry Seed", decayRate: 0.1, seedType: "strawberry_seed", 
+        baseHealth: 10, baseVirulence: 0, baseFertility: 5, spriteID: 77, tileset: "cropTileset",
+        maxStack: 64
     },
     PUMPKIN_ITEM: {
-        name: "Pumpkin", icon: "🎃", typeLabel: "Food",
-        description: "A heavy, hard-shelled autumn squash.", energy: 30,
-        decayRate: 0.8, seedType: "pumpkin_item", baseHealth: 40, baseVirulence: 0, baseFertility: 20, 
-        spriteID: 96, tileset: "cropTileset", maxStack: 8, drawSize: 8
+        name: "Pumpkin", decayRate: 0.8, seedType: "pumpkin_item", 
+        baseHealth: 40, baseVirulence: 0, baseFertility: 20, spriteID: 96, tileset: "cropTileset",
+        maxStack: 8, // 👈 Stacks to 8
+        drawSize: 8 // 👈 ADD THIS
+
     },
     PUMPKIN_SEED: {
-        name: "Pumpkin Seed", icon: "🌱", typeLabel: "Seed",
-        description: "Large, robust pumpkin crop seed.", 
-        decayRate: 0.1, seedType: "pumpkin_seed", baseHealth: 10, baseVirulence: 0, baseFertility: 5,
-        spriteID: 101, tileset: "cropTileset", maxStack: 64
+        name: "Pumpkin Seed", decayRate: 0.1, seedType: "pumpkin_seed", 
+        baseHealth: 10, baseVirulence: 0, baseFertility: 5, spriteID: 101, tileset: "cropTileset",
+        maxStack: 64
     },
     WATERMELON_ITEM: {
-        name: "Watermelon", icon: "🍉", typeLabel: "Food",
-        description: "A refreshing, sweet melon crop.", energy: 30,
-        decayRate: 0.8, seedType: "watermelon_item", baseHealth: 40, baseVirulence: 0, baseFertility: 20, 
-        spriteID: 30, tileset: "cropTileset", maxStack: 8, drawSize: 8
+        name: "Watermelon", decayRate: 0.8, seedType: "watermelon_item", 
+        baseHealth: 40, baseVirulence: 0, baseFertility: 20, spriteID: 30, tileset: "cropTileset",
+        maxStack: 8, // 👈 Stacks to 8
+        drawSize: 8 // 👈 ADD THIS
+
     },
     WATERMELON_SEED: {
-        name: "Watermelon Seed", icon: "🌱", typeLabel: "Seed",
-        description: "Standard watermelon melon seed.", 
-        decayRate: 0.1, seedType: "watermelon_seed", baseHealth: 10, baseVirulence: 0, baseFertility: 5,
-        spriteID: 35, tileset: "cropTileset", maxStack: 64
+        name: "Watermelon Seed", decayRate: 0.1, seedType: "watermelon_seed", 
+        baseHealth: 10, baseVirulence: 0, baseFertility: 5, spriteID: 35, tileset: "cropTileset",
+        maxStack: 64
     },
+
+    // ... inside ITEM_TYPES ...
     CORN_ITEM: {
-        name: "Corn", icon: "🌽", typeLabel: "Food",
-        description: "A sweet, fibrous ear of farm corn.", energy: 25,
-        decayRate: 0.8, seedType: "corn_item", baseHealth: 30, baseVirulence: 0, baseFertility: 15, 
-        spriteID: 108, tileset: "cropTileset", maxStack: 8, drawSize: 8
+        name: "Corn", decayRate: 0.8, seedType: "corn_item", 
+        baseHealth: 30, baseVirulence: 0, baseFertility: 15, spriteID: 108, tileset: "cropTileset",
+        maxStack: 8, // 👈 Stacks to 8
+        drawSize: 8 // 👈 ADD THIS
+
     },
     CORN_SEED: {
-        name: "Corn Seed", icon: "🌱", typeLabel: "Seed", description: "Kernel seed to plant corn.", decayRate: 0.1, seedType: "corn_seed", 
-        baseHealth: 10, baseVirulence: 0, baseFertility: 5, spriteID: 113, tileset: "cropTileset", maxStack: 64
+        name: "Corn Seed", decayRate: 0.1, seedType: "corn_seed", 
+        baseHealth: 10, baseVirulence: 0, baseFertility: 5, spriteID: 113, tileset: "cropTileset",
+        maxStack: 64
     },
     PINEAPPLE_ITEM: {
         name: "Pineapple", decayRate: 0.8, seedType: "pineapple_item", 
         baseHealth: 40, baseVirulence: 0, baseFertility: 30, spriteID: 48, tileset: "cropTileset",
-        maxStack: 8, drawSize: 8
+        maxStack: 8, // 👈 Stacks to 8
+        drawSize: 8 // 👈 ADD THIS
+
     },
     PINEAPPLE_SEED: {
         name: "Pineapple Crown", decayRate: 0.1, seedType: "pineapple_seed", 
-        baseHealth: 10, baseVirulence: 0, baseFertility: 5, spriteID: 1, tileset: "gardenTileset",
+        baseHealth: 10, baseVirulence: 0, baseFertility: 5, spriteID: 1, tileset: "gardenTileset", // 👈 Garden Tileset
         maxStack: 64
     },
     POTATO_ITEM: {
         name: "Potato", decayRate: 0.8, seedType: "potato_item", 
         baseHealth: 30, baseVirulence: 0, baseFertility: 25, spriteID: 84, tileset: "cropTileset",
-        maxStack: 8, drawSize: 4
+        maxStack: 8, // 👈 Stacks to 8
+        drawSize: 4 // 👈 ADD THIS
+
     },
     POTATO_SEED: {
         name: "Potato Eye", decayRate: 0.1, seedType: "potato_seed", 
-        baseHealth: 10, baseVirulence: 0, baseFertility: 5, spriteID: 2, tileset: "gardenTileset",
+        baseHealth: 10, baseVirulence: 0, baseFertility: 5, spriteID: 2, tileset: "gardenTileset", // 👈 Garden Tileset
         maxStack: 64
     },
     WHEAT_ITEM: {
         name: "Wheat", decayRate: 0.8, seedType: "wheat_item", 
-        baseHealth: 20, baseVirulence: 0, baseFertility: 10, spriteID: 168, tileset: "gardenTileset",
-        maxStack: 8
+        baseHealth: 20, baseVirulence: 0, baseFertility: 10, spriteID: 168, tileset: "gardenTileset", // 👈 Garden Tileset
+        maxStack: 8 // 👈 Stacks to 8
     },
     WHEAT_SEED: {
         name: "Wheat Seed", decayRate: 0.1, seedType: "wheat_seed", 
@@ -219,92 +200,184 @@ export const ITEM_TYPES = {
         maxStack: 64
     },
 
-    // ==========================================
-    // 🐓 ANIMAL PRODUCTS (FARMS & PASTORAL)
-    // ==========================================
-    EGG: {
-        name: "Farm Egg", icon: "🥚", typeLabel: "Food",
-        description: "A fresh farm-harvested chicken egg.", energy: 20,
-        decayRate: 0.8, seedType: "egg", baseHealth: 30, baseVirulence: 0, baseFertility: 15,
-        spriteID: 60, tileset: "foodTileset", maxStack: 8, drawSize: 4
+    ROSE_SEED: {
+        name: "Rose Seed",
+        decayRate: 0.1,        
+        seedType: "rose_seed", 
+        baseHealth: 10, baseVirulence: 0, baseFertility: 8,
+        spriteID: 11, tileset: "cropTileset",
+        maxStack: 64
     },
-    RAW_CHICKEN: { 
-        name: "Raw Chicken", icon: "🍗", typeLabel: "Food",
-        description: "Unprepared raw poultry meat. Needs cooking.", energy: 15,
-        decayRate: 1.5, seedType: "raw_chicken", baseHealth: 50, baseVirulence: 10, baseFertility: 100, 
-        spriteID: 15, tileset: "foodTileset", maxStack: 8, drawSize: 8 
+    VIOLET_SEED: {
+        name: "Violet Seed",
+        decayRate: 0.1,        
+        seedType: "violet_seed", 
+        baseHealth: 10, baseVirulence: 0, baseFertility: 8,
+        spriteID: 23, tileset: "cropTileset",
+        maxStack: 64
     },
-    CHICKEN_POOP: {
-        name: "Chicken Poop", icon: "💩", typeLabel: "Compost",
-        description: "Organic chicken manure, perfect for quick fertilizer.", 
-        decayRate: 1.0, seedType: "chicken_poop", baseHealth: 3, baseVirulence: 12, baseFertility: 14,
-        spriteID: 0, tileset: "transparentTileset", maxStack: 8, drawSize: 4
+    SUNFLOWER_SEED: {
+        name: "Sunflower Seed",
+        decayRate: 0.1,        
+        seedType: "sunflower_seed", 
+        baseHealth: 10, baseVirulence: 0, baseFertility: 12,
+        spriteID: 119, tileset: "cropTileset",
+        maxStack: 64
     },
+
+    // Locate the HAY entry inside ITEM_TYPES in src/items.js and update:
     HAY: {
-        name: "Dried Hay", icon: "🌾", typeLabel: "Fodder",
-        description: "Dehydrated grass bundle used to feed chickens.", 
-        seedType: "hay", spriteID: 168, tileset: "gardenTileset", isFodder: true,
-        baseHealth: 100, baseVirulence: 0, baseFertility: 0, drawSize: 16
+        name: "Dried Hay",
+        seedType: "hay",        
+        spriteID: 168,           // 🎯 THE FIX: Use Tile 168
+        tileset: "gardenTileset", // 🎯 THE FIX: Draw from the garden tileset
+        isFodder: true,         
+        baseHealth: 100,
+        baseVirulence: 0,
+        baseFertility: 0,
+        drawSize: 16 
+    },
+    
+    CHICKEN_POOP: {
+        name: "Chicken Poop",
+        decayRate: 1,       // Very slow decay
+        seedType: "chicken_poop", // Maps to TypeID 3
+        baseHealth: 3,
+        baseVirulence: 12,
+        baseFertility: 14,
+        spriteID: 0,
+        tileset: "transparentTileset", // 👈 ADD THIS LINE
+        maxStack: 8, // 👈 Stacks to 8
+        drawSize: 4 // 👈 ADD THIS
+
     },
 
-    // ==========================================
-    // 🗡️ EQUIPMENT & UTILITIES
-    // ==========================================
+    // 🥚 Task 3: The New Egg Item!
+    EGG: {
+        name: "Farm Egg",
+        decayRate: 0.8,
+        seedType: "egg",
+        baseHealth: 30,
+        baseVirulence: 0,
+        baseFertility: 15,
+        spriteID: 60,
+        tileset: "foodTileset",
+        maxStack: 8, // 👈 Task 3
+        drawSize: 4 // 👈 ADD THIS
+
+    },
+
+    RAW_CHICKEN: { 
+        name: "Raw Chicken", decayRate: 1.5, seedType: "raw_chicken", 
+        baseHealth: 50, baseVirulence: 10, baseFertility: 100, spriteID: 15, tileset: "foodTileset", maxStack: 8, drawSize: 8 
+    },
+
     KEY: {
-        name: "House Key", icon: "🔑", typeLabel: "Utility",
-        description: "Unlocks and controls access doors to linked structures.", 
-        seedType: "key", spriteID: 38, tileset: "keyTileset", isKey: true,
-        baseHealth: 100, baseVirulence: 0, baseFertility: 0, drawSize: 4
-    },
-    DAGGER: {
-        name: "Rusty Dagger", icon: "🗡️", typeLabel: "Weapon",
-        description: "A rusty blade that adds +5 ATK damage when equipped.", 
-        seedType: "weapon_dagger", spriteID: 0, tileset: "weaponTileset", isWeapon: true,
-        ad: 5, baseHealth: 100, baseVirulence: 0, baseFertility: 0, drawSize: 8, hilt: { x: 5, y: 10 }
-    },
-    PICKAXE: {
-        name: "Miner's Pickaxe", icon: "⛏️", typeLabel: "Weapon",
-        description: "Grants ability to mine and fracture local iron ore veins.", 
-        seedType: "tool_pickaxe", spriteID: 69, tileset: "transparentTileset", isWeapon: true,
-        ad: 3, baseHealth: 100, baseVirulence: 0, baseFertility: 0, drawSize: 8, hilt: { x: 4, y: 11 }
-    },
+        name: "House Key",
+        seedType: "key",
+        spriteID: 38,
+        tileset: "keyTileset", // 👈 We'll tell the renderer to use the key sheet
+        isKey: true,
+        baseHealth: 100,
+        baseVirulence: 0,
+        baseFertility: 0,
+        drawSize: 4 // 👈 ADD THIS
 
-    // ==========================================
-    // 🪨 ORES & RESOURCES
-    // ==========================================
-    IRON_ORE: {
-        name: "Iron Ore", icon: "🪨", typeLabel: "Resource",
-        description: "Raw iron compound chunk gathered from mountain mining camps.", 
-        seedType: "iron_ore", spriteID: 32, tileset: "craftingTileset",
-        baseHealth: 100, baseVirulence: 0, baseFertility: 0, drawSize: 8
-    },
-    IRON_INGOT: {
-        name: "Iron Ingot", icon: "🧱", typeLabel: "Resource",
-        description: "Purified metal slab smelted from iron ores.", 
-        seedType: "iron_ingot", spriteID: 36, tileset: "craftingTileset",
-        baseHealth: 100, baseVirulence: 0, baseFertility: 0, drawSize: 8
     },
     GOLD_ORE: {
-        name: "Gold Ore", icon: "🪨", typeLabel: "Resource",
-        description: "High density raw gold cluster.", 
-        seedType: "ore", spriteID: 29, baseHealth: 100, baseVirulence: 0, baseFertility: 0
+        name: "Gold Ore",
+        seedType: "ore",
+        spriteID: 29, // From worldTilesColor
+        baseHealth: 100,
+        baseVirulence: 0,
+        baseFertility: 0
     },
     GOLD_COIN: {
-        name: "Gold Coin", icon: "💰", typeLabel: "Currency",
-        description: "A shining coin minted from gold ores.", 
-        seedType: "coin", spriteID: 31, isCurrency: true, baseHealth: 100, baseVirulence: 0, baseFertility: 0
-    }
+        name: "Gold Coin",
+        seedType: "coin",
+        spriteID: 31, // A nice coin-looking tile
+        isCurrency: true,
+        baseHealth: 100,
+        baseVirulence: 0,
+        baseFertility: 0
+    },
+    DAGGER: {
+        name: "Rusty Dagger",
+        seedType: "weapon_dagger",
+        spriteID: 0,
+        tileset: "weaponTileset", // Tells the renderer to use the weapon sprite sheet
+        isWeapon: true,
+        ad: 5, // Grants +5 Attack Damage when equipped
+        baseHealth: 100, // Can act as Durability later!
+        baseVirulence: 0,
+        baseFertility: 0,
+        drawSize: 8 // 👈 ADD THIS
+
+    },
+
+    // Add to ITEM_TYPES in src/items.js
+    DAGGER: {
+        name: "Rusty Dagger",
+        seedType: "weapon_dagger",
+        spriteID: 0,
+        tileset: "weaponTileset",
+        isWeapon: true,
+        ad: 5,
+        baseHealth: 100,
+        baseVirulence: 0,
+        baseFertility: 0,
+        drawSize: 8,
+        hilt: { x: 5, y: 10 } // 👈 NEW: Defined hilt coordinates
+    },
+    PICKAXE: {
+        name: "Miner's Pickaxe",
+        seedType: "tool_pickaxe",
+        spriteID: 69,
+        tileset: "transparentTileset",
+        isWeapon: true,
+        ad: 3,
+        baseHealth: 100,
+        baseVirulence: 0,
+        baseFertility: 0,
+        drawSize: 8,
+        hilt: { x: 4, y: 11 }
+    },
+    IRON_ORE: {
+        name: "Iron Ore",
+        seedType: "iron_ore",
+        spriteID: 32,
+        tileset: "craftingTileset", // Width 16
+        baseHealth: 100,
+        baseVirulence: 0,
+        baseFertility: 0,
+        drawSize: 8
+    },
+    IRON_INGOT: {
+        name: "Iron Ingot",
+        seedType: "iron_ingot",
+        spriteID: 36,
+        tileset: "craftingTileset", // Width 16
+        baseHealth: 100,
+        baseVirulence: 0,
+        baseFertility: 0,
+        drawSize: 8
+    },
 };
 
+/**
+ * 2. THE FACTORY: Creates a unique object to put in the inventory.
+ * UPDATED: Now copies all template properties (decayRate, seedType, etc.)
+ */
 export function createItem(template) {
     if (!template) return null;
+
     return {
-        ...template,
+        ...template,           // 👈 This copies decayRate and seedType automatically!
         health: template.baseHealth,
-        virulence: template.baseVirulence || 0,
-        fertility: template.baseFertility || 0,
-        count: 1,
-        maxStack: template.maxStack || 1,
+        virulence: template.baseVirulence,
+        fertility: template.baseFertility,
+        count: 1,                           // 👈 NEW: Start with 1 item
+        maxStack: template.maxStack || 1,   // 👈 NEW: Default to unstackable (1) if not set
         timestamp: Date.now() 
     };
 }
