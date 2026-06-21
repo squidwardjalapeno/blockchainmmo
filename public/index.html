@@ -226,29 +226,7 @@
             </div>
         </div>
 
-        <!-- CHEST STORAGE MENU -->
-        <div id="chest-menu" class="hidden menu-modal">
-            <div class="pixel-panel chest-modal">
-                <h2 style="color: var(--text-dark); margin-top: 0; text-align: center;">📦 STORAGE CHEST</h2>
-                <p style="font-size: 10px; text-align: center; margin-bottom: 15px;">Click or Drag items to transfer.</p>
-                
-                <div class="chest-layout">
-                    <div class="chest-pane">
-                        <h3>BACKPACK</h3>
-                        <div id="chest-hero-inv" class="inv-grid"></div>
-                    </div>
-                    <div class="chest-pane">
-                        <h3>CHEST</h3>
-                        <div id="chest-box-inv" class="inv-grid"></div>
-                    </div>
-                </div>
-
-                <div class="chest-controls">
-                    <button id="unload-all-btn" class="pixel-btn" style="flex: 1;">UNLOAD ALL</button>
-                    <button id="close-chest-btn" class="pixel-btn cancel" style="flex: 1;">CLOSE</button>
-                </div>
-            </div>
-        </div>
+        
 
         <!-- MINING MENU -->
         <div id="mining-menu" class="hidden menu-modal" style="z-index: 3000;">
@@ -377,29 +355,6 @@
             </div>
         </div>
 
-        <!-- ROOT CELLAR MENU -->
-        <div id="cellar-menu" class="hidden menu-modal">
-            <div class="pixel-panel chest-modal">
-                <h2 style="color: var(--text-dark); margin-top: 0; text-align: center;">🧺 ROOT CELLAR</h2>
-                <p style="font-size: 10px; text-align: center; margin-bottom: 15px; color: var(--highlight);">Storage for Organic Foodstuffs only.</p>
-                
-                <div class="chest-layout">
-                    <div class="chest-pane">
-                        <h3>BACKPACK</h3>
-                        <div id="cellar-hero-inv" class="inv-grid"></div>
-                    </div>
-                    <div class="chest-pane">
-                        <h3>CELLAR</h3>
-                        <div id="cellar-box-inv" class="inv-grid"></div>
-                    </div>
-                </div>
-
-                <div class="chest-controls">
-                    <button id="unload-food-btn" class="pixel-btn safe" style="flex: 1;">UNLOAD FOOD</button>
-                    <button id="close-cellar-btn" class="pixel-btn cancel" style="flex: 1;">CLOSE</button>
-                </div>
-            </div>
-        </div>
 
         <!-- Replace your hay-table-menu modal inside index.html with this markup: -->
         <!-- REVISED HAY TABLE MENU -->
@@ -422,29 +377,29 @@
             </div>
         </div>
 
-        <!-- HAY STORAGE MENU -->
-        <div id="hay-storage-menu" class="hidden menu-modal">
-            <div class="pixel-panel chest-modal">
-                <h2 style="color: var(--text-dark); margin-top: 0; text-align: center;">🌾 HAY STORAGE</h2>
-                <p style="font-size: 10px; text-align: center; margin-bottom: 15px; color: var(--banana-dark);">Dry Storage for Fodder.</p>
-                
-                <div class="chest-layout">
-                    <div class="chest-pane">
-                        <h3>BACKPACK</h3>
-                        <div id="hay-storage-hero-inv" class="inv-grid"></div>
-                    </div>
-                    <div class="chest-pane">
-                        <h3>STORAGE</h3>
-                        <div id="hay-storage-box-inv" class="inv-grid"></div>
-                    </div>
-                </div>
-
-                <div class="chest-controls">
-                    <button id="unload-hay-btn" class="pixel-btn safe" style="flex: 1;">UNLOAD HAY</button>
-                    <button id="close-hay-storage-btn" class="pixel-btn cancel" style="flex: 1;">CLOSE</button>
-                </div>
+        <!-- UNIFIED STORAGE MENU -->
+<div id="storage-menu" class="hidden menu-modal">
+    <div class="pixel-panel chest-modal">
+        <h2 style="color: var(--text-dark); margin-top: 0; text-align: center;" id="storage-title">📦 STORAGE</h2>
+        <p style="font-size: 10px; text-align: center; margin-bottom: 15px;" id="storage-subtitle">Storage Description</p>
+        
+        <div class="chest-layout">
+            <div class="chest-pane">
+                <h3>BACKPACK</h3>
+                <div id="storage-hero-inv" class="inv-grid"></div>
+            </div>
+            <div class="chest-pane">
+                <h3 id="storage-pane-title">CONTAINER</h3>
+                <div id="storage-box-inv" class="inv-grid"></div>
             </div>
         </div>
+
+        <div class="chest-controls">
+            <button id="storage-unload-btn" class="pixel-btn safe" style="flex: 1;">UNLOAD VALID ITEMS</button>
+            <button id="close-storage-btn" class="pixel-btn cancel" style="flex: 1;">CLOSE</button>
+        </div>
+    </div>
+</div>
 
         <!-- HOBBIT MANAGER MENU -->
         <div id="hobbit-manager-menu" class="hidden menu-modal" style="z-index: 3000;">
