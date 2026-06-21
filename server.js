@@ -23,17 +23,46 @@ const io = new Server(http, {
     }
 });
 
-// --- ADD STATIC FILE SERVING MIDDLEWARE HERE ---
+// ==========================================
+// 🌐 DYNAMIC STATIC FILE SERVING
+// ==========================================
 
-// Serve static assets (such as styles.css, images) from the root folder
+// 1. Scan for the correct index.html location
+const possibleIndexPaths = [
+    path.join(__dirname, 'index.html'),
+    path.join(__dirname, 'src', 'index.html'),
+    path.join(__dirname, '..', 'index.html')
+];
+
+let indexPath = null;
+for (const p of possibleIndexPaths) {
+    if (fs.existsSync(p)) {
+        indexPath = p;
+        break;
+    }
+}
+
+// 2. Serve static directories (images, styles, etc.) based on active paths
 app.use(express.static(__dirname));
+app.use(express.static(path.join(__dirname, 'src')));
+app.use(express.static(path.join(__dirname, '..')));
 
-// Map the virtual '/js' path used in index.html to the actual 'src' directory where the game files live
-app.use('/js', express.static(path.join(__dirname, 'src')));
+// 3. Map the '/js' route to the folder containing your client scripts
+if (fs.existsSync(path.join(__dirname, 'src', 'game.js'))) {
+    app.use('/js', express.static(path.join(__dirname, 'src')));
+} else if (fs.existsSync(path.join(__dirname, 'game.js'))) {
+    app.use('/js', express.static(__dirname));
+} else if (fs.existsSync(path.join(__dirname, '..', 'src', 'game.js'))) {
+    app.use('/js', express.static(path.join(__dirname, '..', 'src')));
+}
 
-// Explicitly serve index.html for root requests
+// 4. Handle root requests by serving the resolved index.html
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+    if (indexPath) {
+        res.sendFile(indexPath);
+    } else {
+        res.status(404).send('index.html could not be located in root, src, or parent directories.');
+    }
 });
 
 // ==========================================
