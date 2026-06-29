@@ -2,7 +2,15 @@
 import { viewport } from './viewport.js';
 import { images } from './assetLoader.js';
 import { hero } from './entities.js'; 
-import { openChestMenu, handleRemoteChestUpdate, openStoreMenu, handleRemoteStoreUpdate, processClaimedStorage, openCellarMenu, handleRemoteCellarUpdate, openHayStorageMenu, handleRemoteHayStorageUpdate, openWithdrawMenu, executeWithdrawal } from './uiManager.js';
+import { 
+    openUnifiedStorage, 
+    handleRemoteStorageUpdate, 
+    openStoreMenu, 
+    handleRemoteStoreUpdate, 
+    processClaimedStorage, 
+    openWithdrawMenu, 
+    executeWithdrawal 
+} from './uiManager.js';
 import { setContractAddress } from './blockchainManager.js';
 import { handleRemoteTileUpdate } from './bacteria.js';
 
@@ -15,19 +23,17 @@ export let globalUnlockedSystems = ["4_4"];
 
 export const doorStates = new Map(); // key: "gx_gy", value: { locked: boolean }
 
-export const storeDbCache = new Map(); // 🎯 THE FIX: Centrally declared and exported
-export const hayStorageCache = new Map(); // 🎯 THE FIX: Centrally declared and exported
-export const chestCache = new Map(); // 🎯 THE FIX: Centrally declared and exported
+export const storeDbCache = new Map(); 
+export const hayStorageCache = new Map(); 
+export const chestCache = new Map(); 
 
-
-// 🎯 THE FIX: Track the chest actively requested by the player's GUI
+// Track the chest actively requested by the player's GUI
 export let playerRequestedChestId = null;
 export function setPlayerRequestedChestId(id) {
     playerRequestedChestId = id;
 }
 
-
-// 🎯 THE FIX: Dynamic dependency injection of worldMatrix to bypass circular dependency locks
+// Dynamic dependency injection of worldMatrix to bypass circular dependency locks
 export let activeWorldMatrix = null;
 export function setWorldMatrix(matrix) {
     activeWorldMatrix = matrix;
@@ -112,25 +118,14 @@ export function initMultiplayer() {
                         ui.renderTempleUI();
                     }
                     
-                    const chestMenu = document.getElementById('chest-menu');
-                    if (chestMenu && !chestMenu.classList.contains('hidden')) {
-                        ui.renderChestUI();
-                    }
-                    
-                    const cellarMenu = document.getElementById('cellar-menu');
-                    if (cellarMenu && !cellarMenu.classList.contains('hidden')) {
-                        ui.renderCellarUI();
-                    }
-
-                    const hayMenu = document.getElementById('hay-storage-menu');
-                    if (hayMenu && !hayMenu.classList.contains('hidden')) {
-                        ui.renderHayStorageUI();
+                    const storageMenu = document.getElementById('storage-menu');
+                    if (storageMenu && !storageMenu.classList.contains('hidden')) {
+                        ui.renderStorageUI();
                     }
                 });
             });
         });
 
-        // Locate socket.on('restoreHero') inside src/multiplayer.js and update:
         socket.on('restoreHero', (data) => {
             hero.xp = data.xp || 0;
             hero.hp = data.hp || 100;
@@ -164,8 +159,6 @@ export function initMultiplayer() {
             hero.charClass = data.charClass || "Paladin";
             hero.skills = data.skills || [];
 
-            
-
             import('./uiManager.js').then(ui => {
                 ui.updateHUD();
                 ui.renderTabContent(); 
@@ -182,25 +175,20 @@ export function initMultiplayer() {
         socket.on('balanceUpdated', (data) => { hero.inGameUni = data.inGameUni; });
         
         socket.on('chestData', (data) => { 
-            // 🎯 THE FIX: Centralized cache update
             chestCache.set(data.chestId, data.items);
-
             if (data.chestId === playerRequestedChestId) {
-                openChestMenu(data.chestId, data.items); 
-                playerRequestedChestId = null; // Consume the trigger
+                openUnifiedStorage(data.chestId, data.items, 'CHEST'); 
+                playerRequestedChestId = null; 
             }
         });
 
         socket.on('chestUpdated', (data) => { 
-            // 🎯 THE FIX: Centralized cache update
             chestCache.set(data.chestId, data.items);
-            handleRemoteChestUpdate(data.chestId, data.items); 
+            handleRemoteStorageUpdate(data.chestId, data.items, 'CHEST'); 
         });
         
         socket.on('storeData', (data) => { 
-            // 🎯 THE FIX: Store data cached centrally, UI opens only on player manual request
             storeDbCache.set(data.storeId, data.data);
-
             if (window.isManualStoreRequest) {
                 window.isManualStoreRequest = false;
                 openStoreMenu(data.storeId, data.data); 
@@ -214,20 +202,18 @@ export function initMultiplayer() {
 
         socket.on('hayStorageData', (data) => { 
             hayStorageCache.set(data.hayStorageId, data.items);
-            openHayStorageMenu(data.hayStorageId, data.items); 
+            openUnifiedStorage(data.hayStorageId, data.items, 'HAY'); 
         });
 
         socket.on('hayStorageUpdated', (data) => { 
             hayStorageCache.set(data.hayStorageId, data.items);
-            handleRemoteHayStorageUpdate(data.hayStorageId, data.items); 
+            handleRemoteStorageUpdate(data.hayStorageId, data.items, 'HAY'); 
         });
 
-
         socket.on('storageClaimed', (data) => { processClaimedStorage(data.items); });
-        socket.on('cellarData', (data) => { openCellarMenu(data.cellarId, data.items); });
-        socket.on('cellarUpdated', (data) => { handleRemoteCellarUpdate(data.cellarId, data.items); });
+        socket.on('cellarData', (data) => { openUnifiedStorage(data.cellarId, data.items, 'CELLAR'); });
+        socket.on('cellarUpdated', (data) => { handleRemoteStorageUpdate(data.cellarId, data.items, 'CELLAR'); });
         
-
         socket.on('chatMessage', (data) => {
             const chatBox = document.getElementById('chat-messages');
             if (!chatBox) return;
@@ -378,7 +364,6 @@ export function initMultiplayer() {
                     const ty = p.gy;
                     const tileData = physMod.getTileData(tx * 16 + 8, ty * 16 + 8, gameMod.worldMatrix, gameMod.roomMatrix);
                     if (tileData && tileData.tileID === 63 && (tileData.roomID === 0 || tileData.roomID === 9999)) {
-                        // Pass true as the 7th parameter to disable recursive network packet loops
                         plantsMod.createPlant(tx, ty, null, p.growth, p.type, 0, true);
                     }
                 });
@@ -436,10 +421,8 @@ export function initMultiplayer() {
                     }
                 }
             }
-            // Locate socket.on('position') inside src/multiplayer.js and update the serverAnimals block:
             serverProjectiles = projectiles || []; 
 
-            // 🎯 THE FIX: Map chickens to targets synchronously to enable 60fps smoothing
             if (serverAnimals) {
                 import('./animals.js').then(m => {
                     serverAnimals.forEach(sa => {
@@ -453,12 +436,11 @@ export function initMultiplayer() {
                             localA.targetY = sa.y;
                             localA.dir = sa.dir;
                             localA.state = sa.state;
-                            localA.energy = sa.energy; // Sync fullness
+                            localA.energy = sa.energy; 
                             localA.hp = sa.hp;
                         }
                     });
                     
-                    // Wipe any removed chickens
                     for (let i = m.animals.length - 1; i >= 0; i--) {
                         if (!serverAnimals.some(sa => sa.id === m.animals[i].id)) {
                             m.animals.splice(i, 1);

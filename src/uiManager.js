@@ -1,6 +1,7 @@
+// src/uiManager.js
 
 import { hero, getLevelInfo, gameState } from './entities.js';
-import { socket, remotePlayers, playerWallet, setPlayerWallet, syncInventoryWithServer } from './multiplayer.js';
+import { socket, playerWallet, setPlayerWallet, syncInventoryWithServer, chestCache, hayStorageCache, storeDbCache } from './multiplayer.js';
 import { CONFIG } from './config.js';
 import { ITEM_TYPES, createItem } from './items.js';
 import { getWaitModifier, getRandomFish, globalFishCount } from './fish.js';
@@ -9,7 +10,6 @@ import { mapCanvas } from './renderer.js';
 import { recalculateStats } from './interactionManager.js';
 
 export let activeDoorCoords = null;
-
 
 if (typeof window !== 'undefined') {
     logStep("uiManager.js");
@@ -23,21 +23,52 @@ export const uiState = {
 };
 
 // ==========================================
-// CHEST, TEMPLE, & STORAGE STATES
+// UNIFIED STORAGE ENGINE STATE & CONFIGS
 // ==========================================
-export let activeChestId = null;
-export let activeChestItems = [];
+export let activeStorageContext = {
+    id: null,
+    items: [],
+    type: null // 'CHEST', 'CELLAR', or 'HAY'
+};
+
+const VALID_FOOD_TYPES = ["fish", "cooked_fish", "grass_item"];
+const VALID_HAY_TYPES = ["hay", "plant_matter"];
+
+export const STORAGE_CONFIGS = {
+    CHEST: {
+        title: "📦 STORAGE CHEST",
+        subtitle: "Click or Drag items to transfer.",
+        paneTitle: "CHEST",
+        unloadLabel: "UNLOAD ALL",
+        filter: () => true, // Accept everything
+        limit: 8,
+        transferEvent: 'requestChestTransfer',
+        updateEvent: 'updateChest'
+    },
+    CELLAR: {
+        title: "🧺 ROOT CELLAR",
+        subtitle: "Storage for Organic Foodstuffs only.",
+        paneTitle: "CELLAR",
+        unloadLabel: "UNLOAD FOOD",
+        filter: (item) => VALID_FOOD_TYPES.includes(item.seedType),
+        limit: 10,
+        transferEvent: 'requestCellarTransfer',
+        updateEvent: 'updateCellar'
+    },
+    HAY: {
+        title: "🌾 HAY STORAGE",
+        subtitle: "Dry Storage for Fodder.",
+        paneTitle: "STORAGE",
+        unloadLabel: "UNLOAD HAY/PM",
+        filter: (item) => VALID_HAY_TYPES.includes(item.seedType),
+        limit: 10,
+        transferEvent: 'requestHayTransfer',
+        updateEvent: 'updateHayStorage'
+    }
+};
 
 export let altarItem = null;
 
-export let activeCellarId = null;
-export let activeCellarItems = [];
-
-export let activeHayStorageId = null;
-export let activeHayStorageItems = [];
-
-// ==========================================
-// 🛠️ CRAFTING RENDERERS (Smelter & Anvil)
 // ==========================================
 // 🛠️ CRAFTING RENDERERS (Smelter & Anvil)
 // ==========================================
@@ -49,69 +80,122 @@ export let activeAnvilData = null;
 let confirmingSmelterSpeedUp = false;
 let confirmingAnvilSpeedUp = false;
 
-
-export let activeStorageContext = {
-    id: null,
-    items: [],
-    type: null // 'CHEST', 'CELLAR', 'HAY'
-};
-
-const STORAGE_CONFIGS = {
-    CHEST: {
-        title: "📦 STORAGE CHEST",
-        subtitle: "Click or Drag items to transfer.",
-        paneTitle: "CHEST",
-        unloadLabel: "UNLOAD ALL",
-        filter: () => true, // Allows everything
-        limit: 8,
-        transferEvent: 'requestChestTransfer',
-        updateEvent: 'updateChest'
-    },
-    CELLAR: {
-        title: "🧺 ROOT CELLAR",
-        subtitle: "Storage for Organic Foodstuffs only.",
-        paneTitle: "CELLAR",
-        unloadLabel: "UNLOAD FOOD",
-        filter: (item) => ["fish", "cooked_fish", "grass_item"].includes(item.seedType),
-        limit: 10,
-        transferEvent: 'requestCellarTransfer',
-        updateEvent: 'updateCellar'
-    },
-    HAY: {
-        title: "🌾 HAY STORAGE",
-        subtitle: "Dry Storage for Fodder.",
-        paneTitle: "STORAGE",
-        unloadLabel: "UNLOAD HAY/PM",
-        filter: (item) => ["hay", "plant_matter"].includes(item.seedType),
-        limit: 10,
-        transferEvent: 'requestHayTransfer',
-        updateEvent: 'updateHayStorage'
-    }
-};
-
 export function openUnifiedStorage(id, items, type) {
     activeStorageContext.id = id;
     activeStorageContext.items = items || [];
     activeStorageContext.type = type;
 
     const config = STORAGE_CONFIGS[type];
-    
+    if (!config) return;
+
     document.getElementById('storage-title').innerText = config.title;
     document.getElementById('storage-subtitle').innerText = config.subtitle;
     document.getElementById('storage-pane-title').innerText = config.paneTitle;
-    
-    const unloadBtn = document.getElementById('storage-unload-btn');
-    unloadBtn.innerText = config.unloadLabel;
-    
+    document.getElementById('storage-unload-btn').innerText = config.unloadLabel;
+
     document.getElementById('storage-menu').classList.remove('hidden');
     renderStorageUI();
 }
 
+export function handleRemoteStorageUpdate(id, items, type) {
+    if (activeStorageContext.id === id && activeStorageContext.type === type) {
+        activeStorageContext.items = items;
+        renderStorageUI();
+    }
+}
+
+export function renderStorageUI() {
+    if (!activeStorageContext.id) return;
+
+    const heroInv = document.getElementById('storage-hero-inv');
+    const storageInv = document.getElementById('storage-box-inv');
+
+    heroInv.innerHTML = hero.inventory.map((item, i) => `
+        <div class="inv-item draggable-item" draggable="true" data-index="${i}" data-source="hero">
+            <div class="item-icon" style="font-size: 24px;">${getItemIcon(item)}</div>
+            <strong>${item.name}</strong>
+            ${item.count > 1 ? `<br><span style="color:var(--banana-dark); font-size:8px;">(x${item.count})</span>` : ''}
+        </div>
+    `).join('');
+
+    storageInv.innerHTML = activeStorageContext.items.map((item, i) => `
+        <div class="inv-item draggable-item" draggable="true" data-index="${i}" data-source="storage">
+            <div class="item-icon" style="font-size: 24px;">${getItemIcon(item)}</div>
+            <strong>${item.name}</strong>
+            ${item.count > 1 ? `<br><span style="color:var(--banana-dark); font-size:8px;">(x${item.count})</span>` : ''}
+        </div>
+    `).join('');
+
+    const items = document.querySelectorAll('#storage-menu .draggable-item');
+    items.forEach(item => {
+        item.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('index', item.dataset.index);
+            e.dataTransfer.setData('source', item.dataset.source);
+        });
+
+        item.addEventListener('click', () => {
+            transferStorageItem(item.dataset.index, item.dataset.source);
+        });
+    });
+}
+
+function handleStorageDrop(e, targetSource) {
+    const index = e.dataTransfer.getData('index');
+    const source = e.dataTransfer.getData('source');
+    
+    if (source && source !== targetSource) {
+        transferStorageItem(index, source);
+    }
+}
+
+function transferStorageItem(index, source) {
+    if (!activeStorageContext.id) return;
+    const config = STORAGE_CONFIGS[activeStorageContext.type];
+
+    if (source === 'hero') {
+        const item = hero.inventory[index];
+        if (!item) return;
+
+        if (!config.filter(item)) {
+            alert(`Only designated items are allowed in this storage container!`);
+            return;
+        }
+
+        if (activeStorageContext.type === 'CHEST') {
+            if (activeStorageContext.items.length >= config.limit) {
+                alert(`This chest is full! Maximum ${config.limit} slots.`);
+                return;
+            }
+        }
+
+        if (socket) {
+            socket.emit(config.transferEvent, {
+                [activeStorageContext.type === 'CHEST' ? 'chestId' : 
+                 activeStorageContext.type === 'CELLAR' ? 'cellarId' : 'hayStorageId']: activeStorageContext.id,
+                index: index,
+                direction: activeStorageContext.type === 'CHEST' ? 'to_chest' : 
+                           activeStorageContext.type === 'CELLAR' ? 'to_cellar' : 'to_storage'
+            });
+        }
+    } else {
+        if (hero.inventory.length >= hero.maxSlots) {
+            alert("Your backpack is full!");
+            return;
+        }
+        if (socket) {
+            socket.emit(config.transferEvent, {
+                [activeStorageContext.type === 'CHEST' ? 'chestId' : 
+                 activeStorageContext.type === 'CELLAR' ? 'cellarId' : 'hayStorageId']: activeStorageContext.id,
+                index: index,
+                direction: 'to_hero'
+            });
+        }
+    }
+}
 
 export function openCraftingTableMenu() {
     document.getElementById('workshop-menu').classList.remove('hidden');
 }
-
 
 function renderSmelterUI() {
     if (!activeSmelterData) return;
@@ -190,27 +274,19 @@ export function handleRemoteAnvilUpdate(jobId, data) {
     if (activeAnvilId === jobId) { activeAnvilData = data; renderAnvilUI(); }
 }
 
-const VALID_FOOD_TYPES = ["fish", "cooked_fish", "grass_item"];
-const VALID_HAY_TYPES = ["hay", "plant_matter"]; // 🎯 THE FIX: Add plant_matter to the valid hay storage list
-// ==========================================
-// 🆕 PALADIN SKILLS DATABASE
-// ==========================================
 export const PALADIN_SKILLS = [
-    { id: 'p1', name: 'Vault', icon: '⚔️' }, // Renamed from Roll
+    { id: 'p1', name: 'Vault', icon: '⚔️' },
     { id: 'p2', name: 'Holy Shield / Holy Blast', icon: '✨' },
     { id: 'p3', name: 'Divine Bubble', icon: '🛡️' },
     { id: 'p4', name: "Ascension / Lion's Breath", icon: '🏃' },
-
     { id: 'p5', name: 'Radiant Nova', icon: '💪' },
     { id: 'p6', name: 'Flux Shot', icon: '🔥' },
     { id: 'p7', name: 'Warp', icon: '🦁' },
     { id: 'p8', name: "Heaven's Halo", icon: '🌪️' },
-
     { id: 'p9', name: 'Flare', icon: '🔨' },
     { id: 'p10', name: 'Fever', icon: '🤲' },
     { id: 'p11', name: 'Ring of Penance', icon: '⚡' },
     { id: 'p12', name: 'Zephyr', icon: '🔆' },
-    
     { id: 'p13', name: 'Vanguard', icon: '👁️' },
     { id: 'p14', name: 'Consecration', icon: '💢' },
     { id: 'p15', name: 'Fleeting Bulwark', icon: '😤' },
@@ -237,9 +313,6 @@ export function initUI() {
 
     document.getElementById('close-menu').addEventListener('click', toggleMenu);
 
-    // In src/uiManager.js -> inside initUI()
-
-    // --- ACTIVITY LEDGER ---
     const activityBtn = document.getElementById('hud-activity-btn');
     if (activityBtn) {
         activityBtn.onclick = () => { if (socket) socket.emit('requestActivityLog'); };
@@ -253,7 +326,6 @@ export function initUI() {
         socket.on('activityData', (logData) => renderActivityLog(logData));
     }
     
-    // --- HELP MENU ---
     const helpBtn = document.getElementById('hud-help-btn');
     if (helpBtn) {
         helpBtn.onclick = () => document.getElementById('help-menu').classList.remove('hidden');
@@ -263,31 +335,50 @@ export function initUI() {
         closeHelpBtn.onclick = () => document.getElementById('help-menu').classList.add('hidden');
     }
 
-    // --- CHEST LISTENERS ---
-    document.getElementById('close-chest-btn').addEventListener('click', () => {
-        document.getElementById('chest-menu').classList.add('hidden');
-        activeChestId = null;
+    // --- UNIFIED STORAGE LISTENERS ---
+    document.getElementById('close-storage-btn').addEventListener('click', () => {
+        document.getElementById('storage-menu').classList.add('hidden');
+        activeStorageContext.id = null;
+        activeStorageContext.type = null;
+        activeStorageContext.items = [];
     });
 
-    document.getElementById('unload-all-btn').addEventListener('click', () => {
-        if (!activeChestId || hero.inventory.length === 0) return;
-        activeChestItems.push(...hero.inventory);
-        hero.inventory = [];
-        if (socket) socket.emit('updateChest', { chestId: activeChestId, items: activeChestItems });
-        renderChestUI();
+    document.getElementById('storage-unload-btn').addEventListener('click', () => {
+        if (!activeStorageContext.id || hero.inventory.length === 0) return;
+        const config = STORAGE_CONFIGS[activeStorageContext.type];
+        
+        const matchingItems = hero.inventory.filter(config.filter);
+        const nonMatchingItems = hero.inventory.filter(item => !config.filter(item));
+
+        if (matchingItems.length === 0) {
+            alert("No matching items in your backpack to unload!");
+            return;
+        }
+
+        activeStorageContext.items.push(...matchingItems);
+        hero.inventory = nonMatchingItems;
+
+        if (socket) {
+            socket.emit(config.updateEvent, {
+                [activeStorageContext.type === 'CHEST' ? 'chestId' : 
+                 activeStorageContext.type === 'CELLAR' ? 'cellarId' : 'hayStorageId']: activeStorageContext.id,
+                items: activeStorageContext.items
+            });
+        }
+        renderStorageUI();
     });
 
-    const heroPane = document.getElementById('chest-hero-inv');
-    const chestPane = document.getElementById('chest-box-inv');
+    const storageHeroPane = document.getElementById('storage-hero-inv');
+    const storageBoxPane = document.getElementById('storage-box-inv');
 
-    [heroPane, chestPane].forEach(pane => {
-        pane.addEventListener('dragover', (e) => e.preventDefault()); 
+    [storageHeroPane, storageBoxPane].forEach(pane => {
+        pane.addEventListener('dragover', (e) => e.preventDefault());
     });
 
-    heroPane.addEventListener('drop', (e) => handleDrop(e, 'hero'));
-    chestPane.addEventListener('drop', (e) => handleDrop(e, 'chest'));
+    storageHeroPane.addEventListener('drop', (e) => handleStorageDrop(e, 'hero'));
+    storageBoxPane.addEventListener('drop', (e) => handleStorageDrop(e, 'storage'));
 
-    // --- TEMPLE LISTENERS ---
+    // --- TEMPLE ALTAR LISTENERS ---
     document.getElementById('close-temple-btn').addEventListener('click', () => {
         document.getElementById('temple-menu').classList.add('hidden');
         if (altarItem) {
@@ -302,20 +393,17 @@ export function initUI() {
             return;
         }
         if (!playerWallet) {
-            alert("You must connect your wallet to receive blessings (points)!");
+            alert("You must connect your wallet to receive blessings!");
             return;
         }
 
         if (socket) {
             socket.emit('sacrificeItem', {
                 itemType: altarItem.seedType,
-                count: altarItem.count, // 👈 THE FIX: Send the stack count!
+                count: altarItem.count,
                 playerWalletAddress: playerWallet
             });
         }
-        
-        console.log(`💎 Sacrificed ${altarItem.count}x ${altarItem.name} to the Gods.`);
-        alert("The Gods are pleased! Points have been added to your balance.");
         
         altarItem = null;
         renderTempleUI();
@@ -345,75 +433,6 @@ export function initUI() {
         document.getElementById('maptable-menu').classList.add('hidden');
     });
 
-    // --- CELLAR LISTENERS ---
-    document.getElementById('close-cellar-btn').addEventListener('click', () => {
-        document.getElementById('cellar-menu').classList.add('hidden');
-        activeCellarId = null; 
-    });
-
-    document.getElementById('unload-food-btn').addEventListener('click', () => {
-        if (!activeCellarId || hero.inventory.length === 0) return;
-        
-        const foodItems = hero.inventory.filter(i => VALID_FOOD_TYPES.includes(i.seedType));
-        const nonFoodItems = hero.inventory.filter(i => !VALID_FOOD_TYPES.includes(i.seedType));
-
-        if (foodItems.length === 0) {
-            alert("No food in backpack to unload!");
-            return;
-        }
-
-        activeCellarItems.push(...foodItems);
-        hero.inventory = nonFoodItems; 
-        
-        if (socket) socket.emit('updateCellar', { cellarId: activeCellarId, items: activeCellarItems });
-        renderCellarUI();
-    });
-
-    const cellarHeroPane = document.getElementById('cellar-hero-inv');
-    const cellarPane = document.getElementById('cellar-box-inv');
-
-    [cellarHeroPane, cellarPane].forEach(pane => {
-        pane.addEventListener('dragover', (e) => e.preventDefault()); 
-    });
-
-    cellarHeroPane.addEventListener('drop', (e) => handleCellarDrop(e, 'hero-cellar'));
-    cellarPane.addEventListener('drop', (e) => handleCellarDrop(e, 'cellar'));
-
-    // --- HAY STORAGE LISTENERS ---
-    document.getElementById('close-hay-storage-btn').addEventListener('click', () => {
-        document.getElementById('hay-storage-menu').classList.add('hidden');
-        activeHayStorageId = null; 
-    });
-
-    // --- HAY STORAGE UNLOAD BUTTON ---
-    document.getElementById('unload-hay-btn').addEventListener('click', () => {
-        if (!activeHayStorageId || hero.inventory.length === 0) return;
-        
-        const hayItems = hero.inventory.filter(i => VALID_HAY_TYPES.includes(i.seedType));
-        const otherItems = hero.inventory.filter(i => !VALID_HAY_TYPES.includes(i.seedType));
-
-        if (hayItems.length === 0) {
-            alert("No Hay or Plant Matter in backpack to unload!");
-            return;
-        }
-
-        activeHayStorageItems.push(...hayItems);
-        hero.inventory = otherItems;
-        
-        if (socket) socket.emit('updateHayStorage', { hayStorageId: activeHayStorageId, items: activeHayStorageItems });
-        renderHayStorageUI();
-    });
-
-    const hayHeroPane = document.getElementById('hay-storage-hero-inv');
-    const hayPane = document.getElementById('hay-storage-box-inv');
-
-    [hayHeroPane, hayPane].forEach(pane => {
-        pane.addEventListener('dragover', (e) => e.preventDefault()); 
-    });
-
-    hayHeroPane.addEventListener('drop', (e) => handleHayStorageDrop(e, 'hero-hay'));
-    hayPane.addEventListener('drop', (e) => handleHayStorageDrop(e, 'hay-storage'));
-
     // --- WITHDRAW BUTTONS ---
     const withdrawBtn = document.getElementById('hud-withdraw-btn');
     if(withdrawBtn) withdrawBtn.onclick = openWithdrawMenu;
@@ -422,8 +441,6 @@ export function initUI() {
         document.getElementById('withdraw-menu').classList.add('hidden');
     };
 
-
-    // Inside initUI() for the withdraw button:
     document.getElementById('confirm-withdraw-btn').onclick = async () => {
         const amount = parseFloat(document.getElementById('withdraw-input').value);
 
@@ -433,7 +450,6 @@ export function initUI() {
 
         let targetAddress = playerWallet;
 
-        // 👈 THE FIX: If they are a Web2 User/Guest, force MetaMask to connect!
         if (!targetAddress.startsWith('0x')) {
             alert("You are logged in via Username/Password. MetaMask will now open to link your withdrawal address.");
             const web3Address = await connectWallet();
@@ -441,11 +457,10 @@ export function initUI() {
                 alert("MetaMask connection failed. Cannot withdraw.");
                 return;
             }
-            targetAddress = web3Address; // Send the voucher to this real Web3 wallet instead!
+            targetAddress = web3Address;
         }
 
         if (socket) {
-            // Send the targetAddress along with the amount!
             socket.emit('requestWithdrawal', { amount: amount, targetAddress: targetAddress });
         }
         document.getElementById('withdraw-menu').classList.add('hidden');
@@ -486,13 +501,12 @@ export function initUI() {
         };
     }
 
-    // --- 🦊 MAIN MENU LOGIN SYSTEMS ---
+    // --- LOGIN SYSTEMS ---
     const mainConnectBtn = document.getElementById('main-connect-btn');
     const loginBtn = document.getElementById('login-btn');
     const registerBtn = document.getElementById('register-btn');
     const guestBtn = document.getElementById('guest-btn');
 
-    // 1. Web3 Wallet Login
     if (mainConnectBtn) {
         mainConnectBtn.onclick = async () => {
             mainConnectBtn.innerText = "CONNECTING...";
@@ -506,12 +520,10 @@ export function initUI() {
         };
     }
 
-    // 2. Web2 Register/Login
     const handleAuth = (type) => {
         const user = document.getElementById('login-username').value;
         const pass = document.getElementById('login-password').value;
         if (!user || !pass) { alert("Please enter a username and password."); return; }
-        
         if (socket) socket.emit(type, { username: user, password: pass });
     };
 
@@ -529,7 +541,6 @@ export function initUI() {
         });
     }
 
-    // 3. Online Guest Mode (Just generates a random ID and connects!)
     if (guestBtn) {
         guestBtn.onclick = () => {
             const guestID = "Guest_" + Math.floor(Math.random() * 999999);
@@ -561,8 +572,7 @@ export function initUI() {
                 if (m.giveItemToHero(createItem(ITEM_TYPES.IRON_INGOT))) {
                     alert("🔥 Collected 1x Iron Ingot!");
                     renderTabContent();
-                                        syncInventoryWithServer(); // 👈 Syncs after the factory gives the item
-
+                    syncInventoryWithServer();
                 } else {
                     alert("Backpack full! Make space first.");
                 }
@@ -588,8 +598,7 @@ export function initUI() {
                 if (m.giveItemToHero(createItem(ITEM_TYPES.DAGGER))) {
                     alert("🗡️ Crafted a Rusty Dagger!");
                     renderTabContent();
-                                        syncInventoryWithServer(); // 👈 Syncs after the factory gives the item
-
+                    syncInventoryWithServer();
                 } else {
                     alert("Backpack full! Make space first.");
                 }
@@ -597,13 +606,11 @@ export function initUI() {
         });
     }
 
-    // --- SMELTER BUTTON CLICKS ---
     document.getElementById('close-smelter-btn').addEventListener('click', () => {
         document.getElementById('smelter-menu').classList.add('hidden');
         confirmingSmelterSpeedUp = false;
     });
 
-    // --- SMELTER BUTTON CLICK ---
     document.getElementById('smelter-start-btn').addEventListener('click', () => {
         if (!activeSmelterData) return;
         
@@ -615,16 +622,10 @@ export function initUI() {
                 alert("You need Iron Ore to start smelting!");
                 return;
             }
-            
-            // 1. Tell the server to start the job (The server will securely deduct the item)
             if (socket) socket.emit('startSmelterJob', { jobId: activeSmelterId });
-            
-            // 2. We must manually remove it from the client's RAM so the UI updates instantly without waiting for a server sync
             hero.inventory.splice(oreIdx, 1);
             renderTabContent();
-                                syncInventoryWithServer(); // 👈 Syncs after the factory gives the item
-
-            
+            syncInventoryWithServer();
         } else {
             if (!confirmingSmelterSpeedUp) {
                 confirmingSmelterSpeedUp = true;
@@ -636,13 +637,11 @@ export function initUI() {
         }
     });
 
-    // --- ANVIL BUTTON CLICKS ---
     document.getElementById('close-anvil-btn').addEventListener('click', () => {
         document.getElementById('anvil-menu').classList.add('hidden');
         confirmingAnvilSpeedUp = false;
     });
 
-    // --- ANVIL BUTTON CLICK ---
     document.getElementById('anvil-start-btn').addEventListener('click', () => {
         if (!activeAnvilData) return;
         
@@ -654,16 +653,10 @@ export function initUI() {
                 alert("You need an Iron Ingot to start forging!");
                 return;
             }
-            
-            // 1. Tell the server to start the job (The server will securely deduct the item)
             if (socket) socket.emit('startAnvilJob', { jobId: activeAnvilId });
-
-            // 2. We must manually remove it from the client's RAM so the UI updates instantly without waiting for a server sync
             hero.inventory.splice(ingotIdx, 1);
             renderTabContent();
-                                syncInventoryWithServer(); // 👈 Syncs after the factory gives the item
-
-            
+            syncInventoryWithServer();
         } else {
             if (!confirmingAnvilSpeedUp) {
                 confirmingAnvilSpeedUp = true;
@@ -675,16 +668,11 @@ export function initUI() {
         }
     });
 
-    // 👇 ADD THIS LINE TO ACTIVATE THE MINING BUTTONS!
     initMiningListeners();
 }
 
-// ==========================================
-// 🆕 CHARACTER CREATION UI
-// ==========================================
 export function renderCharacterCreation() {
     const grid = document.getElementById('skill-grid');
-    
     grid.innerHTML = PALADIN_SKILLS.map(skill => `
         <div class="skill-item" data-id="${skill.id}">
             <div style="font-size: 24px;">${skill.icon}</div>
@@ -698,11 +686,9 @@ export function renderCharacterCreation() {
             const id = item.dataset.id;
             
             if (selectedSkills.includes(id)) {
-                // Deselect
                 selectedSkills = selectedSkills.filter(s => s !== id);
                 item.classList.remove('selected');
             } else {
-                // Select (Max 4)
                 if (selectedSkills.length >= 4) {
                     alert("You can only select 4 core skills!");
                     return;
@@ -727,15 +713,12 @@ export function renderCharacterCreation() {
     });
 }
 
-// --- Update updateSkillSlots in src/uiManager.js ---
 function updateSkillSlots() {
     const slots = document.querySelectorAll('.skill-slot');
     document.getElementById('skill-count').innerText = selectedSkills.length;
-    
-    const reqLevels = [1, 25, 50, 75]; // The milestone levels
+    const reqLevels = [1, 25, 50, 75];
 
     for (let i = 0; i < 4; i++) {
-        // Change slots to a column layout to hold the text
         slots[i].style.flexDirection = 'column';
 
         if (i < selectedSkills.length) {
@@ -752,10 +735,6 @@ function updateSkillSlots() {
     document.getElementById('finish-char-btn').disabled = (selectedSkills.length !== 4);
 }
 
-// ==========================================
-// 🎒 IN-GAME MENU (INVENTORY / STATS)
-// ==========================================
-
 export function toggleMenu() {
     uiState.isOpen = !uiState.isOpen;
     document.getElementById('menu-overlay').classList.toggle('hidden', !uiState.isOpen);
@@ -765,39 +744,32 @@ export function toggleMenu() {
 function getItemIcon(item) {
     if (item.seedType === "fish") return "🐟";
     if (item.seedType === "cooked_fish") return "🍱";
-    if (item.seedType === "plant_matter") return "🌿"; // 👈 Changed from grass_item
-    if (item.seedType === "grass_seed") return "🌱"; // 👈 NEW
-    if (item.seedType === "rose_seed") return "🌹";       // 👈 NEW
-    if (item.seedType === "violet_seed") return "🪻";     // 👈 NEW
-    if (item.seedType === "sunflower_seed") return "🌻";  // 👈 NEW
+    if (item.seedType === "plant_matter") return "🌿";
+    if (item.seedType === "grass_seed") return "🌱";
+    if (item.seedType === "rose_seed") return "🌹";
+    if (item.seedType === "violet_seed") return "🪻";
+    if (item.seedType === "sunflower_seed") return "🌻";
     if (item.seedType === "turnip_item") return "🧅";
     if (item.seedType === "turnip_seed") return "🌰";
-    if (item.seedType === "tomato_item") return "🍅";       // 👈 NEW
-    if (item.seedType === "tomato_seed") return "🌱";       // 👈 NEW
-    // Add to getItemIcon(item):
+    if (item.seedType === "tomato_item") return "🍅";
+    if (item.seedType === "tomato_seed") return "🌱";
     if (item.seedType === "eggplant_item") return "🍆";
     if (item.seedType === "strawberry_item") return "🍓";
     if (item.seedType === "pumpkin_item") return "🎃";
     if (item.seedType === "watermelon_item") return "🍉";
-// Add to getItemIcon(item):
     if (item.seedType === "corn_item") return "🌽";
     if (item.seedType === "pineapple_item") return "🍍";
     if (item.seedType === "potato_item") return "🥔";
     if (item.seedType === "wheat_item") return "🌾";
     if (item.seedType.includes("_seed")) return "🌱";
-
     if (item.seedType === "egg") return "🥚";
-
     if (item.seedType === "hay") return "🌾";
     if (item.seedType === "ore") return "🪨";
     if (item.seedType === "coin") return "💰";
-    if (item.seedType === "weapon_dagger") return "🗡️"; // 👈 ADD THIS LINE
-
+    if (item.seedType === "weapon_dagger") return "🗡️";
     if (item.isKey) return "🔑";
     return "❓";
 }
-
-// --- Replace renderTabContent in src/uiManager.js ---
 
 export function renderTabContent() {
     const container = document.getElementById('tab-content');
@@ -808,7 +780,6 @@ export function renderTabContent() {
             const heldItem = hero.equipment?.mainHand;
             container.innerHTML = `<h3 style="margin-top:0;">Backpack</h3><div class="inv-grid">` + 
                 hero.inventory.map((item, index) => {
-                    // Check if this item matches the one in our hand (by instance)
                     const isActive = (heldItem === item);
                     const borderStyle = isActive ? 'border: 4px dashed var(--highlight); background: rgba(138, 154, 91, 0.2);' : '';
                     
@@ -821,7 +792,6 @@ export function renderTabContent() {
                 `}).join('') + `</div>
                 <p style="font-size: 8px; text-align: center; margin-top: 10px; color: #555;">Click to hold in Main Hand.</p>`;
             
-            // 👇 Add Drag listeners to the new items
             setTimeout(() => {
                 const items = document.querySelectorAll('#tab-content .draggable-item');
                 items.forEach(item => {
@@ -834,7 +804,6 @@ export function renderTabContent() {
             break; 
 
         case 'stats':
-            // ... (Keep your existing stats case exactly as it is) ...
             const info = getLevelInfo(hero.xp);
             container.innerHTML = `
                 <h3 style="margin-top:0; color: var(--highlight);">${hero.charClass ? hero.charClass.toUpperCase() : 'PEASANT'} LVL ${info.level}</h3>
@@ -855,7 +824,6 @@ export function renderTabContent() {
             `;
             break;
 
-        // Update the 'equipment' tab case in renderTabContent() to show the mainHand
         case 'equipment':
             const held = hero.equipment.mainHand;
             container.innerHTML = `
@@ -875,7 +843,6 @@ export function renderTabContent() {
             break;
 
         case 'skills':
-            // ... (Keep your existing skills case exactly as it is) ...
             let mySkillsHTML = `<p style="font-size:10px; text-align:center;">NO SKILLS LEARNED</p>`;
             if (hero.skills && hero.skills.length > 0) {
                 mySkillsHTML = `<div class="inv-grid" style="grid-template-columns: repeat(2, 1fr);">` + 
@@ -900,85 +867,8 @@ export function renderTabContent() {
 }
 
 // ==========================================
-// 📦 CHEST UI LOGIC
-// ==========================================
-
-export function openChestMenu(chestId, items) {
-    activeChestId = chestId;
-    activeChestItems = items || [];
-    document.getElementById('chest-menu').classList.remove('hidden');
-    renderChestUI();
-}
-
-export function handleRemoteChestUpdate(chestId, items) {
-    if (activeChestId === chestId) {
-        activeChestItems = items;
-        renderChestUI();
-    }
-}
-
-// Locate renderChestUI inside src/uiManager.js and modify both innerHTML maps:
-export function renderChestUI() {
-    if (!activeChestId) return;
-
-    const heroInv = document.getElementById('chest-hero-inv');
-    const chestInv = document.getElementById('chest-box-inv');
-
-    // 🎯 THE FIX: Appended item count output
-    heroInv.innerHTML = hero.inventory.map((item, i) => `
-        <div class="inv-item draggable-item" draggable="true" data-index="${i}" data-source="hero">
-            <div class="item-icon" style="font-size: 24px;">${getItemIcon(item)}</div>
-            <strong>${item.name}</strong>
-            ${item.count > 1 ? `<br><span style="color:var(--banana-dark); font-size:8px;">(x${item.count})</span>` : ''}
-        </div>
-    `).join('');
-
-    // 🎯 THE FIX: Appended item count output
-    chestInv.innerHTML = activeChestItems.map((item, i) => `
-        <div class="inv-item draggable-item" draggable="true" data-index="${i}" data-source="chest">
-            <div class="item-icon" style="font-size: 24px;">${getItemIcon(item)}</div>
-            <strong>${item.name}</strong>
-            ${item.count > 1 ? `<br><span style="color:var(--banana-dark); font-size:8px;">(x${item.count})</span>` : ''}
-        </div>
-    `).join('');
-
-    const items = document.querySelectorAll('.draggable-item');
-    items.forEach(item => {
-        item.addEventListener('dragstart', (e) => {
-            e.dataTransfer.setData('index', item.dataset.index);
-            e.dataTransfer.setData('source', item.dataset.source);
-        });
-
-        item.addEventListener('click', () => {
-            transferItem(item.dataset.index, item.dataset.source);
-        });
-    });
-}
-
-function handleDrop(e, targetSource) {
-    const index = e.dataTransfer.getData('index');
-    const source = e.dataTransfer.getData('source');
-    
-    if (source && source !== targetSource) {
-        transferItem(index, source);
-    }
-}
-
-// Inside src/uiManager.js:
-
-function transferItem(index, source) {
-    if (source === 'hero') {
-        // 🎯 THE SECURE FIX: Send secure chest-transfer requests
-        if (socket) socket.emit('requestChestTransfer', { chestId: activeChestId, index: index, direction: 'to_chest' });
-    } else {
-        if (socket) socket.emit('requestChestTransfer', { chestId: activeChestId, index: index, direction: 'to_hero' });
-    }
-}
-
-// ==========================================
 // 🏪 GENERAL STORE UI LOGIC
 // ==========================================
-
 export let activeStoreId = null;
 let activeStoreData = null;
 let currentStoreTab = 'market';
@@ -986,31 +876,32 @@ let currentStoreTab = 'market';
 const typeNames = {
     "fish": "River Bass",
     "cooked_fish": "Cooked Bass",
-    "plant_matter": "Plant Matter", // 🎯 FIXED
-    "grass_seed": "Grass Seed", // 👈 NEW
-    "rose_seed": "Rose Seed",           // 👈 NEW
-    "violet_seed": "Violet Seed",       // 👈 NEW
-    "sunflower_seed": "Sunflower Seed", // 👈 NEW
-
-    "egg": "Farm Egg", // 🎯 THE FIX: Added Egg to store dictionary
-
+    "plant_matter": "Plant Matter",
+    "grass_seed": "Grass Seed",
+    "rose_seed": "Rose Seed",
+    "violet_seed": "Violet Seed",
+    "sunflower_seed": "Sunflower Seed",
+    "egg": "Farm Egg",
     "turnip_item": "Turnip",
     "turnip_seed": "Turnip Seed",
-
-    "tomato_item": "Tomato",        // 👈 NEW
-    "tomato_seed": "Tomato Seed",   // 👈 NEW
-
-    // Add to typeNames:
-    "eggplant_item": "Eggplant", "eggplant_seed": "Eggplant Seed",
-    "strawberry_item": "Strawberry", "strawberry_seed": "Strawberry Seed",
-    "pumpkin_item": "Pumpkin", "pumpkin_seed": "Pumpkin Seed",
-    "watermelon_item": "Watermelon", "watermelon_seed": "Watermelon Seed",
-
-    "corn_item": "Corn", "corn_seed": "Corn Seed",
-    "pineapple_item": "Pineapple", "pineapple_seed": "Pineapple Crown",
-    "potato_item": "Potato", "potato_seed": "Potato Eye",
-    "wheat_item": "Wheat", "wheat_seed": "Wheat Seed",
-
+    "tomato_item": "Tomato",
+    "tomato_seed": "Tomato Seed",
+    "eggplant_item": "Eggplant", 
+    "eggplant_seed": "Eggplant Seed",
+    "strawberry_item": "Strawberry", 
+    "strawberry_seed": "Strawberry Seed",
+    "pumpkin_item": "Pumpkin", 
+    "pumpkin_seed": "Pumpkin Seed",
+    "watermelon_item": "Watermelon", 
+    "watermelon_seed": "Watermelon Seed",
+    "corn_item": "Corn", 
+    "corn_seed": "Corn Seed",
+    "pineapple_item": "Pineapple", 
+    "pineapple_seed": "Pineapple Crown",
+    "potato_item": "Potato", 
+    "potato_seed": "Potato Eye",
+    "wheat_item": "Wheat", 
+    "wheat_seed": "Wheat Seed",
     "chicken_poop": "Fertilizer",
     "ore": "Gold Ore",
     "coin": "Gold Coin",
@@ -1047,8 +938,7 @@ export function processClaimedStorage(items) {
         else console.log("Dropped due to full inventory:", item.name);
     });
     alert(`Looted ${items.length} items from Lockbox!`);
-        syncInventoryWithServer(); // 👈 Sync changes to server
-
+    syncInventoryWithServer();
 }
 
 function switchStoreTab(tab) {
@@ -1100,6 +990,10 @@ function renderStoreUI() {
         let inventoryOptions = hero.inventory.map((item, idx) => `<option value="${idx}">${getItemIcon(item)} ${item.name}</option>`).join('');
         let wantedOptions = Object.keys(typeNames).map(key => `<option value="${key}">${typeNames[key]}</option>`).join('');
 
+        if (storeDbCache.has(activeStoreId)) {
+            // Check if store state can be referenced and processed
+        }
+
         content.innerHTML += `
             <div style="background: var(--banana); padding: 10px; margin-bottom: 15px; border: 4px solid var(--bg-dark);">
                 <h4 style="margin:0 0 10px 0; text-align:center;">POST LISTING</h4>
@@ -1130,35 +1024,29 @@ function renderStoreUI() {
                         ${l.counterOffer ? `
                             <div style="margin-top: 10px; padding: 10px; background: var(--bg-panel); border: 4px solid var(--bg-dark);">
                                 <span style="color:var(--banana-dark); font-size: 10px;">COUNTER OFFER!</span><br>
-                                <span style="font-size: 12px;">${getItemIcon(l.counterOffer.item)} ${l.counterOffer.item.name}</span>
-                                <div style="margin-top: 10px; display:flex; gap:10px;">
-                                    <button onclick="window.resolveCounter('${l.id}', true)" class="pixel-btn" style="flex:1; font-size: 10px; padding:8px;">ACCEPT</button>
-                                    <button onclick="window.resolveCounter('${l.id}', false)" class="pixel-btn pixel-btn-cancel" style="flex:1; font-size: 10px; padding:8px;">REJECT</button>
+                                <span style="font-size:8px; color: #555;">Buyer offers: <strong>${l.counterOffer.item.name}</strong></span><br>
+                                <div style="display:flex; gap:10px; margin-top:10px;">
+                                    <button onclick="window.acceptCounter('${l.id}')" class="pixel-btn safe" style="padding:5px 10px; font-size:8px; flex:1;">ACCEPT</button>
+                                    <button onclick="window.rejectCounter('${l.id}')" class="pixel-btn cancel" style="padding:5px 10px; font-size:8px; flex:1;">REJECT</button>
                                 </div>
                             </div>
-                        ` : `<div style="font-size: 10px; margin-top:10px; opacity:0.5;">WAITING FOR BUYERS...</div>`}
+                        ` : ''}
                     </div>
                 `;
             });
         }
-    }
+    } 
     else if (currentStoreTab === 'lockbox') {
-        const myStorage = activeStoreData.storage[playerWallet] || [];
-        
-        content.innerHTML += `<h3 style="text-align:center; margin-top:0;">ESCROW LOCKBOX</h3>`;
-        content.innerHTML += `<p style="text-align:center; font-size:10px;">Secure storage for completed/cancelled trades.</p>`;
-
-        if (myStorage.length === 0) {
-            content.innerHTML += `<div style="text-align:center; margin-top: 20px;">[ EMPTY ]</div>`;
+        const stored = activeStoreData.storage[playerWallet] || [];
+        if (stored.length === 0) {
+            content.innerHTML = `<div style="text-align:center; font-size:8px; color:#555; margin-top:80px;">LOCKBOX EMPTY</div>`;
         } else {
-            content.innerHTML += `<div class="inv-grid">` + myStorage.map(item => `
-                <div class="inv-item">
-                    <div class="item-icon" style="font-size: 20px; margin-bottom:5px;">${getItemIcon(item)}</div>
+            content.innerHTML = `<div class="inv-grid">` + stored.map((item, idx) => `
+                <div class="inv-item" onclick="window.claimStoredItem(${idx})">
+                    <div class="item-icon" style="font-size:20px;">${getItemIcon(item)}</div>
                     <span>${item.name}</span>
                 </div>
-            `).join('') + `</div>`;
-
-            content.innerHTML += `<button onclick="window.claimStorage()" class="pixel-btn" style="width:100%; margin-top:15px;">LOOT TO BACKPACK</button>`;
+            `).join('') + `</div><p style="font-size:8px; text-align:center; margin-top:10px; color:#555;">Click an item to collect it to your backpack.</p>`;
         }
     }
 }
@@ -1168,12 +1056,8 @@ window.createListing = () => {
     const wantedType = document.getElementById('wanted-select').value;
     if (invIdx !== "" && wantedType) {
         const itemToOffer = hero.inventory.splice(invIdx, 1)[0]; 
-        
         socket.emit('createListing', { storeId: activeStoreId, wallet: playerWallet, offeredItem: itemToOffer, wantedType });
-        
-        // 🎯 THE FIX: Force the server to sync the deducted inventory immediately!
         syncInventoryWithServer(); 
-        
         renderStoreUI(); 
     }
 };
@@ -1183,7 +1067,7 @@ window.buyListing = (listingId, wantedType) => {
     if (itemIdx !== -1) {
         const paymentItem = hero.inventory.splice(itemIdx, 1)[0];
         socket.emit('buyListing', { storeId: activeStoreId, listingId, buyerWallet: playerWallet, paymentItem });
-        alert("Trade successful! Check your Lockbox for your new item.");
+        alert("Trade initiated! Check your Lockbox to retrieve items once processed.");
         switchStoreTab('lockbox');
     }
 };
@@ -1200,14 +1084,16 @@ window.counterOffer = (listingId) => {
     }
 };
 
-window.resolveCounter = (listingId, accept) => {
-    socket.emit('resolveCounterOffer', { storeId: activeStoreId, listingId, accept });
-    if (accept) {
-        alert("Trade complete! Check your Lockbox.");
-        switchStoreTab('lockbox');
-    } else {
-        renderStoreUI();
-    }
+window.acceptCounter = (listingId) => {
+    socket.emit('resolveCounterOffer', { storeId: activeStoreId, listingId, accept: true });
+    alert("Counter-offer accepted! Items moved to lockbox.");
+    switchStoreTab('lockbox');
+};
+
+window.rejectCounter = (listingId) => {
+    socket.emit('resolveCounterOffer', { storeId: activeStoreId, listingId, accept: false });
+    alert("Counter-offer rejected.");
+    renderStoreUI();
 };
 
 window.cancelListing = (listingId) => {
@@ -1227,44 +1113,50 @@ window.claimStorage = () => {
     socket.emit('claimStorage', { storeId: activeStoreId, wallet: playerWallet });
 };
 
+window.claimStoredItem = (index) => {
+    if (hero.inventory.length >= hero.maxSlots) {
+        alert("Backpack is full!");
+        return;
+    }
+    const items = activeStoreData.storage[playerWallet];
+    if (items && items[index]) {
+        const claimed = items.splice(index, 1)[0];
+        hero.inventory.push(claimed);
+        socket.emit('updateStoreStorage', { storeId: activeStoreId, wallet: playerWallet, items });
+        syncInventoryWithServer();
+        renderStoreUI();
+    }
+};
+
 // ==========================================
 // ⛩️ TEMPLE UI LOGIC
 // ==========================================
-
 export function openTempleMenu() {
     altarItem = null;
     document.getElementById('temple-menu').classList.remove('hidden');
     renderTempleUI();
 }
 
-// Inside renderTempleUI() in src/uiManager.js:
-
-// Replace your renderTempleUI function in src/uiManager.js with this:
-
 export function renderTempleUI() {
     const heroInv = document.getElementById('temple-hero-inv');
     const altarSlot = document.getElementById('temple-slot');
 
-    // Draw backpack items inside the Temple Altar window
     heroInv.innerHTML = hero.inventory.map((item, i) => `
-        <div class="inv-item click-sacrifice-item" data-index="${i}" data-source="hero"> <!-- 👈 🎯 THE FIX: Added data-source="hero" -->
+        <div class="inv-item click-sacrifice-item" data-index="${i}" data-source="hero">
             <div class="item-icon" style="font-size: 24px;">${getItemIcon(item)}</div>
             <strong>${item.name}</strong>
             ${item.count > 1 ? `<span style="color:var(--banana-dark); font-size:8px;">(x${item.count})</span>` : ''}
         </div>
     `).join('');
 
-    // Clear the redundant drag slot
     altarSlot.innerHTML = `<div style="color: var(--banana-dark); font-size: 10px; text-align: center; padding: 20px;">CLICK BACKPACK<br>SEED TO<br>SACRIFICE</div>`;
 
-    // Click to Sacrifice directly (highly secure and foolproof)
     const items = document.querySelectorAll('#temple-menu .click-sacrifice-item');
     items.forEach(item => {
         item.addEventListener('click', () => {
             const index = parseInt(item.dataset.index);
             const inventoryItem = hero.inventory[index];
             
-            // Check if it's a seed
             if (!inventoryItem.seedType.includes("_seed")) {
                 alert("The Gods reject this offering! They only accept Seeds.");
                 return;
@@ -1285,12 +1177,9 @@ function handleTempleDrop(e, targetSource) {
     if (source && source !== targetSource) transferTempleItem(index, source);
 }
 
-// Inside transferTempleItem (around line 430):
 function transferTempleItem(index, source) {
     if (source === 'hero-temple') {
         const item = hero.inventory[index];
-        
-        // 🛑 STRICT CHECK: Only accepts items with "_seed" in their type
         const isSeed = item.seedType.includes("_seed");
         if (!isSeed) {
             alert("The Gods reject this offering! They only accept Seeds.");
@@ -1308,17 +1197,16 @@ function transferTempleItem(index, source) {
         altarItem = null;
     }
     renderTempleUI();
-        syncInventoryWithServer(); // 👈 Sync changes to server
-
+    syncInventoryWithServer();
 }
 
-// Add these variables, event registration, and functions to src/uiManager.js:
-
+// ==========================================
+// 🌾 HAY TABLE PROCESSOR UI
+// ==========================================
 export let activeHayTableId = null;
 export let activeHayTableData = null;
 let confirmingHayTableSpeedUp = false;
 
-// Register listeners once multiplayer is ready
 import('./multiplayer.js').then(m => {
     const checkSocket = setInterval(() => {
         if (m.socket) {
@@ -1394,7 +1282,6 @@ function renderHayTableUI() {
     }
 }
 
-// Register click handlers inside the existing UI checkElements loop in src/uiManager.js:
 if (typeof window !== 'undefined') {
     const checkTableElements = setInterval(() => {
         const startTableBtn = document.getElementById('hay-table-start-btn');
@@ -1412,13 +1299,11 @@ if (typeof window !== 'undefined') {
                 if (activeHayTableData.ready) {
                     if (socket) socket.emit('collectHayTable', { jobId: activeHayTableId });
                 } else if (!activeHayTableData.active) {
-                    // Client-side ingredient validation
                     const pmIdx = hero.inventory.findIndex(item => item.seedType === 'plant_matter');
                     if (pmIdx === -1 || hero.inventory[pmIdx].count < 8) {
                         alert("You need 8x Plant Matter to make hay!");
                         return;
                     }
-
                     if (socket) socket.emit('startHayTableJob', { jobId: activeHayTableId });
                 } else {
                     if (!confirmingHayTableSpeedUp) {
@@ -1435,15 +1320,12 @@ if (typeof window !== 'undefined') {
 }
 
 // ==========================================
-// 🍳 KITCHEN UI LOGIC
-
-// Add these variables, event registration, and functions to src/uiManager.js:
-
+// 🍳 KITCHEN PROCESSOR UI
+// ==========================================
 export let activeKitchenId = null;
 export let activeKitchenData = null;
 let confirmingKitchenSpeedUp = false;
 
-// Register the listeners once multiplayer is ready
 import('./multiplayer.js').then(m => {
     const checkSocket = setInterval(() => {
         if (m.socket) {
@@ -1468,13 +1350,11 @@ import('./multiplayer.js').then(m => {
                         if (recipe === 'COOK_FISH') {
                             newItem = items.createItem(items.ITEM_TYPES.COOKED_BASS);
                         } else if (recipe.startsWith('EXTRACT_')) {
-                            // Extract crop type name (e.g. 'EXTRACT_TOMATO_ITEM' -> 'tomato')
                             const cropType = recipe.replace('EXTRACT_', '').replace('_ITEM', '').toLowerCase();
                             const seedConstName = `${cropType.toUpperCase()}_SEED`;
                             
                             if (items.ITEM_TYPES[seedConstName]) {
                                 newItem = items.createItem(items.ITEM_TYPES[seedConstName]);
-                                // 🎯 THE FIX: Dynamically generate 5 to 8 seeds!
                                 const seedCount = Math.floor(Math.random() * 4) + 5; 
                                 newItem.count = seedCount;
                             }
@@ -1542,7 +1422,6 @@ function renderKitchenUI() {
     }
 }
 
-// Register clicking handlers inside initUI() or at the bottom of uiManager.js:
 if (typeof window !== 'undefined') {
     const checkElements = setInterval(() => {
         const startBtn = document.getElementById('kitchen-start-btn');
@@ -1562,7 +1441,6 @@ if (typeof window !== 'undefined') {
                 } else if (!activeKitchenData.active) {
                     const selectedRecipe = document.getElementById('kitchen-recipe-select').value;
                     
-                    // Client-side ingredient validation
                     if (selectedRecipe === 'COOK_FISH') {
                         const fishIdx = hero.inventory.findIndex(item => item.seedType === 'fish');
                         if (fishIdx === -1) { alert("You need a raw River Bass to cook!"); return; }
@@ -1590,9 +1468,6 @@ if (typeof window !== 'undefined') {
 // ==========================================
 // 🗺️ MAP TABLE UI LOGIC
 // ==========================================
-// ==========================================
-// 🗺️ MAP TABLE UI LOGIC
-// ==========================================
 export function openMapTableMenu() {
     document.getElementById('maptable-menu').classList.remove('hidden');
     const uiMapCanvas = document.getElementById('ui-map-canvas');
@@ -1600,167 +1475,15 @@ export function openMapTableMenu() {
     
     uiMapCtx.imageSmoothingEnabled = false;
     uiMapCtx.clearRect(0, 0, uiMapCanvas.width, uiMapCanvas.height);
-    
-    // 1. Draw the 100x100 map memory buffer stretched to fit the 800x800 UI Canvas!
     uiMapCtx.drawImage(mapCanvas, 0, 0, uiMapCanvas.width, uiMapCanvas.height);
     
-    // 2. Calculate the UI scale (800 / 100 = 8 pixels per chunk)
     const scale = uiMapCanvas.width / CONFIG.MAP_SIZE;
-    
-    // 3. Find the player's chunk (0 to 99)
     const pX = Math.floor(hero.x / 1600);
     const pY = Math.floor(hero.y / 1600);
     
     uiMapCtx.fillStyle = "#FFD700";
-    
-    // 4. Draw a player blip scaled to match the grid so it stays accurate!
-    // We center it slightly so it looks like a nice square dot.
     uiMapCtx.fillRect((pX * scale) - (scale / 4), (pY * scale) - (scale / 4), scale * 1.5, scale * 1.5); 
 }
-
-// ==========================================
-// 🧺 ROOT CELLAR UI LOGIC
-// ==========================================
-export function openCellarMenu(cellarId, items) {
-    activeCellarId = cellarId;
-    activeCellarItems = items || [];
-    document.getElementById('cellar-menu').classList.remove('hidden');
-    renderCellarUI();
-}
-
-export function handleRemoteCellarUpdate(cellarId, items) {
-    if (activeCellarId === cellarId) {
-        activeCellarItems = items;
-        renderCellarUI();
-    }
-}
-
-export function renderCellarUI() {
-    if (!activeCellarId) return;
-
-    const heroInv = document.getElementById('cellar-hero-inv');
-    const cellarInv = document.getElementById('cellar-box-inv');
-
-    heroInv.innerHTML = hero.inventory.map((item, i) => `
-        <div class="inv-item draggable-item" draggable="true" data-index="${i}" data-source="hero-cellar">
-            <div class="item-icon" style="font-size: 24px;">${getItemIcon(item)}</div>
-            <strong>${item.name}</strong>
-        </div>
-    `).join('');
-
-    cellarInv.innerHTML = activeCellarItems.map((item, i) => `
-        <div class="inv-item draggable-item" draggable="true" data-index="${i}" data-source="cellar">
-            <div class="item-icon" style="font-size: 24px;">${getItemIcon(item)}</div>
-            <strong>${item.name}</strong>
-        </div>
-    `).join('');
-
-    const items = document.querySelectorAll('#cellar-menu .draggable-item');
-    items.forEach(item => {
-        item.addEventListener('dragstart', (e) => {
-            e.dataTransfer.setData('index', item.dataset.index);
-            e.dataTransfer.setData('source', item.dataset.source);
-        });
-        item.addEventListener('click', () => transferCellarItem(item.dataset.index, item.dataset.source));
-    });
-}
-
-function handleCellarDrop(e, targetSource) {
-    const index = e.dataTransfer.getData('index');
-    const source = e.dataTransfer.getData('source');
-    if (source && source !== targetSource) transferCellarItem(index, source);
-}
-
-// Inside src/uiManager.js:
-
-function transferCellarItem(index, source) {
-    if (source === 'hero-cellar') {
-        const item = hero.inventory[index];
-        if (!VALID_FOOD_TYPES.includes(item.seedType)) {
-            alert("The Root Cellar is for food only!");
-            return;
-        }
-        // 🎯 THE SECURE FIX: Send cellar-transfer requests
-        if (socket) socket.emit('requestCellarTransfer', { cellarId: activeCellarId, index: index, direction: 'to_cellar' });
-    } else {
-        if (socket) socket.emit('requestCellarTransfer', { cellarId: activeCellarId, index: index, direction: 'to_hero' });
-    }
-}
-
-// ==========================================
-// 🌾 HAY UI LOGIC
-// ==========================================
-
-export function openHayStorageMenu(hayStorageId, items) {
-    activeHayStorageId = hayStorageId;
-    activeHayStorageItems = items || [];
-    document.getElementById('hay-storage-menu').classList.remove('hidden');
-    renderHayStorageUI();
-}
-
-export function handleRemoteHayStorageUpdate(hayStorageId, items) {
-    if (activeHayStorageId === hayStorageId) {
-        activeHayStorageItems = items;
-        renderHayStorageUI();
-    }
-}
-
-export function renderHayStorageUI() {
-    if (!activeHayStorageId) return;
-
-    const heroInv = document.getElementById('hay-storage-hero-inv');
-    const storageInv = document.getElementById('hay-storage-box-inv');
-
-    heroInv.innerHTML = hero.inventory.map((item, i) => `
-        <div class="inv-item draggable-item" draggable="true" data-index="${i}" data-source="hero-hay">
-            <div class="item-icon" style="font-size: 24px;">${getItemIcon(item)}</div>
-            <strong>${item.name}</strong>
-        </div>
-    `).join('');
-
-    storageInv.innerHTML = activeHayStorageItems.map((item, i) => `
-        <div class="inv-item draggable-item" draggable="true" data-index="${i}" data-source="hay-storage">
-            <div class="item-icon" style="font-size: 24px;">${getItemIcon(item)}</div>
-            <strong>${item.name}</strong>
-        </div>
-    `).join('');
-
-    const items = document.querySelectorAll('#hay-storage-menu .draggable-item');
-    items.forEach(item => {
-        item.addEventListener('dragstart', (e) => {
-            e.dataTransfer.setData('index', item.dataset.index);
-            e.dataTransfer.setData('source', item.dataset.source);
-        });
-        item.addEventListener('click', () => transferHayStorageItem(item.dataset.index, item.dataset.source));
-    });
-}
-
-function handleHayStorageDrop(e, targetSource) {
-    const index = e.dataTransfer.getData('index');
-    const source = e.dataTransfer.getData('source');
-    if (source && source !== targetSource) transferHayStorageItem(index, source);
-}
-
-// Inside src/uiManager.js:
-
-function transferHayStorageItem(index, source) {
-    if (source === 'hero-hay') {
-        const item = hero.inventory[index];
-        if (!VALID_HAY_TYPES.includes(item.seedType)) {
-            alert("Only Dried Hay or Plant Matter can be stored here!");
-            return;
-        }
-        // Send transfer request to server
-        if (socket) socket.emit('requestHayTransfer', { hayStorageId: activeHayStorageId, index: index, direction: 'to_storage' });
-    } else {
-        if (socket) socket.emit('requestHayTransfer', { hayStorageId: activeHayStorageId, index: index, direction: 'to_hero' });
-    }
-}
-
-// ==========================================
-// 🔥 SMELTER UI LOGIC
-// ==========================================
-
 
 // ==========================================
 // ⛏️ MINING UI LOGIC
@@ -1772,7 +1495,7 @@ let confirmingSpeedUp = false;
 export function openMiningMenu(oreId, data) {
     activeOreId = oreId;
     activeOreData = data;
-    confirmingSpeedUp = false; // Reset the state
+    confirmingSpeedUp = false; 
     document.getElementById('mining-menu').classList.remove('hidden');
     renderMiningUI();
 }
@@ -1789,10 +1512,9 @@ function renderMiningUI() {
     
     const bar = document.getElementById('mining-progress-bar');
     const text = document.getElementById('mining-progress-text');
-    const costText = document.getElementById('mining-cost-text'); // 👈 Grab the new element
+    const costText = document.getElementById('mining-cost-text'); 
     const actionBtn = document.getElementById('mining-action-btn');
 
-    // Always keep the fraction visible in the bar now!
     const pct = ((activeOreData.maxWork - activeOreData.workLeft) / activeOreData.maxWork) * 100;
     bar.style.width = `${pct}%`;
     text.innerText = `${activeOreData.workLeft} / ${activeOreData.maxWork}`;
@@ -1813,15 +1535,14 @@ function renderMiningUI() {
     } else {
         actionBtn.disabled = false;
         
-        // The dynamic Speed Up flip logic!
         if (confirmingSpeedUp) {
             actionBtn.innerText = "SPEED - UP NOW!";
             actionBtn.className = "pixel-btn safe";
-            costText.innerText = "COST: 50 UNI"; // 👈 Put the cost underneath the bar
+            costText.innerText = "COST: 50 UNI"; 
         } else {
             actionBtn.innerText = "SPEED - UP";
             actionBtn.className = "pixel-btn";
-            costText.innerText = ""; // 👈 Clear it when not confirming
+            costText.innerText = ""; 
         }
     }
 }
@@ -1841,11 +1562,11 @@ export function initMiningListeners() {
         } else {
             if (!confirmingSpeedUp) {
                 confirmingSpeedUp = true;
-                renderMiningUI(); // Flip to confirm screen
+                renderMiningUI(); 
             } else {
                 if (socket) socket.emit('speedUpOre', { oreId: activeOreId });
                 confirmingSpeedUp = false; 
-                renderMiningUI(); // Re-render to catch server sync
+                renderMiningUI(); 
             }
         }
     });
@@ -1856,7 +1577,7 @@ export function initMiningListeners() {
 // ==========================================
 export function openWithdrawMenu() {
     if (!playerWallet) { alert("Connect your wallet first!"); return; }
-    document.getElementById('withdraw-balance-max').innerText = hero.inGameUni.toFixed(8); // 👈 4 decimals
+    document.getElementById('withdraw-balance-max').innerText = hero.inGameUni.toFixed(8); 
     document.getElementById('withdraw-input').value = "";
     document.getElementById('withdraw-menu').classList.remove('hidden');
 }
@@ -1866,8 +1587,6 @@ export async function executeWithdrawal(voucher) {
     await submitVoucherToChain(voucher);
 }
 
-// ==========================================
-// 🔄 HUD UPDATES
 // ==========================================
 // 🔄 HUD UPDATES
 // ==========================================
@@ -1896,38 +1615,25 @@ export function updateHUD() {
         fishDisplay.style.color = globalFishCount < 2000 ? "#FF4444" : "#00FFFF";
     }
 
-    // Inside updateHUD() in src/uiManager.js
     if (tgvDisplay) {
-        // 👈 THE TWEAK: Added " UNI" to the string template
         tgvDisplay.innerText = `TGV: ${(gameState.tvl || 0).toFixed(8)} UNI`;
     }
 }
 
-
-// At the bottom of src/uiManager.js
-
-// src/uiManager.js
-
-// Replace these two functions inside src/uiManager.js:
-
 window.equipItem = (invIndex) => {
     if (socket) {
-        // 🎯 THE FIX: Pass active energy in the payload
         socket.emit('requestEquip', { index: invIndex, currentEnergy: hero.energy });
     }
 };
 
 window.unequipMainHand = () => {
     if (socket) {
-        // 🎯 THE FIX: Pass active energy in the payload
         socket.emit('requestUnequip', { currentEnergy: hero.energy });
     }
 };
 
-// 2. Drag to World (Drop)
 document.getElementById('menu-overlay').addEventListener('dragover', (e) => e.preventDefault());
 document.getElementById('menu-overlay').addEventListener('drop', (e) => {
-    // If dropped directly on the overlay background (not in the grid)
     if (e.target.id === 'menu-overlay' || e.target.id === 'menu-container') {
         const index = e.dataTransfer.getData('index');
         const source = e.dataTransfer.getData('source');
@@ -1951,7 +1657,7 @@ function openSplitMenu(index, item) {
     const label = document.getElementById('split-amount-label');
     
     slider.max = item.count;
-    slider.value = item.count; // Default to dropping all
+    slider.value = item.count; 
     label.innerText = item.count;
     
     document.getElementById('split-item-icon').innerText = getItemIcon(item);
@@ -1972,30 +1678,23 @@ document.getElementById('cancel-split-btn').onclick = () => {
     document.getElementById('split-stack-menu').classList.add('hidden');
 };
 
-// In src/uiManager.js
-
-// Inside src/uiManager.js:
-
 function dropItemToWorld(index, amount) {
     const originTX = Math.floor((hero.x + 8) / 16);
-    const originTY = Math.floor((hero.y + 15) / 16); // Feet
+    const originTY = Math.floor((hero.y + 15) / 16); 
 
-    // 🎯 THE SECURE FIX: Ask the server to drop the item coordinate securely
     if (socket) {
         socket.emit('requestDrop', { index: index, amount: amount, tx: originTX, ty: originTY });
     }
 }
 
-
 // ==========================================
-// 📱 UNIFIED TOUCH DRAG & TOOLTIP ENGINE
+// 📱 TOUCH DRAG & TOOLTIP ENGINE
 // ==========================================
 const tooltip = document.getElementById('item-tooltip');
 let touchTimer = null;
 let dragClone = null;
 let dragData = null;
 
-// Locate showTooltip() inside src/uiManager.js and modify the stat check:
 function showTooltip(itemEl, x, y) {
     const item = getItemFromDOM(itemEl.dataset.source, parseInt(itemEl.dataset.index));
     if (item) {
@@ -2005,7 +1704,6 @@ function showTooltip(itemEl, x, y) {
         const statsEl = document.getElementById('tt-stats');
         if (item.energy) statsEl.innerText = `Nutrition: +${item.energy} Energy`;
         else if (item.ad) statsEl.innerText = `Damage: +${item.ad} ATK`;
-        // 🎯 THE FIX: Output remaining bites for Hay bundles in the inventory
         else if (item.isFodder) {
             statsEl.innerText = `Bites Left: ${Math.ceil(item.health / 10)} / 10`;
         }
@@ -2024,18 +1722,13 @@ function showTooltip(itemEl, x, y) {
 }
 
 function getItemFromDOM(source, index) {
-    // 🎯 THE FOOLPROOF FIX: Instantly exit if source is missing to prevent crashes
     if (!source) return null; 
-
     if (source === 'hero' || source.startsWith('hero-')) return hero.inventory[index];
-    if (source === 'chest') return activeChestItems[index];
-    if (source === 'cellar') return activeCellarItems[index];
-    if (source === 'hay-storage') return activeHayStorageItems[index];
+    if (source === 'storage') return activeStorageContext.items[index];
     if (source === 'altar') return altarItem;
     return null;
 }
 
-// --- MOUSE LISTENERS (For PC) ---
 document.body.addEventListener('mouseover', (e) => {
     const itemEl = e.target.closest('.inv-item');
     const isInsideMenu = e.target.closest('.pixel-panel') || e.target.closest('#hud');
@@ -2045,41 +1738,35 @@ document.body.addEventListener('mouseout', (e) => {
     if (e.target.closest('.inv-item')) tooltip.style.display = 'none';
 });
 
-// --- TOUCH LISTENERS (For Mobile) ---
 document.body.addEventListener('touchstart', (e) => {
     const itemEl = e.target.closest('.draggable-item');
     if (!itemEl) return;
 
-    // 1. Start timer for Long-Press (Tooltip)
     touchTimer = setTimeout(() => {
         showTooltip(itemEl, e.touches[0].clientX, e.touches[0].clientY);
-    }, 400); // Hold for 400ms to show tooltip
+    }, 400); 
 
-    // 2. Prep Drag Data
     dragData = { index: itemEl.dataset.index, source: itemEl.dataset.source, element: itemEl };
 }, { passive: false });
 
 document.body.addEventListener('touchmove', (e) => {
     if (!dragData) return;
 
-    // If they start moving their finger, cancel the tooltip!
     clearTimeout(touchTimer);
     tooltip.style.display = 'none';
 
-    // Create the drag clone
     if (!dragClone) {
         dragClone = dragData.element.cloneNode(true);
         dragClone.style.position = 'fixed';
         dragClone.style.zIndex = '99999';
         dragClone.style.opacity = '0.8';
-        dragClone.style.pointerEvents = 'none'; // Crucial so we can drop it!
+        dragClone.style.pointerEvents = 'none'; 
         document.body.appendChild(dragClone);
         
-        if (navigator.vibrate) navigator.vibrate(50); // Tactile feedback on pickup
+        if (navigator.vibrate) navigator.vibrate(50); 
     }
 
-    // Move the clone
-    e.preventDefault(); // Stop screen from scrolling
+    e.preventDefault(); 
     const touch = e.touches[0];
     dragClone.style.left = (touch.clientX - 25) + 'px';
     dragClone.style.top = (touch.clientY - 25) + 'px';
@@ -2093,13 +1780,10 @@ document.body.addEventListener('touchend', (e) => {
         dragClone.remove();
         dragClone = null;
 
-        // Find what UI element we dropped it on
         const touch = e.changedTouches[0];
         const dropTarget = document.elementFromPoint(touch.clientX, touch.clientY);
 
         if (dropTarget) {
-            // Generate a synthetic HTML5 drop event!
-            // This magically triggers all the drop listeners we already wrote!
             const dropEvent = new Event('drop', { bubbles: true });
             dropEvent.dataTransfer = { getData: (key) => dragData[key] };
             dropTarget.dispatchEvent(dropEvent);
@@ -2121,17 +1805,14 @@ function renderActivityLog(logData) {
     }
 
     list.innerHTML = logData.map(entry => {
-        // Calculate "Time Ago"
         const mins = Math.floor((Date.now() - entry.timestamp) / 60000);
         let timeStr = mins < 1 ? "Just now" : (mins < 60 ? `${mins}m ago` : `${Math.floor(mins/60)}h ago`);
         
-        // Format the Wallet string (Shorten it if it's a long hex address)
         let shortWallet = entry.wallet;
         if (shortWallet.startsWith('0x') && shortWallet.length > 10) {
             shortWallet = shortWallet.substring(0, 6) + "..." + shortWallet.substring(shortWallet.length - 4);
         }
 
-        // Color coding based on action type
         const color = entry.type === 'SACRIFICE' ? '#00FFFF' : '#FFD700';
 
         return `
@@ -2144,7 +1825,6 @@ function renderActivityLog(logData) {
     }).join('');
 }
 
-
 // ==========================================
 // 🗺️ LOCATION BANNER ENGINE
 // ==========================================
@@ -2152,7 +1832,6 @@ const prefixes = ["Oak", "Pine", "River", "Stone", "Iron", "Gold", "Silver", "Wi
 const suffixes = ["wood", "ford", "bridge", "mont", "ville", "town", "bury", "ton", "vale", "dale", "peak", "haven", "keep", "watch", "fall", "stead", "moor", "marsh", "gate", "run", "brook"];
 
 function getZoneName(seed1, seed2) {
-    // A simple, deterministic math hash based on coordinates/IDs
     const hash = Math.sin(seed1 * 12.9898 + seed2 * 78.233) * 43758.5453;
     const rand1 = Math.floor(Math.abs(hash) * 100);
     const rand2 = Math.floor(Math.abs(hash * 10) * 100);
@@ -2184,15 +1863,13 @@ export function triggerLocationBanner(cx, cy, cellType) {
     } else if (cellType === 103) {
         zoneName = getZoneName(cx, cy) + " Castle";
         zoneDesc = "ROYAL STRONGHOLD";
-    } else if (cellType === 107) { // 👈 NEW: Mining Camp Banner
+    } else if (cellType === 107) { 
         zoneName = getZoneName(cx, cy) + " Camp";
         zoneDesc = "MINING EXPEDITION";
     } else if (cellType < 55 || cellType === 10 || cellType === 11 || cellType === 12) {
-        // --- WATER GEOGRAPHY ---
         let isLake = false;
         let lakeId = -1;
         
-        // Scan the geography arrays to see if this chunk belongs to a lake
         if (window.geography && window.geography.lakes) {
             for (let i = 0; i < window.geography.lakes.length; i++) {
                 if (window.geography.lakes[i].includes(chunkIdx)) {
@@ -2208,11 +1885,10 @@ export function triggerLocationBanner(cx, cy, cellType) {
             zoneName = getZoneName(cx, cy) + " River";
             zoneDesc = "FLOWING WATER";
         } else {
-            zoneName = getZoneName(999, 999) + " Ocean"; // Constant seed for the main ocean
+            zoneName = getZoneName(999, 999) + " Ocean"; 
             zoneDesc = "OPEN WATER";
         }
     } else {
-        // --- LAND GEOGRAPHY (Continents) ---
         let contId = -1;
         if (window.geography && window.geography.continents) {
             for (let i = 0; i < window.geography.continents.length; i++) {
@@ -2222,7 +1898,6 @@ export function triggerLocationBanner(cx, cy, cellType) {
             }
         }
 
-        // Continent 0 is always the largest landmass (sorted in mapGenerator)
         let landName = getZoneName(contId * 5, contId * 15);
         zoneName = landName + (contId === 0 ? " Continent" : " Isle");
         
@@ -2232,26 +1907,24 @@ export function triggerLocationBanner(cx, cy, cellType) {
         else zoneDesc = "THE WILDS";
     }
 
-    // Set text
     nameEl.innerText = zoneName;
     typeEl.innerText = zoneDesc;
 
-    // Fade IN
     banner.style.opacity = "1";
 
-    // Clear any existing timeout, then wait 4 seconds and Fade OUT
     if (bannerTimeout) clearTimeout(bannerTimeout);
     bannerTimeout = setTimeout(() => {
         banner.style.opacity = "0";
     }, 4000);
 }
 
-// Add these functions to the bottom of src/uiManager.js:
-
+// ==========================================
+// 🧝 HOBBIT WORKFORCE MANAGEMENT UI
+// ==========================================
 let selectedHobbitId = null;
 
 export function openHobbitManagerMenu() {
-    selectedHobbitId = null; // Clear selection
+    selectedHobbitId = null; 
     document.getElementById('hobbit-manager-menu').classList.remove('hidden');
     renderHobbitManagerUI();
 
@@ -2265,7 +1938,6 @@ function renderHobbitManagerUI() {
     const detailsEl = document.getElementById('selected-hobbit-details');
     const buttonContainer = document.getElementById('job-button-container');
     
-    // Statically import the local hobbit array
     import('./hobbits.js').then(m => {
         const activeHobbits = m.hobbits;
 
@@ -2276,7 +1948,6 @@ function renderHobbitManagerUI() {
             return;
         }
 
-        // Render roster list
         listEl.innerHTML = activeHobbits.map(hob => {
             const isSelected = (hob.id === selectedHobbitId);
             const style = isSelected ? 'background: var(--highlight); color: white; border: 4px solid var(--bg-dark);' : 'background: white; border: 4px solid var(--bg-dark);';
@@ -2288,7 +1959,6 @@ function renderHobbitManagerUI() {
             `;
         }).join('');
 
-        // Render Details & Role selectors
         const selected = activeHobbits.find(h => h.id === selectedHobbitId);
         if (selected) {
             detailsEl.innerHTML = `
@@ -2309,7 +1979,6 @@ function renderHobbitManagerUI() {
     });
 }
 
-// Attach functions globally to handle UI onclick actions
 window.selectHobbit = (id) => {
     selectedHobbitId = id;
     renderHobbitManagerUI();
@@ -2321,7 +1990,7 @@ window.assignHobbitJob = (jobName) => {
         const target = m.hobbits.find(h => h.id === selectedHobbitId);
         if (target) {
             target.job = jobName;
-            target.path = []; // Cancel current path to evaluate new job immediately
+            target.path = []; 
             target.state = 'idle';
             renderHobbitManagerUI();
         }
@@ -2333,7 +2002,6 @@ export function openDoorControlMenu(gx, gy, roomID) {
     document.getElementById('door-menu-title').innerText = `🚪 ROOM #${roomID}`;
     document.getElementById('door-menu').classList.remove('hidden');
     
-    // Request current state from the server
     if (socket) socket.emit('requestDoorState', { gx, gy });
 }
 

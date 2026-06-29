@@ -72,10 +72,7 @@
 
         <!-- HUD (Hidden until Logged In) -->
         <div id="hud" style="display: none;">
-
-
             <div class="hud-panel" style="position: absolute; left: 20px; top: 20px; display: flex; align-items: center; gap: 15px;">
-                
                 <!-- 📦 IN-GAME BALANCE BOX -->
                 <div style="background: rgba(0, 0, 0, 0.6); border: 2px solid var(--bg-dark); padding: 8px 12px; display: flex; flex-direction: column; text-shadow: 2px 2px 0 #000;">
                     <span style="font-size: 8px; color: #aaa; margin-bottom: 4px;">IN-GAME BALANCE</span>
@@ -91,12 +88,10 @@
                 <button id="hud-withdraw-btn" class="pixel-btn" style="padding: 8px 12px; font-size: 8px;">WITHDRAW</button>
                 <button id="hud-activity-btn" class="pixel-btn" style="padding: 8px 12px; font-size: 10px;">📖</button>
                 <button id="hud-help-btn" class="pixel-btn safe" style="padding: 8px 12px; font-size: 8px;">?</button>
-                
             </div>
 
             <!-- 🌍 WORLD INDICATORS (Top Right) -->
             <div class="hud-panel" style="position: absolute; right: 20px; top: 20px; display: flex; align-items: center; gap: 15px;">
-                
                 <!-- 🐟 FISH BOX -->
                 <div style="background: rgba(0, 0, 0, 0.6); border: 2px solid var(--bg-dark); padding: 8px 12px; display: flex; flex-direction: column; text-align: right; text-shadow: 2px 2px 0 #000;">
                     <span style="font-size: 8px; color: #aaa; margin-bottom: 4px;">GLOBAL POPULATION</span>
@@ -108,7 +103,6 @@
                     <span style="font-size: 8px; color: #aaa; margin-bottom: 4px;">TOTAL GAME VALUE</span>
                     <span id="tgv-display" style="color: #FF007A; font-size: 12px;">TGV: 0.00000000</span>
                 </div>
-
             </div>
             
             <div id="debug-log" style="position: absolute; top: 80px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.7); padding: 8px 12px; border: 4px solid var(--bg-dark); color: var(--safe); font-size: 10px; text-align: center; pointer-events: none; text-shadow: 2px 2px 0 var(--bg-dark); max-width: 80%; word-wrap: break-word; z-index: 1000;">
@@ -120,32 +114,25 @@
             </div>
 
             <!-- 💬 CHAT BOX -->
-            <!-- 1. Container ignores all touches -->
             <div id="chat-container" style="position: fixed; left: 20px; bottom: 20px; width: 300px; display: flex; flex-direction: column; pointer-events: none; z-index: 1000;">
-                
-                <!-- Message History (Also ignores touches) -->
+                <!-- Message History -->
                 <div id="chat-messages" style="height: 120px; overflow-y: hidden; display: flex; flex-direction: column; justify-content: flex-end; margin-bottom: 5px; font-size: 10px; color: white; text-shadow: 2px 2px 0 #000; word-wrap: break-word; line-height: 1.5; padding: 5px;">
                     <!-- Chat messages will pop up here -->
                 </div>
                 
                 <!-- Input Field & Send Button -->
                 <div style="display: flex; gap: 5px;">
-                    <!-- 2. Re-enable touches ONLY for the input and button -->
                     <input type="text" id="chat-input" class="pixel-input" placeholder="Chat..." style="pointer-events: auto; flex: 1; font-size: 8px; padding: 8px; background: rgba(45, 35, 46, 0.8); color: white; border: 4px solid var(--bg-dark); outline: none; box-shadow: inset -2px -2px 0px rgba(0,0,0,0.5);">
                     <button id="chat-send-btn" class="pixel-btn" style="pointer-events: auto; padding: 8px 12px; font-size: 8px;">SEND</button>
                 </div>
             </div>
 
             <!-- 🗺️ LOCATION BANNER -->
-        <div id="location-banner" style="position: fixed; top: 20px; right: 20px; text-align: right; pointer-events: none; opacity: 0; transition: opacity 1s ease-in-out; z-index: 1000;">
-            <div id="location-name" style="color: var(--banana); font-size: 16px; text-shadow: 2px 2px 0 #000; text-transform: uppercase; margin-bottom: 5px;">Village Name</div>
-            <div id="location-type" style="color: #ddd; font-size: 8px; text-shadow: 2px 2px 0 #000; letter-spacing: 2px;">WILDERNESS</div>
+            <div id="location-banner" style="position: fixed; top: 20px; right: 20px; text-align: right; pointer-events: none; opacity: 0; transition: opacity 1s ease-in-out; z-index: 1000;">
+                <div id="location-name" style="color: var(--banana); font-size: 16px; text-shadow: 2px 2px 0 #000; text-transform: uppercase; margin-bottom: 5px;">Village Name</div>
+                <div id="location-type" style="color: #ddd; font-size: 8px; text-shadow: 2px 2px 0 #000; letter-spacing: 2px;">WILDERNESS</div>
+            </div>
         </div>
-        
-        </div>
-
-<!-- KEEP THE REST OF YOUR MODALS UNCHANGED BELOW THIS LINE -->
-
 
         <!-- BANK VAULT (Withdrawal Menu) -->
         <div id="withdraw-menu" class="hidden menu-modal">
@@ -221,31 +208,31 @@
                     </div>
                     <div id="anvil-cost-text" style="font-size: 8px; color: var(--banana-dark); height: 10px;"></div>
                 </div>
-                <button id="anvil-start-btn" class="pixel-btn" style="width: 100%; margin-bottom: 10px;">FORGE DAGGER (1x Iron Ingot)</button>
+                <button id="anvil-start-btn" class="pixel-btn" style="width: 100%; margin-bottom: 10px;">START (1x Iron Ingot)</button>
                 <button id="close-anvil-btn" class="pixel-btn cancel" style="width: 100%;">LEAVE</button>
             </div>
         </div>
 
-        <!-- CHEST STORAGE MENU -->
-        <div id="chest-menu" class="hidden menu-modal">
+        <!-- UNIFIED STORAGE MENU (Consolidated Chest, Cellar, and Hay Storage) -->
+        <div id="storage-menu" class="hidden menu-modal">
             <div class="pixel-panel chest-modal">
-                <h2 style="color: var(--text-dark); margin-top: 0; text-align: center;">📦 STORAGE CHEST</h2>
-                <p style="font-size: 10px; text-align: center; margin-bottom: 15px;">Click or Drag items to transfer.</p>
+                <h2 id="storage-title" style="color: var(--text-dark); margin-top: 0; text-align: center;">📦 STORAGE</h2>
+                <p id="storage-subtitle" style="font-size: 10px; text-align: center; margin-bottom: 15px; color: var(--highlight);">Storage helper description.</p>
                 
                 <div class="chest-layout">
                     <div class="chest-pane">
                         <h3>BACKPACK</h3>
-                        <div id="chest-hero-inv" class="inv-grid"></div>
+                        <div id="storage-hero-inv" class="inv-grid"></div>
                     </div>
                     <div class="chest-pane">
-                        <h3>CHEST</h3>
-                        <div id="chest-box-inv" class="inv-grid"></div>
+                        <h3 id="storage-pane-title">STORAGE</h3>
+                        <div id="storage-box-inv" class="inv-grid"></div>
                     </div>
                 </div>
 
                 <div class="chest-controls">
-                    <button id="unload-all-btn" class="pixel-btn" style="flex: 1;">UNLOAD ALL</button>
-                    <button id="close-chest-btn" class="pixel-btn cancel" style="flex: 1;">CLOSE</button>
+                    <button id="storage-unload-btn" class="pixel-btn safe" style="flex: 1;">UNLOAD ALL</button>
+                    <button id="close-storage-btn" class="pixel-btn cancel" style="flex: 1;">CLOSE</button>
                 </div>
             </div>
         </div>
@@ -260,14 +247,15 @@
                     <div style="font-size: 10px; margin-bottom: 10px;">WORK REMAINING</div>
                     <div style="width: 100%; background: #ccc; height: 16px; border: 2px solid #000; position: relative; margin-bottom: 8px;">
                         <div id="mining-progress-bar" style="width: 0%; height: 100%; background: var(--highlight);"></div>
-                        <div id="mining-progress-text" style="position: absolute; width: 100%; top: 2px; font-size: 8px; text-align: center; color: #000;">3600 / 3600</div>
+                        <div id="mining-progress-text" style="position: absolute; width: 100%; top: 2px; font-size: 8px; text-align: center; color: #000;">200 / 3600</div>
                     </div>
-                    <!-- 👇 NEW: Dedicated space for the Speed-Up Cost! -->
                     <div id="mining-cost-text" style="font-size: 8px; color: var(--banana-dark); height: 10px;"></div>
                 </div>
 
-                <button id="mining-action-btn" class="pixel-btn" style="width: 100%; margin-bottom: 10px;">SPEED - UP</button>
-                <button id="close-mining-btn" class="pixel-btn cancel" style="width: 100%;">STEP AWAY</button>
+                <div style="display: flex; gap: 10px;">
+                    <button id="mining-action-btn" class="pixel-btn" style="flex: 1;">SPEED - UP</button>
+                    <button id="close-mining-btn" class="pixel-btn cancel" style="flex: 1;">STEP AWAY</button>
+                </div>
             </div>
         </div>
 
@@ -317,7 +305,6 @@
             </div>
         </div>
 
-        <!-- Replace your kitchen-menu modal inside index.html with this markup: -->
         <!-- REVISED KITCHEN MENU -->
         <div id="kitchen-menu" class="hidden menu-modal" style="z-index: 3000;">
             <div class="pixel-panel" style="width: 380px; text-align: center;">
@@ -354,7 +341,7 @@
             </div>
         </div>
 
-       <!-- CARTOGRAPHY (Map Table) -->
+        <!-- CARTOGRAPHY (Map Table) -->
         <div id="maptable-menu" class="hidden menu-modal">
             <div class="pixel-panel" style="display: flex; flex-direction: column; align-items: center; width: 860px; max-width: 95vw; max-height: 95vh; overflow: hidden;">
                 <h2 style="color: var(--text-dark); margin-top: 0; text-align: center;">🗺️ WORLD MAP</h2>
@@ -377,31 +364,6 @@
             </div>
         </div>
 
-        <!-- ROOT CELLAR MENU -->
-        <div id="cellar-menu" class="hidden menu-modal">
-            <div class="pixel-panel chest-modal">
-                <h2 style="color: var(--text-dark); margin-top: 0; text-align: center;">🧺 ROOT CELLAR</h2>
-                <p style="font-size: 10px; text-align: center; margin-bottom: 15px; color: var(--highlight);">Storage for Organic Foodstuffs only.</p>
-                
-                <div class="chest-layout">
-                    <div class="chest-pane">
-                        <h3>BACKPACK</h3>
-                        <div id="cellar-hero-inv" class="inv-grid"></div>
-                    </div>
-                    <div class="chest-pane">
-                        <h3>CELLAR</h3>
-                        <div id="cellar-box-inv" class="inv-grid"></div>
-                    </div>
-                </div>
-
-                <div class="chest-controls">
-                    <button id="unload-food-btn" class="pixel-btn safe" style="flex: 1;">UNLOAD FOOD</button>
-                    <button id="close-cellar-btn" class="pixel-btn cancel" style="flex: 1;">CLOSE</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Replace your hay-table-menu modal inside index.html with this markup: -->
         <!-- REVISED HAY TABLE MENU -->
         <div id="hay-table-menu" class="hidden menu-modal" style="z-index: 3000;">
             <div class="pixel-panel" style="width: 350px; text-align: center;">
@@ -419,30 +381,6 @@
 
                 <button id="hay-table-start-btn" class="pixel-btn" style="width: 100%; margin-bottom: 10px;">START (8x Plant Matter)</button>
                 <button id="close-hay-table-btn" class="pixel-btn cancel" style="width: 100%;">STEP AWAY</button>
-            </div>
-        </div>
-
-        <!-- HAY STORAGE MENU -->
-        <div id="hay-storage-menu" class="hidden menu-modal">
-            <div class="pixel-panel chest-modal">
-                <h2 style="color: var(--text-dark); margin-top: 0; text-align: center;">🌾 HAY STORAGE</h2>
-                <p style="font-size: 10px; text-align: center; margin-bottom: 15px; color: var(--banana-dark);">Dry Storage for Fodder.</p>
-                
-                <div class="chest-layout">
-                    <div class="chest-pane">
-                        <h3>BACKPACK</h3>
-                        <div id="hay-storage-hero-inv" class="inv-grid"></div>
-                    </div>
-                    <div class="chest-pane">
-                        <h3>STORAGE</h3>
-                        <div id="hay-storage-box-inv" class="inv-grid"></div>
-                    </div>
-                </div>
-
-                <div class="chest-controls">
-                    <button id="unload-hay-btn" class="pixel-btn safe" style="flex: 1;">UNLOAD HAY</button>
-                    <button id="close-hay-storage-btn" class="pixel-btn cancel" style="flex: 1;">CLOSE</button>
-                </div>
             </div>
         </div>
 
@@ -550,11 +488,9 @@
                 <button id="close-menu" class="pixel-btn cancel" style="width: 100%; margin-top: 10px;">CLOSE (ESC)</button>
             </div>
         </div>
-
-    
     </div>
 
-        <!-- 🪧 ITEM TOOLTIP -->
+    <!-- 🪧 ITEM TOOLTIP -->
     <div id="item-tooltip" style="position: fixed; display: none; background: rgba(0, 0, 0, 0.85); color: white; border: 4px solid var(--bg-dark); padding: 10px; z-index: 10000; width: 160px; pointer-events: none; font-size: 8px; line-height: 1.4; box-shadow: 4px 4px 0px rgba(0,0,0,0.5);">
         <div id="tt-name" style="color: var(--banana); font-size: 10px; margin-bottom: 4px; text-transform: uppercase;">Item Name</div>
         <div id="tt-type" style="color: #aaa; margin-bottom: 4px;">Type</div>
@@ -580,10 +516,7 @@
         };
     </script>
 
-    <!-- Change this line at the bottom of index.html -->
     <script src="/socket.io/socket.io.js"></script>
     <script type="module" src="js/game.js"></script>
 </body>
 </html>
-
-    
