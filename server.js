@@ -3,6 +3,7 @@
 // 1. Modern Imports (ES Modules)
 import { CONFIG } from './src/config.js'; 
 import { createVoucher, getContractTVL   } from './src/voucherSystem.js'; 
+import { ITEM_TYPES, createItem } from './src/items.js'; // 👈 Loaded from items.js as the single source of truth
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -105,58 +106,6 @@ const SERVER_PLANT_DEFS = {
     'potato':    { growthRate: 0.15, stages: 5, window: 1 }
 };
 
-const SERVER_ITEM_TYPES = {
-    TURNIP_ITEM: { name: "Turnip", seedType: "turnip_item", baseHealth: 30, baseVirulence: 0, spriteID: 0, tileset: "cropTileset", maxStack: 8, drawSize: 8 },
-    TOMATO_ITEM: { name: "Tomato", seedType: "tomato_item", baseHealth: 30, baseVirulence: 0, spriteID: 24, tileset: "cropTileset", maxStack: 8, drawSize: 4 },
-    EGGPLANT_ITEM: { name: "Eggplant", seedType: "eggplant_item", baseHealth: 30, baseVirulence: 0, spriteID: 36, tileset: "cropTileset", maxStack: 8, drawSize: 8 },
-    STRAWBERRY_ITEM: { name: "Strawberry", seedType: "strawberry_item", baseHealth: 20, baseVirulence: 0, spriteID: 72, tileset: "cropTileset", maxStack: 8, drawSize: 4 },
-    PUMPKIN_ITEM: { name: "Pumpkin", seedType: "pumpkin_item", baseHealth: 40, baseVirulence: 0, spriteID: 96, tileset: "cropTileset", maxStack: 8, drawSize: 8 },
-    WATERMELON_ITEM: { name: "Watermelon", seedType: "watermelon_item", baseHealth: 40, baseVirulence: 0, spriteID: 30, tileset: "cropTileset", maxStack: 8, drawSize: 8 },
-    CORN_ITEM: { name: "Corn", seedType: "corn_item", baseHealth: 30, baseVirulence: 0, spriteID: 108, tileset: "cropTileset", maxStack: 8, drawSize: 8 },
-    PINEAPPLE_ITEM: { name: "Pineapple", seedType: "pineapple_item", baseHealth: 40, baseVirulence: 0, spriteID: 48, tileset: "cropTileset", maxStack: 8, drawSize: 8 },
-    POTATO_ITEM: { name: "Potato", seedType: "potato_item", baseHealth: 30, baseVirulence: 0, spriteID: 84, tileset: "cropTileset", maxStack: 8, drawSize: 4 },
-    WHEAT_ITEM: { name: "Wheat", seedType: "wheat_item", baseHealth: 20, baseVirulence: 0, spriteID: 168, tileset: "gardenTileset", maxStack: 8 }, 
-    PLANT_MATTER: { name: "Plant Matter", seedType: "plant_matter", baseHealth: 12, baseVirulence: 2, spriteID: 152, tileset: "gardenTileset", maxStack: 8 },
-
-    TURNIP_SEED: { name: "Turnip Seed", seedType: "turnip_seed", baseHealth: 10, baseVirulence: 0, spriteID: 5, tileset: "cropTileset", maxStack: 64 },
-    TOMATO_SEED: { name: "Tomato Seed", seedType: "tomato_seed", baseHealth: 10, baseVirulence: 0, spriteID: 29, tileset: "cropTileset", maxStack: 64 },
-    EGGPLANT_SEED: { name: "Eggplant Seed", seedType: "eggplant_seed", baseHealth: 10, baseVirulence: 0, spriteID: 41, tileset: "cropTileset", maxStack: 64 },
-    STRAWBERRY_SEED: { name: "Strawberry Seed", seedType: "strawberry_seed", baseHealth: 10, baseVirulence: 0, spriteID: 77, tileset: "cropTileset", maxStack: 64 },
-    PUMPKIN_SEED: { name: "Pumpkin Seed", seedType: "pumpkin_seed", baseHealth: 10, baseVirulence: 0, spriteID: 101, tileset: "cropTileset", maxStack: 64 },
-    WATERMELON_SEED: { name: "Watermelon Seed", seedType: "watermelon_seed", baseHealth: 10, baseVirulence: 0, spriteID: 35, tileset: "cropTileset", maxStack: 64 },
-    CORN_SEED: { name: "Corn Seed", seedType: "corn_seed", baseHealth: 10, baseVirulence: 0, spriteID: 113, tileset: "cropTileset", maxStack: 64 },
-    PINEAPPLE_SEED: { name: "Pineapple Crown", seedType: "pineapple_seed", baseHealth: 10, baseVirulence: 0, spriteID: 1, tileset: "gardenTileset", maxStack: 64 },
-    POTATO_SEED: { name: "Potato Eye", seedType: "potato_seed", baseHealth: 10, baseVirulence: 0, spriteID: 2, tileset: "gardenTileset", maxStack: 64 },
-    WHEAT_SEED: { name: "Wheat Seed", seedType: "wheat_seed", baseHealth: 10, baseVirulence: 0, spriteID: 65, tileset: "cropTileset", maxStack: 64 },
-    
-    GRASS_SEED: { name: "Grass Seed", seedType: "grass_seed", baseHealth: 10, baseVirulence: 0, spriteID: 0, tileset: "gardenTileset", maxStack: 64 },
-    ROSE_SEED: { name: "Rose Seed", seedType: "rose_seed", baseHealth: 10, baseVirulence: 0, spriteID: 11, tileset: "cropTileset", maxStack: 64 },
-    VIOLET_SEED: { name: "Violet Seed", seedType: "violet_seed", baseHealth: 10, baseVirulence: 0, spriteID: 23, tileset: "cropTileset", maxStack: 64 },
-    SUNFLOWER_SEED: { name: "Sunflower Seed", seedType: "sunflower_seed", baseHealth: 10, baseVirulence: 0, spriteID: 119, tileset: "cropTileset", maxStack: 64 },
-
-    BASS: { name: "River Bass", seedType: "fish", baseHealth: 40, baseVirulence: 10, spriteID: 43, tileset: "fishTileset", maxStack: 8 },
-    TROUT: { name: "Trout", seedType: "fish_trout", baseHealth: 40, baseVirulence: 10, spriteID: 16, tileset: "fishTileset", maxStack: 8 },
-    PANFISH: { name: "Panfish", seedType: "fish_panfish", baseHealth: 30, baseVirulence: 10, spriteID: 2, tileset: "fishTileset", maxStack: 8 },
-    MACKEREL: { name: "Mackerel", seedType: "fish_mackerel", baseHealth: 50, baseVirulence: 10, spriteID: 70, tileset: "fishTileset", maxStack: 8 },
-    MUSKELLUNGE: { name: "Muskellunge", seedType: "fish_muskellunge", baseHealth: 100, baseVirulence: 10, spriteID: 91, tileset: "fishTileset", maxStack: 8 },
-    GIANT_TREVALLY: { name: "Giant Trevally", seedType: "fish_trevally", baseHealth: 80, baseVirulence: 10, spriteID: 35, tileset: "fishTileset", maxStack: 8 },
-    SQUID: { name: "Squid", seedType: "fish_squid", baseHealth: 50, baseVirulence: 10, spriteID: 84, tileset: "fishTileset", maxStack: 8 },
-    OCTOPUS: { name: "Octopus", seedType: "fish_octopus", baseHealth: 60, baseVirulence: 10, spriteID: 107, tileset: "fishTileset", maxStack: 8 },
-    EEL: { name: "Eel", seedType: "fish_eel", baseHealth: 50, baseVirulence: 10, spriteID: 59, tileset: "fishTileset", maxStack: 8 },
-    ANGLERFISH: { name: "Anglerfish", seedType: "fish_angler", baseHealth: 80, baseVirulence: 10, spriteID: 29, tileset: "fishTileset", maxStack: 8 },
-
-    EGG: { name: "Farm Egg", seedType: "egg", baseHealth: 30, baseVirulence: 0, spriteID: 60, tileset: "foodTileset", maxStack: 8, drawSize: 4 },
-    RAW_CHICKEN: { name: "Raw Chicken", seedType: "raw_chicken", baseHealth: 50, baseVirulence: 10, spriteID: 15, tileset: "foodTileset", maxStack: 8, drawSize: 8 },
-
-    KEY: { name: "House Key", seedType: "key", spriteID: 38, tileset: "keyTileset", isKey: true, baseHealth: 100, baseVirulence: 0, baseFertility: 0, maxStack: 1, drawSize: 12 },
-    DAGGER: { name: "Rusty Dagger", seedType: "weapon_dagger", spriteID: 0, tileset: "weaponTileset", isWeapon: true, ad: 5, baseHealth: 100, baseVirulence: 0, baseFertility: 0, maxStack: 1, drawSize: 8 },
-    PICKAXE: { name: "Miner's Pickaxe", seedType: "tool_pickaxe", spriteID: 69, tileset: "transparentTileset", isWeapon: true, ad: 3, baseHealth: 100, baseVirulence: 0, baseFertility: 0, maxStack: 1, drawSize: 8 },
-
-    IRON_ORE: { name: "Iron Ore", seedType: "iron_ore", spriteID: 32, tileset: "craftingTileset", baseHealth: 100, baseVirulence: 0, baseFertility: 0, maxStack: 64, drawSize: 8 },
-    IRON_INGOT: { name: "Iron Ingot", seedType: "iron_ingot", spriteID: 36, tileset: "craftingTileset", baseHealth: 100, baseVirulence: 0, baseFertility: 0, maxStack: 64, drawSize: 8 },
-    HAY: { name: "Dried Hay", seedType: "hay", spriteID: 168, tileset: "gardenTileset", baseHealth: 100, baseVirulence: 0, baseFertility: 0, maxStack: 64, drawSize: 16 },
-};
-
 // ==========================================
 // 🏗️ UNIFIED WORKSTATION CONFIGURATIONS (SERVER)
 // ==========================================
@@ -199,16 +148,6 @@ const WORKSTATION_CONFIGS = {
     }
 };
 
-function createServerItem(template) {
-    return {
-        ...template,
-        health: template.baseHealth,
-        virulence: template.baseVirulence,
-        count: 1,
-        timestamp: Date.now()
-    };
-}
-
 function giveItemToServerInventory(player, newItem) {
     if (!newItem) return false;
 
@@ -249,16 +188,16 @@ function isServerPlantMature(plant, currentGrowth) {
 
 function getRandomServerFish() {
     const roll = Math.random() * 100;
-    if (roll < 0.5) return SERVER_ITEM_TYPES.MUSKELLUNGE;    
-    if (roll < 1.5) return SERVER_ITEM_TYPES.GIANT_TREVALLY; 
-    if (roll < 3.5) return SERVER_ITEM_TYPES.ANGLERFISH;     
-    if (roll < 7.0) return SERVER_ITEM_TYPES.OCTOPUS;        
-    if (roll < 12.0) return SERVER_ITEM_TYPES.SQUID;         
-    if (roll < 20.0) return SERVER_ITEM_TYPES.EEL;           
-    if (roll < 35.0) return SERVER_ITEM_TYPES.MACKEREL;      
-    if (roll < 60.0) return SERVER_ITEM_TYPES.TROUT;         
-    if (roll < 80.0) return SERVER_ITEM_TYPES.BASS;          
-    return SERVER_ITEM_TYPES.PANFISH;                        
+    if (roll < 0.5) return ITEM_TYPES.MUSKELLUNGE;    
+    if (roll < 1.5) return ITEM_TYPES.GIANT_TREVALLY; 
+    if (roll < 3.5) return ITEM_TYPES.ANGLERFISH;     
+    if (roll < 7.0) return ITEM_TYPES.OCTOPUS;        
+    if (roll < 12.0) return ITEM_TYPES.SQUID;         
+    if (roll < 20.0) return ITEM_TYPES.EEL;           
+    if (roll < 35.0) return ITEM_TYPES.MACKEREL;      
+    if (roll < 60.0) return ITEM_TYPES.TROUT;         
+    if (roll < 80.0) return ITEM_TYPES.BASS;          
+    return ITEM_TYPES.PANFISH;                        
 }
 
 const serverPlants = new Map();
@@ -664,7 +603,7 @@ io.on('connection', (socket) => {
         }
 
         const caughtFishTemplate = getRandomServerFish();
-        const fishItem = createServerItem(caughtFishTemplate);
+        const fishItem = createItem(caughtFishTemplate); // 👈 Leverages main createItem factory
 
         if (giveItemToServerInventory(player, fishItem)) {
             globalFishCount = Math.max(0, globalFishCount - 1);
@@ -681,38 +620,10 @@ io.on('connection', (socket) => {
 
     socket.on('requestChest', (chestId) => {
         if (!chestDb[chestId]) {
-            chestDb[chestId] = [
-                {
-                    name: "Miner's Pickaxe",
-                    seedType: "tool_pickaxe",
-                    spriteID: 69,
-                    tileset: "transparentTileset",
-                    isWeapon: true,
-                    ad: 3,
-                    health: 100,
-                    virulence: 0,
-                    fertility: 0,
-                    count: 1,      
-                    maxStack: 1,   
-                    drawSize: 8,
-                    timestamp: Date.now()
-                },
-                {
-                    name: "Tomato",
-                    seedType: "tomato_item",
-                    spriteID: 24, 
-                    tileset: "cropTileset",
-                    health: 30,
-                    virulence: 0,
-                    fertility: 25,
-                    count: 8,      
-                    maxStack: 8,
-                    typeLabel: "Food", 
-                    energy: 35, 
-                    description: "A hearty fruit.",
-                    timestamp: Date.now()
-                },
-            ];
+            const pick = createItem(ITEM_TYPES.PICKAXE);
+            const tomato = createItem(ITEM_TYPES.TOMATO_ITEM);
+            tomato.count = 8; // Give them a full starter stack!
+            chestDb[chestId] = [pick, tomato];
         }
         socket.emit('chestData', { chestId, items: chestDb[chestId] });
     });
@@ -996,19 +907,19 @@ io.on('connection', (socket) => {
             };
 
             const itemTypeName = yieldMap[plant.type] || 'PLANT_MATTER';
-            const cropTemplate = SERVER_ITEM_TYPES[itemTypeName];
+            const cropTemplate = ITEM_TYPES[itemTypeName]; // 👈 Single source lookup
             
             if (cropTemplate) {
-                giveItemToServerInventory(player, createServerItem(cropTemplate));
+                giveItemToServerInventory(player, createItem(cropTemplate));
             }
 
             const farmCrops = ['turnip', 'tomato', 'eggplant', 'strawberry', 'pumpkin', 'watermelon', 'corn', 'pineapple', 'potato', 'wheat'];
             if (!farmCrops.includes(plant.type)) {
                 const seedConstName = `${plant.type.toUpperCase()}_SEED`;
-                const seedTemplate = SERVER_ITEM_TYPES[seedConstName];
+                const seedTemplate = ITEM_TYPES[seedConstName];
                 if (seedTemplate) {
                     const seedCount = Math.floor(Math.random() * 2) + 1; 
-                    const seedItem = createServerItem(seedTemplate);
+                    const seedItem = createItem(seedTemplate);
                     seedItem.count = seedCount;
                     giveItemToServerInventory(player, seedItem);
                 }
@@ -1024,11 +935,11 @@ io.on('connection', (socket) => {
             }
         } 
         else {
-            console.log(`🍂 Early Pick! ${player.wallet} pulled immature ${plant.type} at [${tx}, ${ty}]`);
+            console.log(`🍂 Early Harvest! ${player.wallet} pulled immature ${plant.type} at [${tx}, ${ty}]`);
             
-            const template = SERVER_ITEM_TYPES.PLANT_MATTER;
+            const template = ITEM_TYPES.PLANT_MATTER;
             if (template) {
-                giveItemToServerInventory(player, createServerItem(template));
+                giveItemToServerInventory(player, createItem(template));
             }
 
             serverPlants.delete(plantKey);
@@ -1187,19 +1098,19 @@ io.on('connection', (socket) => {
         if (Math.abs(px - itemData.tx) + Math.abs(py - itemData.ty) > 5) return;
 
         const seedTypeToKeyMap = {};
-        for (let key in SERVER_ITEM_TYPES) {
-            seedTypeToKeyMap[SERVER_ITEM_TYPES[key].seedType] = key;
+        for (let key in ITEM_TYPES) { // 👈 Single source loop
+            seedTypeToKeyMap[ITEM_TYPES[key].seedType] = key;
         }
         
         const templateKey = seedTypeToKeyMap[itemData.seedType];
-        const template = SERVER_ITEM_TYPES[templateKey];
+        const template = ITEM_TYPES[templateKey];
 
         if (!template) {
             console.log(`❌ Secure template not found for: ${itemData.seedType}`);
             return;
         }
 
-        const newItem = createServerItem(template);
+        const newItem = createItem(template); 
         
         const key = `${itemData.tx}_${itemData.ty}`;
         if (serverBacteria.has(key)) {
@@ -1334,7 +1245,7 @@ io.on('connection', (socket) => {
         const coords = chestId.split('_');
         const tx = parseInt(coords[1]);
         const ty = parseInt(coords[2]);
-        if (Math.abs(cx - tx) + Math.abs(cy - ty) > 5) return; 
+        if (Math.abs(cx - tx) + Math.abs(py - ty) > 5) return; 
 
         if (!chestDb[chestId]) chestDb[chestId] = [];
         const chestItems = chestDb[chestId];
