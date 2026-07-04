@@ -9,18 +9,63 @@ import { submitVoucherToChain, connectWallet } from './blockchainManager.js';
 import { mapCanvas } from './renderer.js';
 import { recalculateStats } from './interactionManager.js';
 
-export let activeDoorCoords = null;
-
 if (typeof window !== 'undefined') {
-    logStep("uiManager.js");
+    logStep("uiManager.js loaded");
 }
 
-const USD_CONVERSION_RATE = 0.0001; // 10,000 points = $1.00
+export let activeDoorCoords = null;
 
-export const uiState = {
-    isOpen: false,
-    currentTab: 'inventory'
+// ==========================================
+// 🏗️ UNIFIED WORKSTATION CONFIGURATIONS
+// ==========================================
+export const WORKSTATION_CONFIGS = {
+    smelter: {
+        maxWork: 200,
+        speedUpCost: 0.0678,
+        inputItem: 'iron_ore',
+        inputCount: 1,
+        outputItem: 'iron_ingot',
+        startLabel: 'START (1x Iron Ore)',
+        collectLabel: 'COLLECT INGOT'
+    },
+    anvil: {
+        maxWork: 300,
+        speedUpCost: 0.10167,
+        inputItem: 'iron_ingot',
+        inputCount: 1,
+        outputItem: 'weapon_dagger',
+        startLabel: 'FORGE DAGGER (1x Iron Ingot)',
+        collectLabel: 'COLLECT DAGGER'
+    },
+    haytable: {
+        maxWork: 120,
+        speedUpCost: 0.0407,
+        inputItem: 'plant_matter',
+        inputCount: 8,
+        outputItem: 'hay',
+        startLabel: 'START (8x Plant Matter)',
+        collectLabel: 'COLLECT HAY'
+    },
+    kitchen: {
+        recipes: {
+            COOK_FISH: { maxWork: 50, speedUpCost: 0.0169, inputItem: 'fish', inputCount: 1, outputItem: 'cooked_fish' },
+            EXTRACT_TURNIP_ITEM: { maxWork: 20, speedUpCost: 0.0068, inputItem: 'turnip_item', inputCount: 1, outputItem: 'turnip_seed' },
+            EXTRACT_TOMATO_ITEM: { maxWork: 20, speedUpCost: 0.0068, inputItem: 'tomato_item', inputCount: 1, outputItem: 'tomato_seed' },
+            EXTRACT_EGGPLANT_ITEM: { maxWork: 20, speedUpCost: 0.0068, inputItem: 'eggplant_item', inputCount: 1, outputItem: 'eggplant_seed' },
+            EXTRACT_STRAWBERRY_ITEM: { maxWork: 20, speedUpCost: 0.0068, inputItem: 'strawberry_item', inputCount: 1, outputItem: 'strawberry_seed' },
+            EXTRACT_PUMPKIN_ITEM: { maxWork: 20, speedUpCost: 0.0068, inputItem: 'pumpkin_item', inputCount: 1, outputItem: 'pumpkin_seed' },
+            EXTRACT_WATERMELON_ITEM: { maxWork: 20, speedUpCost: 0.0068, inputItem: 'watermelon_item', inputCount: 1, outputItem: 'watermelon_seed' },
+            EXTRACT_CORN_ITEM: { maxWork: 20, speedUpCost: 0.0068, inputItem: 'corn_item', inputCount: 1, outputItem: 'corn_seed' },
+            EXTRACT_PINEAPPLE_ITEM: { maxWork: 20, speedUpCost: 0.0068, inputItem: 'pineapple_item', inputCount: 1, outputItem: 'pineapple_seed' },
+            EXTRACT_POTATO_ITEM: { maxWork: 20, speedUpCost: 0.0068, inputItem: 'potato_item', inputCount: 1, outputItem: 'potato_seed' },
+            EXTRACT_WHEAT_ITEM: { maxWork: 20, speedUpCost: 0.0068, inputItem: 'wheat_item', inputCount: 1, outputItem: 'wheat_seed' }
+        }
+    }
 };
+
+export let activeJobId = null;
+export let activeJobData = null;
+let confirmingSpeedUp = false;
 
 // ==========================================
 // UNIFIED STORAGE ENGINE STATE & CONFIGS
@@ -39,7 +84,6 @@ const VALID_FOOD_TYPES = [
     "fish_trout", "fish_panfish", "fish_mackerel", "fish_muskellunge", 
     "fish_trevally", "fish_squid", "fish_octopus", "fish_eel", "fish_angler"
 ];
-
 const VALID_HAY_TYPES = ["hay", "plant_matter"];
 
 export const STORAGE_CONFIGS = {
@@ -77,231 +121,10 @@ export const STORAGE_CONFIGS = {
 
 export let altarItem = null;
 
-// ==========================================
-// 🛠️ CRAFTING RENDERERS (Smelter & Anvil)
-// ==========================================
-export let activeSmelterId = null;
-export let activeSmelterData = null;
-export let activeAnvilId = null;
-export let activeAnvilData = null;
-
-let confirmingSmelterSpeedUp = false;
-let confirmingAnvilSpeedUp = false;
-
-export function openUnifiedStorage(id, items, type) {
-    activeStorageContext.id = id;
-    activeStorageContext.items = items || [];
-    activeStorageContext.type = type;
-
-    const config = STORAGE_CONFIGS[type];
-    if (!config) return;
-
-    document.getElementById('storage-title').innerText = config.title;
-    document.getElementById('storage-subtitle').innerText = config.subtitle;
-    document.getElementById('storage-pane-title').innerText = config.paneTitle;
-    document.getElementById('storage-unload-btn').innerText = config.unloadLabel;
-
-    document.getElementById('storage-menu').classList.remove('hidden');
-    renderStorageUI();
-}
-
-export function handleRemoteStorageUpdate(id, items, type) {
-    if (activeStorageContext.id === id && activeStorageContext.type === type) {
-        activeStorageContext.items = items;
-        renderStorageUI();
-    }
-}
-
-export function renderStorageUI() {
-    if (!activeStorageContext.id) return;
-
-    const heroInv = document.getElementById('storage-hero-inv');
-    const storageInv = document.getElementById('storage-box-inv');
-
-    heroInv.innerHTML = hero.inventory.map((item, i) => `
-        <div class="inv-item draggable-item" draggable="true" data-index="${i}" data-source="hero">
-            <div class="item-icon" style="font-size: 24px;">${getItemIcon(item)}</div>
-            <strong>${item.name}</strong>
-            ${item.count > 1 ? `<br><span style="color:var(--banana-dark); font-size:8px;">(x${item.count})</span>` : ''}
-        </div>
-    `).join('');
-
-    storageInv.innerHTML = activeStorageContext.items.map((item, i) => `
-        <div class="inv-item draggable-item" draggable="true" data-index="${i}" data-source="storage">
-            <div class="item-icon" style="font-size: 24px;">${getItemIcon(item)}</div>
-            <strong>${item.name}</strong>
-            ${item.count > 1 ? `<br><span style="color:var(--banana-dark); font-size:8px;">(x${item.count})</span>` : ''}
-        </div>
-    `).join('');
-
-    const items = document.querySelectorAll('#storage-menu .draggable-item');
-    items.forEach(item => {
-        item.addEventListener('dragstart', (e) => {
-            e.dataTransfer.setData('index', item.dataset.index);
-            e.dataTransfer.setData('source', item.dataset.source);
-        });
-
-        item.addEventListener('click', () => {
-            transferStorageItem(item.dataset.index, item.dataset.source);
-        });
-    });
-}
-
-function handleStorageDrop(e, targetSource) {
-    const index = e.dataTransfer.getData('index');
-    const source = e.dataTransfer.getData('source');
-    
-    if (source && source !== targetSource) {
-        transferStorageItem(index, source);
-    }
-}
-
-function transferStorageItem(index, source) {
-    if (!activeStorageContext.id) return;
-    const config = STORAGE_CONFIGS[activeStorageContext.type];
-
-    if (source === 'hero') {
-        const item = hero.inventory[index];
-        if (!item) return;
-
-        if (!config.filter(item)) {
-            alert(`Only designated items are allowed in this storage container!`);
-            return;
-        }
-
-        if (activeStorageContext.type === 'CHEST') {
-            if (activeStorageContext.items.length >= config.limit) {
-                alert(`This chest is full! Maximum ${config.limit} slots.`);
-                return;
-            }
-        }
-
-        if (socket) {
-            socket.emit(config.transferEvent, {
-                [activeStorageContext.type === 'CHEST' ? 'chestId' : 
-                 activeStorageContext.type === 'CELLAR' ? 'cellarId' : 'hayStorageId']: activeStorageContext.id,
-                index: index,
-                direction: activeStorageContext.type === 'CHEST' ? 'to_chest' : 
-                           activeStorageContext.type === 'CELLAR' ? 'to_cellar' : 'to_storage'
-            });
-        }
-    } else {
-        if (hero.inventory.length >= hero.maxSlots) {
-            alert("Your backpack is full!");
-            return;
-        }
-        if (socket) {
-            socket.emit(config.transferEvent, {
-                [activeStorageContext.type === 'CHEST' ? 'chestId' : 
-                 activeStorageContext.type === 'CELLAR' ? 'cellarId' : 'hayStorageId']: activeStorageContext.id,
-                index: index,
-                direction: 'to_hero'
-            });
-        }
-    }
-}
-
-export function openCraftingTableMenu() {
-    document.getElementById('workshop-menu').classList.remove('hidden');
-}
-
-function renderSmelterUI() {
-    if (!activeSmelterData) return;
-    const bar = document.getElementById('smelter-progress-bar');
-    const text = document.getElementById('smelter-progress-text');
-    const costText = document.getElementById('smelter-cost-text');
-    const btn = document.getElementById('smelter-start-btn');
-
-    const pct = ((activeSmelterData.maxWork - activeSmelterData.workLeft) / activeSmelterData.maxWork) * 100;
-    bar.style.width = `${pct}%`;
-    text.innerText = `${activeSmelterData.workLeft} / ${activeSmelterData.maxWork}`;
-
-    if (activeSmelterData.ready) {
-        btn.innerText = "COLLECT INGOT";
-        btn.className = "pixel-btn safe";
-        text.innerText = "JOB COMPLETE";
-        costText.innerText = "";
-        confirmingSmelterSpeedUp = false;
-    } else if (activeSmelterData.active) {
-        if (confirmingSmelterSpeedUp) {
-            btn.innerText = "SPEED - UP NOW!";
-            btn.className = "pixel-btn safe";
-            costText.innerText = "COST: 50 UNI";
-        } else {
-            btn.innerText = "SPEED - UP";
-            btn.className = "pixel-btn";
-            costText.innerText = "";
-        }
-    } else {
-        btn.innerText = "START (1x Iron Ore)";
-        btn.className = "pixel-btn";
-        costText.innerText = "";
-        confirmingSmelterSpeedUp = false;
-    }
-}
-
-function renderAnvilUI() {
-    if (!activeAnvilData) return;
-    const bar = document.getElementById('anvil-progress-bar');
-    const text = document.getElementById('anvil-progress-text');
-    const costText = document.getElementById('anvil-cost-text');
-    const btn = document.getElementById('anvil-start-btn');
-
-    const pct = ((activeAnvilData.maxWork - activeAnvilData.workLeft) / activeAnvilData.maxWork) * 100;
-    bar.style.width = `${pct}%`;
-    text.innerText = `${activeAnvilData.workLeft} / ${activeAnvilData.maxWork}`;
-
-    if (activeAnvilData.ready) {
-        btn.innerText = "COLLECT DAGGER";
-        btn.className = "pixel-btn safe";
-        text.innerText = "JOB COMPLETE";
-        costText.innerText = "";
-        confirmingAnvilSpeedUp = false;
-    } else if (activeAnvilData.active) {
-        if (confirmingAnvilSpeedUp) {
-            btn.innerText = "SPEED - UP NOW!";
-            btn.className = "pixel-btn safe";
-            costText.innerText = "COST: 50 UNI";
-        } else {
-            btn.innerText = "SPEED - UP";
-            btn.className = "pixel-btn";
-            costText.innerText = "";
-        }
-    } else {
-        btn.innerText = "FORGE DAGGER (1x Iron Ingot)";
-        btn.className = "pixel-btn";
-        costText.innerText = "";
-        confirmingAnvilSpeedUp = false;
-    }
-}
-
-export function handleRemoteSmelterUpdate(jobId, data) {
-    if (activeSmelterId === jobId) { activeSmelterData = data; renderSmelterUI(); }
-}
-export function handleRemoteAnvilUpdate(jobId, data) {
-    if (activeAnvilId === jobId) { activeAnvilData = data; renderAnvilUI(); }
-}
-
-export const PALADIN_SKILLS = [
-    { id: 'p1', name: 'Vault', icon: '⚔️' },
-    { id: 'p2', name: 'Holy Shield / Holy Blast', icon: '✨' },
-    { id: 'p3', name: 'Divine Bubble', icon: '🛡️' },
-    { id: 'p4', name: "Ascension / Lion's Breath", icon: '🏃' },
-    { id: 'p5', name: 'Radiant Nova', icon: '💪' },
-    { id: 'p6', name: 'Flux Shot', icon: '🔥' },
-    { id: 'p7', name: 'Warp', icon: '🦁' },
-    { id: 'p8', name: "Heaven's Halo", icon: '🌪️' },
-    { id: 'p9', name: 'Flare', icon: '🔨' },
-    { id: 'p10', name: 'Fever', icon: '🤲' },
-    { id: 'p11', name: 'Ring of Penance', icon: '⚡' },
-    { id: 'p12', name: 'Zephyr', icon: '🔆' },
-    { id: 'p13', name: 'Vanguard', icon: '👁️' },
-    { id: 'p14', name: 'Consecration', icon: '💢' },
-    { id: 'p15', name: 'Fleeting Bulwark', icon: '😤' },
-    { id: 'p16', name: 'Summon: Zenith Guardian', icon: '🗡️' }
-];
-
-let selectedSkills = [];
+export const uiState = {
+    isOpen: false,
+    currentTab: 'inventory'
+};
 
 // ==========================================
 // 🎛️ MAIN UI INITIALIZATION
@@ -558,120 +381,83 @@ export function initUI() {
     }
 
     // ==========================================
-    // 🛠️ SMELTER & ANVIL LISTENERS
+    // 🛠️ UNIFIED WORKSTATION LISTENERS
     // ==========================================
     if (socket) {
-        socket.on('smelterData', (data) => { 
-            activeSmelterId = data.jobId; 
-            activeSmelterData = data.data; 
-            document.getElementById('smelter-menu').classList.remove('hidden');
-            renderSmelterUI(); 
-        });
-        
-        socket.on('smelterUpdated', (data) => { 
-            if (activeSmelterId === data.jobId) { 
-                activeSmelterData = data.data; 
-                renderSmelterUI(); 
-            } 
-        });
-        
-        socket.on('receiveSmelterLoot', () => { 
-            import('./interactionManager.js').then(m => {
-                if (m.giveItemToHero(createItem(ITEM_TYPES.IRON_INGOT))) {
-                    alert("🔥 Collected 1x Iron Ingot!");
-                    renderTabContent();
-                    syncInventoryWithServer();
-                } else {
-                    alert("Backpack full! Make space first.");
-                }
-            });
+        socket.on('job_data', (data) => {
+            activeJobId = data.jobId;
+            activeJobData = data.data;
+            document.getElementById('workstation-menu').classList.remove('hidden');
+            renderWorkstationUI();
         });
 
-        socket.on('anvilData', (data) => { 
-            activeAnvilId = data.jobId; 
-            activeAnvilData = data.data; 
-            document.getElementById('anvil-menu').classList.remove('hidden');
-            renderAnvilUI(); 
+        socket.on('job_updated', (data) => {
+            if (activeJobId === data.jobId) {
+                activeJobData = data.data;
+                renderWorkstationUI();
+            }
         });
-        
-        socket.on('anvilUpdated', (data) => { 
-            if (activeAnvilId === data.jobId) { 
-                activeAnvilData = data.data; 
-                renderAnvilUI(); 
-            } 
-        });
-        
-        socket.on('receiveAnvilLoot', () => { 
-            import('./interactionManager.js').then(m => {
-                if (m.giveItemToHero(createItem(ITEM_TYPES.DAGGER))) {
-                    alert("🗡️ Crafted a Rusty Dagger!");
-                    renderTabContent();
-                    syncInventoryWithServer();
-                } else {
-                    alert("Backpack full! Make space first.");
-                }
+
+        socket.on('receive_job_loot', (data) => {
+            const { tableType, recipe } = data;
+            const config = WORKSTATION_CONFIGS[tableType];
+            const activeConfig = (tableType === 'kitchen') ? config.recipes[recipe] : config;
+            if (!activeConfig) return;
+
+            import('./items.js').then(items => {
+                import('./interactionManager.js').then(im => {
+                    const lootItem = items.createItem(items.ITEM_TYPES[activeConfig.outputItem.toUpperCase()]);
+                    if (im.giveItemToHero(lootItem)) {
+                        alert(`Collected: ${lootItem.name}!`);
+                        renderTabContent();
+                        syncInventoryWithServer();
+                    } else {
+                        alert("Backpack full! Make space first.");
+                    }
+                });
             });
         });
     }
 
-    document.getElementById('close-smelter-btn').addEventListener('click', () => {
-        document.getElementById('smelter-menu').classList.add('hidden');
-        confirmingSmelterSpeedUp = false;
+    document.getElementById('ws-close-btn').addEventListener('click', () => {
+        document.getElementById('workstation-menu').classList.add('hidden');
+        activeJobId = null;
+        activeJobData = null;
+        confirmingSpeedUp = false;
     });
 
-    document.getElementById('smelter-start-btn').addEventListener('click', () => {
-        if (!activeSmelterData) return;
-        
-        if (activeSmelterData.ready) {
-            if (socket) socket.emit('collectSmelter', { jobId: activeSmelterId });
-        } else if (!activeSmelterData.active) {
-            const oreIdx = hero.inventory.findIndex(item => item.seedType === 'iron_ore');
-            if (oreIdx === -1) {
-                alert("You need Iron Ore to start smelting!");
+    document.getElementById('ws-action-btn').addEventListener('click', () => {
+        if (!activeJobData || !activeJobId) return;
+
+        const tableType = activeJobId.split('_')[0];
+        const isKitchen = (tableType === 'kitchen');
+        const config = WORKSTATION_CONFIGS[tableType];
+
+        if (activeJobData.ready) {
+            if (socket) socket.emit('collect_job', { jobId: activeJobId });
+        } else if (!activeJobData.active) {
+            let recipe = null;
+            let activeConfig = config;
+
+            if (isKitchen) {
+                recipe = document.getElementById('ws-recipe-select').value;
+                activeConfig = config.recipes[recipe];
+            }
+
+            const itemIdx = hero.inventory.findIndex(item => item.seedType === activeConfig.inputItem);
+            if (itemIdx === -1 || hero.inventory[itemIdx].count < activeConfig.inputCount) {
+                alert(`You need ${activeConfig.inputCount}x ${activeConfig.inputItem.replace('_', ' ')} to start!`);
                 return;
             }
-            if (socket) socket.emit('startSmelterJob', { jobId: activeSmelterId });
-            hero.inventory.splice(oreIdx, 1);
-            renderTabContent();
-            syncInventoryWithServer();
-        } else {
-            if (!confirmingSmelterSpeedUp) {
-                confirmingSmelterSpeedUp = true;
-                renderSmelterUI();
-            } else {
-                if (socket) socket.emit('speedUpSmelter', { jobId: activeSmelterId });
-                confirmingSmelterSpeedUp = false;
-            }
-        }
-    });
 
-    document.getElementById('close-anvil-btn').addEventListener('click', () => {
-        document.getElementById('anvil-menu').classList.add('hidden');
-        confirmingAnvilSpeedUp = false;
-    });
-
-    document.getElementById('anvil-start-btn').addEventListener('click', () => {
-        if (!activeAnvilData) return;
-        
-        if (activeAnvilData.ready) {
-            if (socket) socket.emit('collectAnvil', { jobId: activeAnvilId });
-        } else if (!activeAnvilData.active) {
-            const ingotIdx = hero.inventory.findIndex(item => item.seedType === 'iron_ingot');
-            if (ingotIdx === -1) {
-                alert("You need an Iron Ingot to start forging!");
-                return;
-            }
-            if (socket) socket.emit('startAnvilJob', { jobId: activeAnvilId });
-            hero.inventory.splice(ingotIdx, 1);
-            renderTabContent();
-            syncInventoryWithServer();
+            if (socket) socket.emit('start_job', { jobId: activeJobId, recipe });
         } else {
-            if (!confirmingAnvilSpeedUp) {
-                confirmingAnvilSpeedUp = true;
-                renderAnvilUI();
+            if (!confirmingSpeedUp) {
+                confirmingSpeedUp = true;
+                renderWorkstationUI();
             } else {
-                if (socket) socket.emit('speedUpAnvil', { jobId: activeAnvilId });
-                confirmingAnvilSpeedUp = false;
+                if (socket) socket.emit('speed_up_job', { jobId: activeJobId });
+                confirmingSpeedUp = false;
             }
         }
     });
@@ -679,8 +465,182 @@ export function initUI() {
     initMiningListeners();
 }
 
+export function openUnifiedStorage(id, items, type) {
+    activeStorageContext.id = id;
+    activeStorageContext.items = items || [];
+    activeStorageContext.type = type;
+
+    const config = STORAGE_CONFIGS[type];
+    if (!config) return;
+
+    document.getElementById('storage-title').innerText = config.title;
+    document.getElementById('storage-subtitle').innerText = config.subtitle;
+    document.getElementById('storage-pane-title').innerText = config.paneTitle;
+    document.getElementById('storage-unload-btn').innerText = config.unloadLabel;
+
+    document.getElementById('storage-menu').classList.remove('hidden');
+    renderStorageUI();
+}
+
+export function handleRemoteStorageUpdate(id, items, type) {
+    if (activeStorageContext.id === id && activeStorageContext.type === type) {
+        activeStorageContext.items = items;
+        renderStorageUI();
+    }
+}
+
+export function renderStorageUI() {
+    if (!activeStorageContext.id) return;
+
+    const heroInv = document.getElementById('storage-hero-inv');
+    const storageInv = document.getElementById('storage-box-inv');
+
+    heroInv.innerHTML = hero.inventory.map((item, i) => `
+        <div class="inv-item draggable-item" draggable="true" data-index="${i}" data-source="hero">
+            <div class="item-icon" style="font-size: 24px;">${getItemIcon(item)}</div>
+            <strong>${item.name}</strong>
+            ${item.count > 1 ? `<br><span style="color:var(--banana-dark); font-size:8px;">(x${item.count})</span>` : ''}
+        </div>
+    `).join('');
+
+    storageInv.innerHTML = activeStorageContext.items.map((item, i) => `
+        <div class="inv-item draggable-item" draggable="true" data-index="${i}" data-source="storage">
+            <div class="item-icon" style="font-size: 24px;">${getItemIcon(item)}</div>
+            <strong>${item.name}</strong>
+            ${item.count > 1 ? `<br><span style="color:var(--banana-dark); font-size:8px;">(x${item.count})</span>` : ''}
+        </div>
+    `).join('');
+
+    const items = document.querySelectorAll('#storage-menu .draggable-item');
+    items.forEach(item => {
+        item.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('index', item.dataset.index);
+            e.dataTransfer.setData('source', item.dataset.source);
+        });
+
+        item.addEventListener('click', () => {
+            transferStorageItem(item.dataset.index, item.dataset.source);
+        });
+    });
+}
+
+function handleStorageDrop(e, targetSource) {
+    const index = e.dataTransfer.getData('index');
+    const source = e.dataTransfer.getData('source');
+    
+    if (source && source !== targetSource) {
+        transferStorageItem(index, source);
+    }
+}
+
+function transferStorageItem(index, source) {
+    if (!activeStorageContext.id) return;
+    const config = STORAGE_CONFIGS[activeStorageContext.type];
+
+    if (source === 'hero') {
+        const item = hero.inventory[index];
+        if (!item) return;
+
+        if (!config.filter(item)) {
+            alert(`Only designated items are allowed in this storage container!`);
+            return;
+        }
+
+        if (activeStorageContext.type === 'CHEST') {
+            if (activeStorageContext.items.length >= config.limit) {
+                alert(`This chest is full! Maximum ${config.limit} slots.`);
+                return;
+            }
+        }
+
+        if (socket) {
+            socket.emit(config.transferEvent, {
+                [activeStorageContext.type === 'CHEST' ? 'chestId' : 
+                 activeStorageContext.type === 'CELLAR' ? 'cellarId' : 'hayStorageId']: activeStorageContext.id,
+                index: index,
+                direction: activeStorageContext.type === 'CHEST' ? 'to_chest' : 
+                           activeStorageContext.type === 'CELLAR' ? 'to_cellar' : 'to_storage'
+            });
+        }
+    } else {
+        if (hero.inventory.length >= hero.maxSlots) {
+            alert("Your backpack is full!");
+            return;
+        }
+        if (socket) {
+            socket.emit(config.transferEvent, {
+                [activeStorageContext.type === 'CHEST' ? 'chestId' : 
+                 activeStorageContext.type === 'CELLAR' ? 'cellarId' : 'hayStorageId']: activeStorageContext.id,
+                index: index,
+                direction: 'to_hero'
+            });
+        }
+    }
+}
+
+export function openCraftingTableMenu() {
+    document.getElementById('workshop-menu').classList.remove('hidden');
+}
+
+export function renderWorkstationUI() {
+    if (!activeJobData || !activeJobId) return;
+
+    const tableType = activeJobId.split('_')[0];
+    const isKitchen = (tableType === 'kitchen');
+    const config = WORKSTATION_CONFIGS[tableType];
+
+    const titleEl = document.getElementById('ws-title');
+    const progressBar = document.getElementById('ws-progress-bar');
+    const progressText = document.getElementById('ws-progress-text');
+    const costText = document.getElementById('ws-cost-text');
+    const actionBtn = document.getElementById('ws-action-btn');
+    const recipeContainer = document.getElementById('ws-recipe-container');
+
+    titleEl.innerText = tableType.toUpperCase();
+
+    const pct = ((activeJobData.maxWork - activeJobData.workLeft) / activeJobData.maxWork) * 100;
+    progressBar.style.width = `${pct}%`;
+    progressText.innerText = activeJobData.ready ? "COMPLETE" : `${activeJobData.workLeft} / ${activeJobData.maxWork}`;
+
+    if (isKitchen && !activeJobData.active && !activeJobData.ready) {
+        recipeContainer.style.display = 'block';
+        const select = document.getElementById('ws-recipe-select');
+        select.innerHTML = Object.keys(config.recipes).map(recKey => `
+            <option value="${recKey}">${recKey.replace('_', ' ')} (${config.recipes[recKey].maxWork} Work)</option>
+        `).join('');
+    } else {
+        recipeContainer.style.display = 'none';
+    }
+
+    if (activeJobData.ready) {
+        actionBtn.innerText = "COLLECT LOOT";
+        actionBtn.className = "pixel-btn safe";
+        costText.innerText = "";
+    } else if (activeJobData.active) {
+        const activeConfig = isKitchen ? config.recipes[activeJobData.recipe] : config;
+        if (confirmingSpeedUp) {
+            actionBtn.innerText = "CONFIRM SPEED UP";
+            actionBtn.className = "pixel-btn safe";
+            costText.innerText = `COST: ${activeConfig.speedUpCost} UNI`;
+        } else {
+            actionBtn.innerText = "SPEED UP";
+            actionBtn.className = "pixel-btn";
+            costText.innerText = "";
+        }
+    } else {
+        actionBtn.innerText = isKitchen ? "START RECIPE" : config.startLabel;
+        actionBtn.className = "pixel-btn";
+        costText.innerText = "";
+    }
+}
+
 export function renderCharacterCreation() {
     const grid = document.getElementById('skill-grid');
+    const slots = document.querySelectorAll('.skill-slot');
+    
+    selectedSkills = [];
+    updateSkillSlots();
+
     grid.innerHTML = PALADIN_SKILLS.map(skill => `
         <div class="skill-item" data-id="${skill.id}">
             <div style="font-size: 24px;">${skill.icon}</div>
@@ -697,50 +657,31 @@ export function renderCharacterCreation() {
                 selectedSkills = selectedSkills.filter(s => s !== id);
                 item.classList.remove('selected');
             } else {
-                if (selectedSkills.length >= 4) {
-                    alert("You can only select 4 core skills!");
-                    return;
+                if (selectedSkills.length < 4) {
+                    selectedSkills.push(id);
+                    item.classList.add('selected');
                 }
-                selectedSkills.push(id);
-                item.classList.add('selected');
             }
             updateSkillSlots();
         });
-    });
-
-    document.getElementById('finish-char-btn').addEventListener('click', () => {
-        if (selectedSkills.length === 4) {
-            if (socket) {
-                socket.emit('createCharacter', {
-                    wallet: playerWallet,
-                    charClass: 'Paladin',
-                    skills: selectedSkills
-                });
-            }
-        }
     });
 }
 
 function updateSkillSlots() {
     const slots = document.querySelectorAll('.skill-slot');
-    document.getElementById('skill-count').innerText = selectedSkills.length;
-    const reqLevels = [1, 25, 50, 75];
-
-    for (let i = 0; i < 4; i++) {
-        slots[i].style.flexDirection = 'column';
-
-        if (i < selectedSkills.length) {
+    slots.forEach((slot, i) => {
+        if (selectedSkills[i]) {
             const skill = PALADIN_SKILLS.find(s => s.id === selectedSkills[i]);
-            slots[i].innerHTML = `
-                <div style="font-size: 24px;">${skill.icon}</div>
-                <div style="font-size: 8px; color: #555; margin-top: 5px;">LVL ${reqLevels[i]}</div>
-            `;
+            slot.innerHTML = skill ? skill.icon : '';
         } else {
-            slots[i].innerHTML = `<div style="font-size: 8px; color: #888;">LVL ${reqLevels[i]}</div>`;
+            slot.innerHTML = '';
         }
-    }
+    });
 
-    document.getElementById('finish-char-btn').disabled = (selectedSkills.length !== 4);
+    const finishBtn = document.getElementById('finish-char-btn');
+    if (finishBtn) finishBtn.disabled = (selectedSkills.length !== 4);
+    const countEl = document.getElementById('skill-count');
+    if (countEl) countEl.innerText = selectedSkills.length;
 }
 
 export function toggleMenu() {
@@ -998,10 +939,6 @@ function renderStoreUI() {
         let inventoryOptions = hero.inventory.map((item, idx) => `<option value="${idx}">${getItemIcon(item)} ${item.name}</option>`).join('');
         let wantedOptions = Object.keys(typeNames).map(key => `<option value="${key}">${typeNames[key]}</option>`).join('');
 
-        if (storeDbCache.has(activeStoreId)) {
-            // Check if store state can be referenced and processed
-        }
-
         content.innerHTML += `
             <div style="background: var(--banana); padding: 10px; margin-bottom: 15px; border: 4px solid var(--bg-dark);">
                 <h4 style="margin:0 0 10px 0; text-align:center;">POST LISTING</h4>
@@ -1206,271 +1143,6 @@ function transferTempleItem(index, source) {
     }
     renderTempleUI();
     syncInventoryWithServer();
-}
-
-// ==========================================
-// 🌾 HAY TABLE PROCESSOR UI
-// ==========================================
-export let activeHayTableId = null;
-export let activeHayTableData = null;
-let confirmingHayTableSpeedUp = false;
-
-import('./multiplayer.js').then(m => {
-    const checkSocket = setInterval(() => {
-        if (m.socket) {
-            clearInterval(checkSocket);
-            m.socket.on('hayTableData', (data) => {
-                activeHayTableId = data.jobId;
-                activeHayTableData = data.data;
-                renderHayTableUI();
-            });
-            m.socket.on('hayTableUpdated', (data) => {
-                if (activeHayTableId === data.jobId) {
-                    activeHayTableData = data.data;
-                    renderHayTableUI();
-                }
-            });
-            m.socket.on('receiveHayTableLoot', () => {
-                import('./items.js').then(items => {
-                    import('./interactionManager.js').then(im => {
-                        const hay = items.createItem(items.ITEM_TYPES.HAY);
-                        if (im.giveItemToHero(hay)) {
-                            alert("🌾 Collected 1x Dried Hay!");
-                            renderTabContent();
-                            syncInventoryWithServer();
-                        } else {
-                            alert("Backpack full! Make space first.");
-                        }
-                    });
-                });
-            });
-        }
-    }, 100);
-});
-
-export function openHayTableMenu(jobId) {
-    activeHayTableId = jobId;
-    confirmingHayTableSpeedUp = false;
-    document.getElementById('hay-table-menu').classList.remove('hidden');
-    if (socket) socket.emit('requestHayTable', jobId);
-}
-
-function renderHayTableUI() {
-    if (!activeHayTableData) return;
-    const bar = document.getElementById('hay-table-progress-bar');
-    const text = document.getElementById('hay-table-progress-text');
-    const costText = document.getElementById('hay-table-cost-text');
-    const btn = document.getElementById('hay-table-start-btn');
-
-    const pct = ((activeHayTableData.maxWork - activeHayTableData.workLeft) / activeHayTableData.maxWork) * 100;
-    bar.style.width = `${pct}%`;
-    text.innerText = `${activeHayTableData.workLeft} / ${activeHayTableData.maxWork}`;
-
-    if (activeHayTableData.ready) {
-        btn.innerText = "COLLECT NOW!";
-        btn.className = "pixel-btn safe";
-        text.innerText = "JOB COMPLETE";
-        costText.innerText = "";
-        confirmingHayTableSpeedUp = false;
-    } else if (activeHayTableData.active) {
-        if (confirmingHayTableSpeedUp) {
-            btn.innerText = "SPEED - UP NOW!";
-            btn.className = "pixel-btn safe";
-            costText.innerText = "COST: 0.0407 UNI";
-        } else {
-            btn.innerText = "SPEED - UP";
-            btn.className = "pixel-btn";
-            costText.innerText = "";
-        }
-    } else {
-        btn.innerText = "START (8x Plant Matter)";
-        btn.className = "pixel-btn";
-        costText.innerText = "";
-        confirmingHayTableSpeedUp = false;
-    }
-}
-
-if (typeof window !== 'undefined') {
-    const checkTableElements = setInterval(() => {
-        const startTableBtn = document.getElementById('hay-table-start-btn');
-        if (startTableBtn) {
-            clearInterval(checkTableElements);
-
-            document.getElementById('close-hay-table-btn').addEventListener('click', () => {
-                document.getElementById('hay-table-menu').classList.add('hidden');
-                confirmingHayTableSpeedUp = false;
-            });
-
-            startTableBtn.addEventListener('click', () => {
-                if (!activeHayTableData) return;
-
-                if (activeHayTableData.ready) {
-                    if (socket) socket.emit('collectHayTable', { jobId: activeHayTableId });
-                } else if (!activeHayTableData.active) {
-                    const pmIdx = hero.inventory.findIndex(item => item.seedType === 'plant_matter');
-                    if (pmIdx === -1 || hero.inventory[pmIdx].count < 8) {
-                        alert("You need 8x Plant Matter to make hay!");
-                        return;
-                    }
-                    if (socket) socket.emit('startHayTableJob', { jobId: activeHayTableId });
-                } else {
-                    if (!confirmingHayTableSpeedUp) {
-                        confirmingHayTableSpeedUp = true;
-                        renderHayTableUI();
-                    } else {
-                        if (socket) socket.emit('speedUpHayTable', { jobId: activeHayTableId });
-                        confirmingHayTableSpeedUp = false;
-                    }
-                }
-            });
-        }
-    }, 100);
-}
-
-// ==========================================
-// 🍳 KITCHEN PROCESSOR UI
-// ==========================================
-export let activeKitchenId = null;
-export let activeKitchenData = null;
-let confirmingKitchenSpeedUp = false;
-
-import('./multiplayer.js').then(m => {
-    const checkSocket = setInterval(() => {
-        if (m.socket) {
-            clearInterval(checkSocket);
-            m.socket.on('kitchenData', (data) => {
-                activeKitchenId = data.jobId;
-                activeKitchenData = data.data;
-                renderKitchenUI();
-            });
-            m.socket.on('kitchenUpdated', (data) => {
-                if (activeKitchenId === data.jobId) {
-                    activeKitchenData = data.data;
-                    renderKitchenUI();
-                }
-            });
-            m.socket.on('receiveKitchenLoot', (data) => {
-                const { recipe } = data;
-                import('./items.js').then(items => {
-                    import('./interactionManager.js').then(im => {
-                        let newItem = null;
-                        
-                        if (recipe === 'COOK_FISH') {
-                            newItem = items.createItem(items.ITEM_TYPES.COOKED_BASS);
-                        } else if (recipe.startsWith('EXTRACT_')) {
-                            const cropType = recipe.replace('EXTRACT_', '').replace('_ITEM', '').toLowerCase();
-                            const seedConstName = `${cropType.toUpperCase()}_SEED`;
-                            
-                            if (items.ITEM_TYPES[seedConstName]) {
-                                newItem = items.createItem(items.ITEM_TYPES[seedConstName]);
-                                const seedCount = Math.floor(Math.random() * 4) + 5; 
-                                newItem.count = seedCount;
-                            }
-                        }
-
-                        if (newItem && im.giveItemToHero(newItem)) {
-                            alert(`Success! Collected: ${newItem.name} (x${newItem.count || 1})`);
-                            renderTabContent();
-                            syncInventoryWithServer();
-                        } else {
-                            alert("Backpack full! Make space first.");
-                        }
-                    });
-                });
-            });
-        }
-    }, 100);
-});
-
-export function openKitchenMenu(kitchenId) {
-    activeKitchenId = kitchenId;
-    confirmingKitchenSpeedUp = false;
-    document.getElementById('kitchen-menu').classList.remove('hidden');
-    if (socket) socket.emit('requestKitchen', kitchenId);
-}
-
-function renderKitchenUI() {
-    if (!activeKitchenData) return;
-    const bar = document.getElementById('kitchen-progress-bar');
-    const text = document.getElementById('kitchen-progress-text');
-    const costText = document.getElementById('kitchen-cost-text');
-    const btn = document.getElementById('kitchen-start-btn');
-    const selectContainer = document.getElementById('kitchen-recipe-select-container');
-
-    const pct = ((activeKitchenData.maxWork - activeKitchenData.workLeft) / activeKitchenData.maxWork) * 100;
-    bar.style.width = `${pct}%`;
-    text.innerText = `${activeKitchenData.workLeft} / ${activeKitchenData.maxWork}`;
-
-    if (activeKitchenData.ready) {
-        selectContainer.style.display = 'none';
-        btn.innerText = "COLLECT NOW!";
-        btn.className = "pixel-btn safe";
-        text.innerText = "JOB COMPLETE";
-        costText.innerText = "";
-        confirmingKitchenSpeedUp = false;
-    } else if (activeKitchenData.active) {
-        selectContainer.style.display = 'none';
-        const cost = activeKitchenData.recipe === 'COOK_FISH' ? 0.0169 : 0.0068;
-        
-        if (confirmingKitchenSpeedUp) {
-            btn.innerText = "SPEED - UP NOW!";
-            btn.className = "pixel-btn safe";
-            costText.innerText = `COST: ${cost} UNI`;
-        } else {
-            btn.innerText = "SPEED - UP";
-            btn.className = "pixel-btn";
-            costText.innerText = "";
-        }
-    } else {
-        selectContainer.style.display = 'block';
-        btn.innerText = "START RECIPE";
-        btn.className = "pixel-btn";
-        costText.innerText = "";
-        confirmingKitchenSpeedUp = false;
-    }
-}
-
-if (typeof window !== 'undefined') {
-    const checkElements = setInterval(() => {
-        const startBtn = document.getElementById('kitchen-start-btn');
-        if (startBtn) {
-            clearInterval(checkElements);
-
-            document.getElementById('close-kitchen-btn').addEventListener('click', () => {
-                document.getElementById('kitchen-menu').classList.add('hidden');
-                confirmingKitchenSpeedUp = false;
-            });
-
-            startBtn.addEventListener('click', () => {
-                if (!activeKitchenData) return;
-
-                if (activeKitchenData.ready) {
-                    if (socket) socket.emit('collectKitchen', { jobId: activeKitchenId });
-                } else if (!activeKitchenData.active) {
-                    const selectedRecipe = document.getElementById('kitchen-recipe-select').value;
-                    
-                    if (selectedRecipe === 'COOK_FISH') {
-                        const fishIdx = hero.inventory.findIndex(item => item.seedType === 'fish');
-                        if (fishIdx === -1) { alert("You need a raw River Bass to cook!"); return; }
-                    } else if (selectedRecipe.startsWith('EXTRACT_')) {
-                        const cropType = selectedRecipe.replace('EXTRACT_', '').toLowerCase();
-                        const cropIdx = hero.inventory.findIndex(item => item.seedType === cropType);
-                        if (cropIdx === -1) { alert(`You need 1x ${cropType.replace('_item', '')} to extract seeds!`); return; }
-                    }
-
-                    if (socket) socket.emit('startKitchenJob', { jobId: activeKitchenId, recipe: selectedRecipe });
-                } else {
-                    if (!confirmingKitchenSpeedUp) {
-                        confirmingKitchenSpeedUp = true;
-                        renderKitchenUI();
-                    } else {
-                        if (socket) socket.emit('speedUpKitchen', { jobId: activeKitchenId });
-                        confirmingKitchenSpeedUp = false;
-                    }
-                }
-            });
-        }
-    }, 100);
 }
 
 // ==========================================

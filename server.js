@@ -1,23 +1,21 @@
+// server.js
+
 // 1. Modern Imports (ES Modules)
-import { CONFIG } from './src/config.js'; // Points to src/
-import { createVoucher, getContractTVL   } from './src/voucherSystem.js'; // Points to src/
+import { CONFIG } from './src/config.js'; 
+import { createVoucher, getContractTVL   } from './src/voucherSystem.js'; 
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
-// We are no longer using the cdnjs polyfill, so remove this import:
-// import https from 'https'; 
+import { ethers } from 'ethers';
 
 // 2. Fix for __dirname in ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Add this database near your other databases (like kitchenDb, chestDb) in server.js:
-const serverBacteria = new Map(); // 🎯 THE FIX: Keeps a server-side mirror of ground items
-
-
+const serverBacteria = new Map(); 
 
 // 3. Initialize App & Socket
 const app = express();
@@ -25,35 +23,28 @@ const http = createServer(app);
 const io = new Server(http, {
     cors: {
         origin: [
-            "http://localhost:10000",                  // Local testing
-            "https://seedsandbones.onrender.com"       // 👈 FIXED: Added the 's' in https!
+            "http://localhost:10000",                  
+            "https://seedsandbones.onrender.com"       
         ],
         methods: ["GET", "POST"]
     }
 });
 
-
-// server.js
 let currentTVL = 0.0;
 
-// server.js
 async function syncTVLWithBlockchain() {
     const rawTvl = await getContractTVL();
     
-    // 1. If the RPC failed, don't overwrite our current data with 0
     if (rawTvl === null) {
         console.log("⚠️ RPC Query failed. Keeping last known TGV.");
         return;
     }
     
-    // 2. FORCE numeric types (prevents NaN bugs)
     currentTVL = parseFloat(rawTvl) || 0;
     const debt = parseFloat(globalDebt) || 0;
 
-    // 3. Calculate Effective TGV
     const effectiveTGV = Math.max(0, currentTVL - debt);
     
-    // 4. Update Game State for all players
     io.emit('position', { 
         playerbase: players, 
         projectiles: projectiles,
@@ -62,17 +53,12 @@ async function syncTVLWithBlockchain() {
 
     broadcastEffectiveTGV();
 
-    // 5. Detailed Logging (Check your Render dashboard for this!)
     console.log(`📊 ECONOMY SYNC | Raw: ${currentTVL.toFixed(8)} | Debt: ${debt.toFixed(8)} | Final TGV: ${effectiveTGV.toFixed(8)}`);
 }
 
-// 👈 Run immediately
 syncTVLWithBlockchain();
-
-// 👈 Increased frequency: 10 seconds
 setInterval(syncTVLWithBlockchain, 60000);
 
-// Only seeds are allowed! We use '1' as a multiplier flag.
 const POINT_VALUES = {
     "grass_seed": 1, "rose_seed": 1, "violet_seed": 1, "sunflower_seed": 1,
     "turnip_seed": 1, "tomato_seed": 1, "eggplant_seed": 1, "strawberry_seed": 1,
@@ -80,20 +66,14 @@ const POINT_VALUES = {
     "potato_seed": 1, "wheat_seed": 1
 };
 
-// Inside server.js:
-
-
-// Add this definition to server.js:
-
 const BACTERIA_TYPES = {
     "organic_drop": 1, "fish": 1, "organic_plant": 2, "grass": 2,
     "plant_matter": 3, "chicken_poop": 4, "cooked_fish": 5,
     "turnip_item": 6, "tomato_item": 7, "eggplant_item": 8,
     "strawberry_item": 9, "pumpkin_item": 10, "watermelon_item": 11,
     "corn_item": 12, "pineapple_item": 13, "potato_item": 14,
-    "wheat_item": 15, "egg": 16,     "hay": 17, // 🎯 Added Type ID 17 for dropped hay
+    "wheat_item": 15, "egg": 16,     "hay": 17, 
 
-    
     "grass_seed": 20, "turnip_seed": 21, "tomato_seed": 22, "eggplant_seed": 23,
     "strawberry_seed": 24, "pumpkin_seed": 25, "watermelon_seed": 26, "corn_seed": 27,
     "pineapple_seed": 28, "potato_seed": 29, "wheat_seed": 30,
@@ -107,10 +87,6 @@ const BACTERIA_TYPES = {
     "weapon_dagger": 60,
     "key": 61,
 };
-
-// Add this definition map to server.js:
-
-// Replace the SERVER_PLANT_DEFS block in server.js with this:
 
 const SERVER_PLANT_DEFS = {
     'grass':     { growthRate: 0.5,  stages: 5, window: 1 },
@@ -129,12 +105,7 @@ const SERVER_PLANT_DEFS = {
     'potato':    { growthRate: 0.15, stages: 5, window: 1 }
 };
 
-// Inside server.js:
-
-// Replace the SERVER_ITEM_TYPES definition block in server.js with this:
-
 const SERVER_ITEM_TYPES = {
-    // Standard Crops (maxStack: 8, custom drawSizes)
     TURNIP_ITEM: { name: "Turnip", seedType: "turnip_item", baseHealth: 30, baseVirulence: 0, spriteID: 0, tileset: "cropTileset", maxStack: 8, drawSize: 8 },
     TOMATO_ITEM: { name: "Tomato", seedType: "tomato_item", baseHealth: 30, baseVirulence: 0, spriteID: 24, tileset: "cropTileset", maxStack: 8, drawSize: 4 },
     EGGPLANT_ITEM: { name: "Eggplant", seedType: "eggplant_item", baseHealth: 30, baseVirulence: 0, spriteID: 36, tileset: "cropTileset", maxStack: 8, drawSize: 8 },
@@ -147,7 +118,6 @@ const SERVER_ITEM_TYPES = {
     WHEAT_ITEM: { name: "Wheat", seedType: "wheat_item", baseHealth: 20, baseVirulence: 0, spriteID: 168, tileset: "gardenTileset", maxStack: 8 }, 
     PLANT_MATTER: { name: "Plant Matter", seedType: "plant_matter", baseHealth: 12, baseVirulence: 2, spriteID: 152, tileset: "gardenTileset", maxStack: 8 },
 
-    // Seeds (maxStack: 64, standard 16px asset slices)
     TURNIP_SEED: { name: "Turnip Seed", seedType: "turnip_seed", baseHealth: 10, baseVirulence: 0, spriteID: 5, tileset: "cropTileset", maxStack: 64 },
     TOMATO_SEED: { name: "Tomato Seed", seedType: "tomato_seed", baseHealth: 10, baseVirulence: 0, spriteID: 29, tileset: "cropTileset", maxStack: 64 },
     EGGPLANT_SEED: { name: "Eggplant Seed", seedType: "eggplant_seed", baseHealth: 10, baseVirulence: 0, spriteID: 41, tileset: "cropTileset", maxStack: 64 },
@@ -159,13 +129,11 @@ const SERVER_ITEM_TYPES = {
     POTATO_SEED: { name: "Potato Eye", seedType: "potato_seed", baseHealth: 10, baseVirulence: 0, spriteID: 2, tileset: "gardenTileset", maxStack: 64 },
     WHEAT_SEED: { name: "Wheat Seed", seedType: "wheat_seed", baseHealth: 10, baseVirulence: 0, spriteID: 65, tileset: "cropTileset", maxStack: 64 },
     
-    // Wild Flower Seeds (maxStack: 64)
     GRASS_SEED: { name: "Grass Seed", seedType: "grass_seed", baseHealth: 10, baseVirulence: 0, spriteID: 0, tileset: "gardenTileset", maxStack: 64 },
     ROSE_SEED: { name: "Rose Seed", seedType: "rose_seed", baseHealth: 10, baseVirulence: 0, spriteID: 11, tileset: "cropTileset", maxStack: 64 },
     VIOLET_SEED: { name: "Violet Seed", seedType: "violet_seed", baseHealth: 10, baseVirulence: 0, spriteID: 23, tileset: "cropTileset", maxStack: 64 },
     SUNFLOWER_SEED: { name: "Sunflower Seed", seedType: "sunflower_seed", baseHealth: 10, baseVirulence: 0, spriteID: 119, tileset: "cropTileset", maxStack: 64 },
 
-    // Fish Templates (maxStack: 8, standard 16px assets)
     BASS: { name: "River Bass", seedType: "fish", baseHealth: 40, baseVirulence: 10, spriteID: 43, tileset: "fishTileset", maxStack: 8 },
     TROUT: { name: "Trout", seedType: "fish_trout", baseHealth: 40, baseVirulence: 10, spriteID: 16, tileset: "fishTileset", maxStack: 8 },
     PANFISH: { name: "Panfish", seedType: "fish_panfish", baseHealth: 30, baseVirulence: 10, spriteID: 2, tileset: "fishTileset", maxStack: 8 },
@@ -177,24 +145,59 @@ const SERVER_ITEM_TYPES = {
     EEL: { name: "Eel", seedType: "fish_eel", baseHealth: 50, baseVirulence: 10, spriteID: 59, tileset: "fishTileset", maxStack: 8 },
     ANGLERFISH: { name: "Anglerfish", seedType: "fish_angler", baseHealth: 80, baseVirulence: 10, spriteID: 29, tileset: "fishTileset", maxStack: 8 },
 
-    // Animal Products & Drops (maxStack: 8, custom drawSizes)
     EGG: { name: "Farm Egg", seedType: "egg", baseHealth: 30, baseVirulence: 0, spriteID: 60, tileset: "foodTileset", maxStack: 8, drawSize: 4 },
     RAW_CHICKEN: { name: "Raw Chicken", seedType: "raw_chicken", baseHealth: 50, baseVirulence: 10, spriteID: 15, tileset: "foodTileset", maxStack: 8, drawSize: 8 },
 
-    // Keys & Weapons (maxStack: 1, custom drawSizes)
     KEY: { name: "House Key", seedType: "key", spriteID: 38, tileset: "keyTileset", isKey: true, baseHealth: 100, baseVirulence: 0, baseFertility: 0, maxStack: 1, drawSize: 12 },
     DAGGER: { name: "Rusty Dagger", seedType: "weapon_dagger", spriteID: 0, tileset: "weaponTileset", isWeapon: true, ad: 5, baseHealth: 100, baseVirulence: 0, baseFertility: 0, maxStack: 1, drawSize: 8 },
     PICKAXE: { name: "Miner's Pickaxe", seedType: "tool_pickaxe", spriteID: 69, tileset: "transparentTileset", isWeapon: true, ad: 3, baseHealth: 100, baseVirulence: 0, baseFertility: 0, maxStack: 1, drawSize: 8 },
 
-    // Metal Ore & Ingots (maxStack: 64, custom drawSizes)
     IRON_ORE: { name: "Iron Ore", seedType: "iron_ore", spriteID: 32, tileset: "craftingTileset", baseHealth: 100, baseVirulence: 0, baseFertility: 0, maxStack: 64, drawSize: 8 },
     IRON_INGOT: { name: "Iron Ingot", seedType: "iron_ingot", spriteID: 36, tileset: "craftingTileset", baseHealth: 100, baseVirulence: 0, baseFertility: 0, maxStack: 64, drawSize: 8 },
-
-    // 🎯 THE FIX: Added Hay template to the server's pickup validation map
     HAY: { name: "Dried Hay", seedType: "hay", spriteID: 168, tileset: "gardenTileset", baseHealth: 100, baseVirulence: 0, baseFertility: 0, maxStack: 64, drawSize: 16 },
 };
 
-
+// ==========================================
+// 🏗️ UNIFIED WORKSTATION CONFIGURATIONS (SERVER)
+// ==========================================
+const WORKSTATION_CONFIGS = {
+    smelter: {
+        maxWork: 200,
+        speedUpCost: 0.0678,
+        inputItem: 'iron_ore',
+        inputCount: 1,
+        outputItem: 'iron_ingot'
+    },
+    anvil: {
+        maxWork: 300,
+        speedUpCost: 0.10167,
+        inputItem: 'iron_ingot',
+        inputCount: 1,
+        outputItem: 'weapon_dagger'
+    },
+    haytable: {
+        maxWork: 120,
+        speedUpCost: 0.0407,
+        inputItem: 'plant_matter',
+        inputCount: 8,
+        outputItem: 'hay'
+    },
+    kitchen: {
+        recipes: {
+            COOK_FISH: { maxWork: 50, speedUpCost: 0.0169, inputItem: 'fish', inputCount: 1, outputItem: 'cooked_fish' },
+            EXTRACT_TURNIP_ITEM: { maxWork: 20, speedUpCost: 0.0068, inputItem: 'turnip_item', inputCount: 1, outputItem: 'turnip_seed' },
+            EXTRACT_TOMATO_ITEM: { maxWork: 20, speedUpCost: 0.0068, inputItem: 'tomato_item', inputCount: 1, outputItem: 'tomato_seed' },
+            EXTRACT_EGGPLANT_ITEM: { maxWork: 20, speedUpCost: 0.0068, inputItem: 'eggplant_item', inputCount: 1, outputItem: 'eggplant_seed' },
+            EXTRACT_STRAWBERRY_ITEM: { maxWork: 20, speedUpCost: 0.0068, inputItem: 'strawberry_item', inputCount: 1, outputItem: 'strawberry_seed' },
+            EXTRACT_PUMPKIN_ITEM: { maxWork: 20, speedUpCost: 0.0068, inputItem: 'pumpkin_item', inputCount: 1, outputItem: 'pumpkin_seed' },
+            EXTRACT_WATERMELON_ITEM: { maxWork: 20, speedUpCost: 0.0068, inputItem: 'watermelon_item', inputCount: 1, outputItem: 'watermelon_seed' },
+            EXTRACT_CORN_ITEM: { maxWork: 20, speedUpCost: 0.0068, inputItem: 'corn_item', inputCount: 1, outputItem: 'corn_seed' },
+            EXTRACT_PINEAPPLE_ITEM: { maxWork: 20, speedUpCost: 0.0068, inputItem: 'pineapple_item', inputCount: 1, outputItem: 'pineapple_seed' },
+            EXTRACT_POTATO_ITEM: { maxWork: 20, speedUpCost: 0.0068, inputItem: 'potato_item', inputCount: 1, outputItem: 'potato_seed' },
+            EXTRACT_WHEAT_ITEM: { maxWork: 20, speedUpCost: 0.0068, inputItem: 'wheat_item', inputCount: 1, outputItem: 'wheat_seed' }
+        }
+    }
+};
 
 function createServerItem(template) {
     return {
@@ -206,14 +209,11 @@ function createServerItem(template) {
     };
 }
 
-// Add this helper function to server.js:
-
 function giveItemToServerInventory(player, newItem) {
     if (!newItem) return false;
 
     const maxSlots = 10;
 
-    // 1. Try to merge with an existing stack
     if (newItem.maxStack > 1) {
         const existing = player.inventory.find(i => i.seedType === newItem.seedType && i.count < newItem.maxStack);
         if (existing) {
@@ -228,16 +228,13 @@ function giveItemToServerInventory(player, newItem) {
         }
     }
 
-    // 2. Add to a new slot
     if (player.inventory.length < maxSlots) {
         player.inventory.push(newItem);
         return true;
     }
 
-    return false; // Backpack full
+    return false; 
 }
-
-// Add this helper function to server.js:
 
 function isServerPlantMature(plant, currentGrowth) {
     const def = SERVER_PLANT_DEFS[plant.type];
@@ -246,13 +243,9 @@ function isServerPlantMature(plant, currentGrowth) {
     const stagesLength = def.stages;
     const harvestWindow = def.window || 1;
 
-    // Calculate current stage index exactly like the client
     const currentStageIdx = Math.min(stagesLength - 1, Math.floor(currentGrowth / (100 / stagesLength)));
-    
-    // Is mature if current stage index is within the mature window
     return currentStageIdx >= (stagesLength - harvestWindow);
 }
-
 
 function getRandomServerFish() {
     const roll = Math.random() * 100;
@@ -268,40 +261,24 @@ function getRandomServerFish() {
     return SERVER_ITEM_TYPES.PANFISH;                        
 }
 
-
-
-// 2. Server-Side Plant Database
 const serverPlants = new Map();
+const registeredServerRanches = new Set(); 
+const fishingStates = new Map(); 
+const chunkPlantsGenerated = new Set(); 
+const serverAnimals = [];              
+const activeJobs = new Map(); // Unified jobs DB
 
-// Near the top of server.js:
-
-const registeredServerRanches = new Set(); // 👈 🎯 THE FIX: Tracks registered ranch coordinates
-
-// 3. Server-Side Active Fishing State Registry
-const fishingStates = new Map(); // Key: socket.id, Value: { startTime, waitTime, active: true }
-
-// Add these declarations near the top of server.js (with your other global arrays):
-
-const chunkPlantsGenerated = new Set(); // Tracks generated chunk coordinate strings
-const serverAnimals = [];              // Master server-side chicken database
-
-// 1. Serve static files from the public and src folders
 app.use(express.static(path.join(__dirname, 'public')));
-app.use('/src', express.static(path.join(__dirname, 'src'))); // Expose src for ES Modules
-app.use('/js', express.static(path.join(__dirname, 'src')));  // Alias /js to /src for existing HTML imports
+app.use('/src', express.static(path.join(__dirname, 'src'))); 
+app.use('/js', express.static(path.join(__dirname, 'src')));  
 
-// 2. Standard Routing
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-
-// 6. Global Game State
 const players = {};
 const worldSeed = Math.floor(Math.random() * 999999);
 
-
-// 💾 PLAYER DATABASE INITIALIZATION
 let userDb = {}; 
 if (fs.existsSync('persistence.json')) {
     try { 
@@ -309,17 +286,11 @@ if (fs.existsSync('persistence.json')) {
         console.log(`✅ Loaded ${Object.keys(userDb).length} player profiles.`);
     } catch(err){ console.error("Database load error:", err); }
 }
-let chestDb = {}; // 🆕 Database for all chests in the world
-let storeDb = {}; // 🆕 Database for General Stores
-let cellarDb = {}; // ✅ This was the missing line
-let hayDb = {}; // 🆕 Database for Hay Storage
-let oreDb = {}; // ⛏️ NEW: Database for mining jobs!
-let smelterDb = {};
-let anvilDb = {};
-// Initialize the kitchen database near your other database variables (like smelterDb) in server.js:
-let kitchenDb = {};
-// Initialize the database near your other database variables in server.js:
-let hayTableDb = {};
+let chestDb = {}; 
+let storeDb = {}; 
+let cellarDb = {}; 
+let hayDb = {}; 
+let oreDb = {}; 
 let doorDb = {};
 
 if (fs.existsSync('doors.json')) {
@@ -329,38 +300,24 @@ function saveDoors() {
     fs.writeFileSync('doors.json', JSON.stringify(doorDb, null, 2));
 }
 
-// 📖 DAILY ACTIVITY LEDGER
 let activityLog = [];
-if (fs.existsSync('activityLog.json')) {
+if (fs.existsSync('activity.json')) {
     try { 
-        activityLog = JSON.parse(fs.readFileSync('activityLog.json', 'utf8')); 
-    } catch(err) { console.error("Activity load error:", err); }
+        activityLog = JSON.parse(fs.readFileSync('activity.json', 'utf8')); 
+    } catch(err){}
 }
 
 function logActivity(type, wallet, description) {
-    const now = Date.now();
-    
-    // Add new event to the top of the list
-    activityLog.unshift({ type, wallet, description, timestamp: now });
-    
-    // Filter out anything older than 24 hours (86,400,000 milliseconds)
-    activityLog = activityLog.filter(a => now - a.timestamp < 86400000);
-    
-    // Hard cap at 100 recent events so the file doesn't get massive on busy days
-    if (activityLog.length > 100) activityLog.pop();
-    
-    fs.writeFileSync('activityLog.json', JSON.stringify(activityLog, null, 2));
+    activityLog.unshift({ type, wallet, description, timestamp: Date.now() });
+    if (activityLog.length > 50) activityLog.pop();
+    fs.writeFileSync('activity.json', JSON.stringify(activityLog, null, 2));
 }
 
-
-
-// server.js (near top)
-let globalDebt = 0.0;
+let globalDebt = 0;
 if (fs.existsSync('debt.json')) {
-    try { 
-        const savedDebt = JSON.parse(fs.readFileSync('debt.json', 'utf8'));
-        // 👈 THE FIX: Force it to be a Number immediately
-        globalDebt = parseFloat(savedDebt.amount) || 0.0;
+    try {
+        const dData = JSON.parse(fs.readFileSync('debt.json', 'utf8'));
+        globalDebt = parseFloat(dData.amount) || 0.0;
     } catch(err) { globalDebt = 0.0; }
 }
 
@@ -372,7 +329,6 @@ if (fs.existsSync('ores.json')) {
     try { oreDb = JSON.parse(fs.readFileSync('ores.json', 'utf8')); } catch(err){}
 }
 
-// In server.js
 let authDb = {}; 
 if (fs.existsSync('auth.json')) {
     try { authDb = JSON.parse(fs.readFileSync('auth.json', 'utf8')); } catch(err){}
@@ -381,16 +337,12 @@ function saveAuth() {
     fs.writeFileSync('auth.json', JSON.stringify(authDb, null, 2));
 }
 
-// ... scroll down to io.on('connection', (socket) => { ...
-
-// --- 🗑️ WIPE ON START ---
 if (fs.existsSync('chests.json')) fs.unlinkSync('chests.json');
 if (fs.existsSync('stores.json')) {
     try { fs.unlinkSync('stores.json'); console.log("🗑️ Stores file deleted."); } catch(err){}
 }
 if (fs.existsSync('cellars.json')) { try { fs.unlinkSync('cellars.json'); } catch(err){} }
 if (fs.existsSync('hay.json')) { try { fs.unlinkSync('hay.json'); console.log("🗑️ Hay Storage file deleted."); } catch(err){} }
-
 
 function initServerAnimals() {
     for (let i = 0; i < 15; i++) {
@@ -401,26 +353,22 @@ function initServerAnimals() {
             speed: 35,
             hp: 30,
             maxHp: 30,
-            // Add these default values when instantiating chickens inside server.js:
             energy: 100,
             goal: 'wander',
             state: 'idle',
             dir: 'East',
             moveTimer: Math.random() * 3,
-            // Replace the target initialization lines inside both initServerAnimals and registerRanch in server.js:
             targetX: undefined,
             targetY: undefined,
-            eggTimer: 15 + Math.random() * 20,  // Ready to lay in 15-35s
-            poopTimer: 10 + Math.random() * 20  // Ready to poop in 10-30s
+            eggTimer: 15 + Math.random() * 20,  
+            poopTimer: 10 + Math.random() * 20  
         });
     }
 }
-initServerAnimals(); // Execute startup spawn
-
-// Add this helper function to server.js:
+initServerAnimals(); 
 
 function generateServerFloraForChunk(cx, cy) {
-    const density = 0.50; // 50% of the chunk's tiles will spawn flora
+    const density = 0.50; 
     for (let i = 0; i < 10000; i++) {
         if (Math.random() < density) {
             const lx = i % 100;
@@ -448,68 +396,68 @@ function generateServerFloraForChunk(cx, cy) {
     }
 }
 
-// Add these near your other global variables (like players = {})
 const projectiles = [];
 
-// ==========================================
-    // SERVER-SIDE MAGIC DAMAGE HELPER
-    // ==========================================
-    function applyMagicSpellDamage(attacker, victim, baseDamage) {
-        if (victim.isInvincible) return;
-        if (victim.hasDivineBubble) {
-            victim.hasDivineBubble = false;
-            io.emit('playerHit', { victimId: victim.id, newHp: victim.hp, bubblePopped: true });
-            return;
-        }
+function applyMagicSpellDamage(attacker, victim, baseDamage) {
+    if (victim.isInvincible) return;
+    if (victim.hasDivineBubble) {
+        victim.hasDivineBubble = false;
+        io.emit('playerHit', { victimId: victim.id, newHp: victim.hp, bubblePopped: true });
+        return;
+    }
 
-        // 1. Calculate Standard Magic Damage
-        const victimMr = Math.max(1, victim.mr || 1);
-        const mrReduction = Math.pow(0.5, Math.log10(victimMr));
-        let finalDamage = Math.max(1, Math.floor(baseDamage * mrReduction));
+    const victimMr = Math.max(1, victim.mr || 1);
+    const mrReduction = Math.pow(0.5, Math.log10(victimMr));
+    let finalDamage = Math.max(1, Math.floor(baseDamage * mrReduction));
 
-        // 2. FEVER (p10) RESONANCE LOGIC
-        if (attacker.passives && attacker.passives.hasFever) {
-            if (victim.resonanceTimer > 0) {
-                // CONSUME RESONANCE!
-                victim.resonanceTimer = 0; 
+    if (attacker.passives && attacker.passives.hasFever) {
+        if (victim.resonanceTimer > 0) {
+            victim.resonanceTimer = 0; 
 
-                const percentMissing = 0.08 + ((attacker.magic || 0) * 0.0001); 
-                const missingHp = (victim.maxHp || 100) - victim.hp;
-                const executeDamage = Math.floor(missingHp * percentMissing);
-                
-                finalDamage += executeDamage;
-                console.log(`🔥 Resonance Consumed! +${executeDamage} Execute Damage`);
-            } else {
-                // APPLY RESONANCE! (Lasts 4 seconds)
-                victim.resonanceTimer = 4.0; 
-                io.emit('playerCC', { victimId: victim.id, ccType: 'resonanceApply' });
-                console.log(`✨ Resonance Applied to ${victim.id}`);
-            }
-        }
-
-        // 3. Shield Absorption
-        if (victim.shield > 0) {
-            const dmgToShield = Math.min(victim.shield, finalDamage);
-            victim.shield -= dmgToShield;
-            finalDamage -= dmgToShield;
-        }
-
-        // 4. Apply HP Damage & Emit
-        victim.hp -= finalDamage;
-        io.emit('playerHit', { 
-            victimId: victim.id, newHp: victim.hp, newShield: victim.shield, attackerId: attacker.id 
-        });
-
-        // 5. Death Logic
-        if (victim.hp <= 0) {
-            const xpGain = (victim.xp || 0) * 0.30;
-            attacker.xp = (attacker.xp || 0) + xpGain;
-            if (victim.wallet) {
-                userDb[victim.wallet].hp = 0; userDb[victim.wallet].xp = victim.xp;
-            }
-            io.emit('playerKilled', { victimId: victim.id, killerId: attacker.id, xpGained: xpGain, newAttackerXp: attacker.xp });
+            const percentMissing = 0.08 + ((attacker.magic || 0) * 0.0001); 
+            const missingHp = (victim.maxHp || 100) - victim.hp;
+            const executeDamage = Math.floor(missingHp * percentMissing);
+            
+            finalDamage += executeDamage;
+            console.log(`🔥 Resonance Consumed! +${executeDamage} Execute Damage`);
+        } else {
+            victim.resonanceTimer = 4.0; 
+            io.emit('playerCC', { victimId: victim.id, ccType: 'resonanceApply' });
+            console.log(`✨ Resonance Applied to ${victim.id}`);
         }
     }
+
+    if (victim.shield > 0) {
+        const dmgToShield = Math.min(victim.shield, finalDamage);
+        victim.shield -= dmgToShield;
+        finalDamage -= dmgToShield;
+    }
+
+    victim.hp -= finalDamage;
+    io.emit('playerHit', { 
+        victimId: victim.id, newHp: victim.hp, newShield: victim.shield, attackerId: attacker.id 
+    });
+
+    if (victim.hp <= 0) {
+        const xpGain = (victim.xp || 0) * 0.30;
+        attacker.xp = (attacker.xp || 0) + xpGain;
+        if (victim.wallet) {
+            userDb[victim.wallet].hp = 0; userDb[victim.wallet].xp = victim.xp;
+        }
+        io.emit('playerKilled', { victimId: victim.id, killerId: attacker.id, xpGained: xpGain, newAttackerXp: attacker.xp });
+    }
+}
+
+function getJobConfig(jobId, recipeName) {
+    const tableType = jobId.split('_')[0]; 
+    const baseConfig = WORKSTATION_CONFIGS[tableType];
+    if (!baseConfig) return null;
+
+    if (tableType === 'kitchen') {
+        return baseConfig.recipes[recipeName] || null;
+    }
+    return baseConfig;
+}
 
 io.on('connection', (socket) => {
     console.log(`✨ Player Connected: ${socket.id}`);
@@ -521,7 +469,7 @@ io.on('connection', (socket) => {
         hp: CONFIG.HERO_HP,
         maxHp: CONFIG.HERO_HP,
         shield: 0,
-        inventory: [], // 👈 THE CRITICAL FIX: Add this line!
+        inventory: [], 
         hasDivineBubble: false,
         isInvincible: false,
         passives: { hasFever: false },
@@ -541,8 +489,6 @@ io.on('connection', (socket) => {
 
     socket.emit('secret', { seed: worldSeed, myId: socket.id });
 
-
-    // 🆕 USERNAME/PASSWORD SYSTEM
     socket.on('registerUser', (data) => {
         const { username, password } = data;
         const safeUser = username.trim().toLowerCase();
@@ -552,7 +498,7 @@ io.on('connection', (socket) => {
             return;
         }
         
-        authDb[safeUser] = password; // In a production game, we would hash this!
+        authDb[safeUser] = password; 
         saveAuth();
         socket.emit('authResponse', { success: true, wallet: `User_${safeUser}` });
     });
@@ -568,435 +514,121 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 💬 CHAT SYSTEM
     socket.on('chatMessage', (data) => {
-        // Broadcast the message to everyone connected
         const senderName = socket.wallet || `Guest_${socket.id.substring(0, 4)}`;
         io.emit('chatMessage', { sender: senderName, message: data.message });
     });
 
-    // ==========================================
-    // 🎒 AUTHORITATIVE INVENTORY SYNC
-    // ==========================================
     socket.on('syncInventory', (data) => {
         const player = players[socket.id];
         if (!player) return;
 
-        // Sync the server-side representation with the validated client state
         player.inventory = data.inventory || [];
         player.equipment = data.equipment || { mainHand: null };
 
-        // Force immediate save to persistence.json
         syncPlayerAndSave(socket.id);
     });
 
-    // Add these socket listeners inside io.on('connection', (socket) => { ... }) in server.js:
-
-    socket.on('requestHayTable', (jobId) => {
-        if (!hayTableDb[jobId]) hayTableDb[jobId] = { workLeft: 120, maxWork: 120, active: false, ready: false };
-        socket.emit('hayTableData', { jobId, data: hayTableDb[jobId] });
+    // ==========================================
+    // 🛠️ UNIFIED WORKSTATION SYSTEM (SERVER)
+    // ==========================================
+    socket.on('request_job', (jobId) => {
+        const config = getJobConfig(jobId);
+        if (!activeJobs.has(jobId)) {
+            activeJobs.set(jobId, {
+                workLeft: config ? config.maxWork : 100,
+                maxWork: config ? config.maxWork : 100,
+                active: false,
+                ready: false,
+                recipe: null
+            });
+        }
+        socket.emit('job_data', { jobId, data: activeJobs.get(jobId) });
     });
 
-    socket.on('startHayTableJob', (data) => {
+    socket.on('start_job', (data) => {
+        const { jobId, recipe } = data;
         const player = players[socket.id];
-        if (!player) return;
+        const job = activeJobs.get(jobId);
+        if (!player || !job || job.active || job.ready) return;
 
-        const now = Date.now();
-        if (player.lastHayTable && now - player.lastHayTable < 1000) return;
-        player.lastHayTable = now;
+        const config = getJobConfig(jobId, recipe);
+        if (!config) return;
 
-        const job = hayTableDb[data.jobId];
-        if (!job || job.active || job.ready) return;
+        const itemIdx = player.inventory.findIndex(item => item.seedType === config.inputItem);
+        if (itemIdx === -1 || player.inventory[itemIdx].count < config.inputCount) return;
 
-        // Deduct 8x Plant Matter
-        const pmIdx = player.inventory.findIndex(item => item.seedType === 'plant_matter');
-        if (pmIdx === -1 || player.inventory[pmIdx].count < 8) return;
-
-        player.inventory[pmIdx].count -= 8;
-        if (player.inventory[pmIdx].count <= 0) {
-            player.inventory.splice(pmIdx, 1);
+        player.inventory[itemIdx].count -= config.inputCount;
+        if (player.inventory[itemIdx].count <= 0) {
+            player.inventory.splice(itemIdx, 1);
         }
 
-        job.maxWork = 120;
-        job.workLeft = 120;
+        job.maxWork = config.maxWork;
+        job.workLeft = config.maxWork;
         job.active = true;
         job.ready = false;
+        job.recipe = recipe;
 
-        io.emit('hayTableUpdated', { jobId: data.jobId, data: job });
+        io.emit('job_updated', { jobId, data: job });
         socket.emit('updateInventory', player.inventory);
     });
 
-    socket.on('workHayTableStrike', (data) => {
-        const job = hayTableDb[data.jobId];
+    socket.on('work_job_strike', (data) => {
+        const job = activeJobs.get(data.jobId);
         if (job && job.active && job.workLeft > 0) {
             job.workLeft--;
-            if (job.workLeft <= 0) job.ready = true;
+            if (job.workLeft <= 0) {
+                job.ready = true;
+            }
             if (job.workLeft % 5 === 0 || job.workLeft === 0) {
-                io.emit('hayTableUpdated', { jobId: data.jobId, data: job });
+                io.emit('job_updated', { jobId: data.jobId, data: job });
             }
         }
     });
 
-    socket.on('speedUpHayTable', (data) => {
+    socket.on('speed_up_job', (data) => {
         const player = players[socket.id];
-        const job = hayTableDb[data.jobId];
-        if (!job || !job.active || !player) return;
+        const job = activeJobs.get(data.jobId);
+        if (!player || !job || !job.active) return;
 
-        const cost = 0.0407; // 🎯 0.0407 UNI speed up cost
+        const config = getJobConfig(data.jobId, job.recipe);
+        if (!config) return;
 
-        if (player.inGameUni >= cost) {
-            player.inGameUni -= cost;
-            globalDebt = Math.max(0, globalDebt - cost);
+        if (player.inGameUni >= config.speedUpCost) {
+            player.inGameUni -= config.speedUpCost;
+            globalDebt = Math.max(0, globalDebt - config.speedUpCost);
             saveDebt();
-            logActivity('SPEEDUP', socket.wallet || socket.id, `Paid ${cost} UNI to speed up Hay Table job`);
+            logActivity('SPEEDUP', socket.wallet || socket.id, `Paid ${config.speedUpCost} UNI to speed up ${data.jobId}`);
 
             job.workLeft = 0;
             job.ready = true;
 
-            io.emit('hayTableUpdated', { jobId: data.jobId, data: job });
+            io.emit('job_updated', { jobId: data.jobId, data: job });
             socket.emit('balanceUpdated', { inGameUni: player.inGameUni });
             broadcastEffectiveTGV();
             syncPlayerAndSave(socket.id);
         } else {
-            socket.emit('oreMessage', `Insufficient funds! You need ${cost} UNI.`);
+            socket.emit('oreMessage', `Insufficient funds! You need ${config.speedUpCost} UNI.`);
         }
     });
 
-    socket.on('collectHayTable', (data) => {
-        const job = hayTableDb[data.jobId];
+    socket.on('collect_job', (data) => {
         const player = players[socket.id];
-        if (job && job.ready && player) {
-            job.active = false; 
-            job.ready = false; 
-            job.workLeft = 120; 
+        const job = activeJobs.get(data.jobId);
+        if (!player || !job || !job.ready) return;
 
-            io.emit('hayTableUpdated', { jobId: data.jobId, data: job });
-            socket.emit('receiveHayTableLoot');
-        }
-    });
+        const config = getJobConfig(data.jobId, job.recipe);
+        if (!config) return;
 
-    // Add these socket listeners inside io.on('connection', (socket) => { ... }) in server.js:
-
-    socket.on('requestKitchen', (jobId) => {
-        if (!kitchenDb[jobId]) kitchenDb[jobId] = { workLeft: 50, maxWork: 50, active: false, ready: false, recipe: null };
-        socket.emit('kitchenData', { jobId, data: kitchenDb[jobId] });
-    });
-
-    socket.on('startKitchenJob', (data) => {
-        const player = players[socket.id];
-        if (!player) return;
-
-        const now = Date.now();
-        if (player.lastKitchen && now - player.lastKitchen < 1000) return;
-        player.lastKitchen = now;
-
-        const job = kitchenDb[data.jobId];
-        if (!job || job.active || job.ready) return;
-
-        const recipeName = data.recipe;
-        if (recipeName === 'COOK_FISH') {
-            const fishIdx = player.inventory.findIndex(item => item.seedType === 'fish');
-            if (fishIdx === -1) return;
-            player.inventory.splice(fishIdx, 1);
-            
-            job.maxWork = 50;
-            job.workLeft = 50;
-            job.recipe = 'COOK_FISH';
-        }
-        else if (recipeName.startsWith('EXTRACT_')) {
-            const cropType = recipeName.replace('EXTRACT_', '').toLowerCase(); // e.g. 'tomato_item'
-            const cropIdx = player.inventory.findIndex(item => item.seedType === cropType);
-            if (cropIdx === -1) return;
-            player.inventory.splice(cropIdx, 1);
-
-            job.maxWork = 20;
-            job.workLeft = 20;
-            job.recipe = recipeName;
-        } else {
-            return;
-        }
-
-        job.active = true;
+        job.active = false;
         job.ready = false;
-        
-        io.emit('kitchenUpdated', { jobId: data.jobId, data: job });
-        socket.emit('updateInventory', player.inventory);
+        job.workLeft = config.maxWork;
+
+        io.emit('job_updated', { jobId: data.jobId, data: job });
+        socket.emit('receive_job_loot', { recipe: job.recipe, tableType: data.jobId.split('_')[0] });
+        job.recipe = null;
     });
 
-    socket.on('workKitchenStrike', (data) => {
-        const job = kitchenDb[data.jobId];
-        if (job && job.active && job.workLeft > 0) {
-            job.workLeft--;
-            if (job.workLeft <= 0) job.ready = true;
-            if (job.workLeft % 5 === 0 || job.workLeft === 0) {
-                io.emit('kitchenUpdated', { jobId: data.jobId, data: job });
-            }
-        }
-    });
-
-    socket.on('speedUpKitchen', (data) => {
-        const player = players[socket.id];
-        const job = kitchenDb[data.jobId];
-        if (!job || !job.active || !player) return;
-
-        const cost = job.recipe === 'COOK_FISH' ? 0.0169 : 0.0068;
-
-        if (player.inGameUni >= cost) {
-            player.inGameUni -= cost;
-            globalDebt = Math.max(0, globalDebt - cost);
-            saveDebt();
-            logActivity('SPEEDUP', socket.wallet || socket.id, `Paid ${cost} UNI to speed up Kitchen job`);
-
-            job.workLeft = 0;
-            job.ready = true;
-
-            io.emit('kitchenUpdated', { jobId: data.jobId, data: job });
-            socket.emit('balanceUpdated', { inGameUni: player.inGameUni });
-            broadcastEffectiveTGV();
-            syncPlayerAndSave(socket.id);
-        } else {
-            socket.emit('oreMessage', `Insufficient funds! You need ${cost} UNI.`);
-        }
-    });
-
-    socket.on('collectKitchen', (data) => {
-        const job = kitchenDb[data.jobId];
-        const player = players[socket.id];
-        if (job && job.ready && player) {
-            const recipe = job.recipe;
-            
-            job.active = false; 
-            job.ready = false; 
-            job.workLeft = 50; 
-            job.recipe = null;
-
-            io.emit('kitchenUpdated', { jobId: data.jobId, data: job });
-            socket.emit('receiveKitchenLoot', { recipe });
-        }
-    });
-
-    // --- SMELTER JOBS ---
-socket.on('requestSmelter', (jobId) => {
-    if (!smelterDb[jobId]) smelterDb[jobId] = { workLeft: 200, maxWork: 200, active: false, ready: false };
-    socket.emit('smelterData', { jobId, data: smelterDb[jobId] });
-});
-
-// ==========================================
-// 🔥 SECURE SMELTER JOB
-// ==========================================
-// 🔥 SECURE SMELTER JOB
-// ==========================================
-socket.on('startSmelterJob', (data) => {
-    const player = players[socket.id];
-    if (!player) return;
-
-    // 🛡️ RATE LIMITER: 1 request per second
-    const now = Date.now();
-    if (player.lastSmelt && now - player.lastSmelt < 1000) return;
-    player.lastSmelt = now;
-
-    const job = smelterDb[data.jobId];
-    if (!job || job.active || job.ready) return;
-
-    // Start the job
-    job.active = true;
-    job.workLeft = 200;
-    job.ready = false;
-    
-    io.emit('smelterUpdated', { jobId: data.jobId, data: job });
-});
-
-socket.on('workSmelterStrike', (data) => {
-    const job = smelterDb[data.jobId];
-    if (job && job.active && job.workLeft > 0) {
-        job.workLeft--;
-        if (job.workLeft <= 0) job.ready = true;
-        if (job.workLeft % 5 === 0 || job.workLeft === 0) io.emit('smelterUpdated', { jobId: data.jobId, data: job });
-    }
-});
-
-// ==========================================
-    // ⛏️ MINING SPEED UP (50 UNI)
-    // ==========================================
-    socket.on('speedUpOre', (data) => {
-        const { oreId } = data;
-        const player = players[socket.id];
-        const ore = oreDb[oreId];
-        
-        if (!ore || !player) return;
-
-        const SPEEDUP_COST = 1.22; 
-        const COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
-        const now = Date.now();
-
-        if (now - ore.lastSpeedUp < COOLDOWN_MS) {
-            socket.emit('oreMessage', "The blast charges are still cooling down. Try again tomorrow!");
-            return;
-        }
-
-        // Check if player has enough points!
-        if (player.inGameUni >= SPEEDUP_COST) {
-            player.inGameUni -= SPEEDUP_COST; // Deduct the points
-            ore.workLeft = 0;                 // Finish the job
-            ore.lastSpeedUp = now; 
-            
-            player.inGameUni -= SPEEDUP_COST;
-            globalDebt = Math.max(0, globalDebt - SPEEDUP_COST); // 👈 REDUCE DEBT (Debt is cancelled/burned)
-            saveDebt();
-            logActivity('SPEEDUP', socket.wallet || socket.id, `Paid ${SPEEDUP_COST} UNI to blast an Iron Vein`);
-            
-            // Save & Sync
-            fs.writeFileSync('ores.json', JSON.stringify(oreDb, null, 2));
-            io.emit('oreUpdated', { oreId, data: ore });
-            socket.emit('balanceUpdated', { inGameUni: player.inGameUni }); // Updates the HUD instantly
-            
-            console.log(`🧨 ${socket.wallet} paid ${SPEEDUP_COST} UNI to blast open ${oreId}!`);
-        } else {
-            socket.emit('oreMessage', `Insufficient funds! You need ${SPEEDUP_COST} UNI.`);
-        }
-            
-        broadcastEffectiveTGV()
-        syncPlayerAndSave(socket.id)
-
-    });
-
-    // ==========================================
-    // 🔥 SMELTER SPEED UP (50 UNI)
-    // ==========================================
-    socket.on('speedUpSmelter', (data) => {
-        const player = players[socket.id];
-        const job = smelterDb[data.jobId];
-        const SPEEDUP_COST = 0.0678;
-
-        if (job && job.active && player) {
-            if (player.inGameUni >= SPEEDUP_COST) {
-                player.inGameUni -= SPEEDUP_COST; // Deduct points
-                job.workLeft = 0;                 // Finish the job
-                job.ready = true;
-
-                player.inGameUni -= SPEEDUP_COST;
-                globalDebt = Math.max(0, globalDebt - SPEEDUP_COST); // 👈 REDUCE DEBT (Debt is cancelled/burned)
-                saveDebt();
-                logActivity('SPEEDUP', socket.wallet || socket.id, `Paid ${SPEEDUP_COST} UNI to speed up the Smelter`);
-                
-                // Sync
-                io.emit('smelterUpdated', { jobId: data.jobId, data: job });
-                socket.emit('balanceUpdated', { inGameUni: player.inGameUni }); // Updates HUD
-                
-                console.log(`🔥 ${socket.wallet} paid ${SPEEDUP_COST} UNI to speed up the Smelter!`);
-            } else {
-                // We can use the generic oreMessage to pop an alert on the client
-                socket.emit('oreMessage', `Insufficient funds! You need ${SPEEDUP_COST} UNI.`);
-            }
-        }
-
-        broadcastEffectiveTGV()
-        syncPlayerAndSave(socket.id)
-
-    });
-
-    // ==========================================
-    // 🔨 ANVIL SPEED UP (50 UNI)
-    // ==========================================
-    socket.on('speedUpAnvil', (data) => {
-        const player = players[socket.id];
-        const job = anvilDb[data.jobId];
-        const SPEEDUP_COST = 0.10167;
-
-        if (job && job.active && player) {
-            if (player.inGameUni >= SPEEDUP_COST) {
-                player.inGameUni -= SPEEDUP_COST; // Deduct points
-                job.workLeft = 0;                 // Finish the job
-                job.ready = true;
-
-                player.inGameUni -= SPEEDUP_COST;
-                globalDebt = Math.max(0, globalDebt - SPEEDUP_COST); // 👈 REDUCE DEBT (Debt is cancelled/burned)
-                saveDebt();
-                logActivity('SPEEDUP', socket.wallet || socket.id, `Paid ${SPEEDUP_COST} UNI to speed up the Anvil`);
-                
-                // Sync
-                io.emit('anvilUpdated', { jobId: data.jobId, data: job });
-                socket.emit('balanceUpdated', { inGameUni: player.inGameUni }); // Updates HUD
-                
-                console.log(`🔨 ${socket.wallet} paid ${SPEEDUP_COST} UNI to speed up the Anvil!`);
-            } else {
-                socket.emit('oreMessage', `Insufficient funds! You need ${SPEEDUP_COST} UNI.`);
-            }
-        }
-            
-        broadcastEffectiveTGV()
-        syncPlayerAndSave(socket.id)
-
-    });
-
-
-socket.on('collectSmelter', (data) => {
-    const job = smelterDb[data.jobId];
-    if (job && job.ready) {
-        job.active = false; job.ready = false; job.workLeft = 200;
-        io.emit('smelterUpdated', { jobId: data.jobId, data: job });
-        socket.emit('receiveSmelterLoot');
-    }
-});
-
-// --- ANVIL JOBS ---
-socket.on('requestAnvil', (jobId) => {
-    if (!anvilDb[jobId]) anvilDb[jobId] = { workLeft: 300, maxWork: 300, active: false, ready: false };
-    socket.emit('anvilData', { jobId, data: anvilDb[jobId] });
-});
-
-// ==========================================
-// 🔨 SECURE ANVIL JOB
-// ==========================================
-// 🔨 SECURE ANVIL JOB
-// ==========================================
-socket.on('startAnvilJob', (data) => {
-    const player = players[socket.id];
-    if (!player) return;
-
-    // 🛡️ RATE LIMITER: 1 request per second
-    const now = Date.now();
-    if (player.lastAnvil && now - player.lastAnvil < 1000) return;
-    player.lastAnvil = now;
-
-    const job = anvilDb[data.jobId];
-    if (!job || job.active || job.ready) return;
-
-    // Start the job
-    job.active = true;
-    job.workLeft = 300;
-    job.ready = false;
-    
-    io.emit('anvilUpdated', { jobId: data.jobId, data: job });
-});
-
-socket.on('workAnvilStrike', (data) => {
-    const job = anvilDb[data.jobId];
-    if (job && job.active && job.workLeft > 0) {
-        job.workLeft--;
-        if (job.workLeft <= 0) job.ready = true;
-        if (job.workLeft % 5 === 0 || job.workLeft === 0) io.emit('anvilUpdated', { jobId: data.jobId, data: job });
-    }
-});
-
-
-socket.on('collectAnvil', (data) => {
-    const job = anvilDb[data.jobId];
-    if (job && job.ready) {
-        job.active = false; job.ready = false; job.workLeft = 300;
-        io.emit('anvilUpdated', { jobId: data.jobId, data: job });
-        socket.emit('receiveAnvilLoot');
-    }
-});
-
-
-
-
-    // ==========================================
-    // 🎣 SECURE SERVER-AUTHORITATIVE FISHING
-    // ==========================================
-
-    // A. Cast Line Request
     socket.on('requestCastLine', (data) => {
         const { tx, ty } = data;
         const player = players[socket.id];
@@ -1006,24 +638,19 @@ socket.on('collectAnvil', (data) => {
         const py = Math.floor(player.y / 16);
         if (Math.abs(px - tx) + Math.abs(py - ty) > 5) return;
 
-        // Calculate waiting time securely on the server
         const safeCount = Math.max(1, globalFishCount);
         const multiplier = Math.sqrt(10000 / safeCount);
         const scarcityMod = Math.min(30.0, multiplier);
-        const waitTime = (2 + Math.random() * 3) * scarcityMod * 1000; // in milliseconds
+        const waitTime = (2 + Math.random() * 3) * scarcityMod * 1000; 
 
-        // Register the active fishing state for this socket
         fishingStates.set(socket.id, {
             startTime: Date.now(),
             waitTime: waitTime,
             active: true
         });
 
-        // Send confirmation and the secure wait time back to the client
         socket.emit('fishingCastConfirmed', { waitTime });
     });
-
-    // Replace the requestReelIn socket listener inside server.js with this:
 
     socket.on('requestReelIn', () => {
         const state = fishingStates.get(socket.id);
@@ -1036,13 +663,10 @@ socket.on('collectAnvil', (data) => {
             return;
         }
 
-        // Catch a fish securely on the server
         const caughtFishTemplate = getRandomServerFish();
         const fishItem = createServerItem(caughtFishTemplate);
 
-        // 🎯 Securely stack the fish
         if (giveItemToServerInventory(player, fishItem)) {
-            // Subtract from global fish population only if player successfully received the fish
             globalFishCount = Math.max(0, globalFishCount - 1);
         } else {
             socket.emit('inventoryFull');
@@ -1056,7 +680,6 @@ socket.on('collectAnvil', (data) => {
     });
 
     socket.on('requestChest', (chestId) => {
-        // If chest doesn't exist in DB yet, spawn it with default loot!
         if (!chestDb[chestId]) {
             chestDb[chestId] = [
                 {
@@ -1073,49 +696,38 @@ socket.on('collectAnvil', (data) => {
                     maxStack: 1,   
                     drawSize: 8,
                     timestamp: Date.now()
-                }
-                
-                ,
-                // 👇 DEBUG: THE SONIC TOMATO
+                },
                 {
                     name: "Tomato",
                     seedType: "tomato_item",
-                    spriteID: 24, // Assuming Tile 24 on your cropTileset
+                    spriteID: 24, 
                     tileset: "cropTileset",
                     health: 30,
                     virulence: 0,
                     fertility: 25,
-                    count: 8,      // Give them a full stack of 8!
+                    count: 8,      
                     maxStack: 8,
                     typeLabel: "Food", 
                     energy: 35, 
                     description: "A hearty fruit.",
                     timestamp: Date.now()
                 },
-                    
             ];
         }
-        // Send the data back ONLY to the player who asked
         socket.emit('chestData', { chestId, items: chestDb[chestId] });
     });
 
     socket.on('updateChest', (data) => {
-            // 🎯 THE FIX: Hard-cap chest storage array to 8 elements
-            if (data.items && data.items.length > 8) {
-                data.items = data.items.slice(0, 8);
-            }
-            chestDb[data.chestId] = data.items;
-            fs.writeFileSync('chests.json', JSON.stringify(chestDb, null, 2));
-            socket.broadcast.emit('chestUpdated', data);
-        });
+        if (data.items && data.items.length > 8) {
+            data.items = data.items.slice(0, 8);
+        }
+        chestDb[data.chestId] = data.items;
+        fs.writeFileSync('chests.json', JSON.stringify(chestDb, null, 2));
+        socket.broadcast.emit('chestUpdated', data);
+    });
 
-    // ==========================================
-    // 🆕 GENERAL STORE (TRADE COUNTER) SYSTEM
-    // ==========================================
-    
     socket.on('requestStore', (storeId) => {
         if (!storeDb[storeId]) {
-            // listings: active trades. storage: items waiting for pickup by wallet
             storeDb[storeId] = { listings: [], storage: {} }; 
         }
         socket.emit('storeData', { storeId, data: storeDb[storeId] });
@@ -1131,35 +743,30 @@ socket.on('collectAnvil', (data) => {
             counterOffer: null
         });
         saveStores();
-        io.emit('storeUpdated', { storeId, data: storeDb[storeId] }); // Tell everyone looking
+        io.emit('storeUpdated', { storeId, data: storeDb[storeId] }); 
     });
 
     socket.on('buyListing', (data) => {
-            const { storeId, listingId, buyerWallet, paymentItem, isHobbit } = data;
-            const store = storeDb[storeId];
-            const listIdx = store.listings.findIndex(l => l.id === listingId);
-            
-            if (listIdx !== -1) {
-                const listing = store.listings[listIdx];
-                
-                // 1. Move the listed item to the Buyer's storage ONLY if it's NOT a hobbit!
-                if (!isHobbit) {
-                    if (!store.storage[buyerWallet]) store.storage[buyerWallet] = [];
-                    store.storage[buyerWallet].push(listing.offeredItem);
-                }
-                
-                // 2. Move the payment to the Seller's storage
-                if (!store.storage[listing.seller]) store.storage[listing.seller] = [];
-                store.storage[listing.seller].push(paymentItem);
-
-                // 3. Remove listing
-                store.listings.splice(listIdx, 1);
-                saveStores();
-                io.emit('storeUpdated', { storeId, data: store });
-            }
-        });
-
+        const { storeId, listingId, buyerWallet, paymentItem, isHobbit } = data;
+        const store = storeDb[storeId];
+        const listIdx = store.listings.findIndex(l => l.id === listingId);
         
+        if (listIdx !== -1) {
+            const listing = store.listings[listIdx];
+            
+            if (!isHobbit) {
+                if (!store.storage[buyerWallet]) store.storage[buyerWallet] = [];
+                store.storage[buyerWallet].push(listing.offeredItem);
+            }
+            
+            if (!store.storage[listing.seller]) store.storage[listing.seller] = [];
+            store.storage[listing.seller].push(paymentItem);
+
+            store.listings.splice(listIdx, 1);
+            saveStores();
+            io.emit('storeUpdated', { storeId, data: store });
+        }
+    });
 
     socket.on('makeCounterOffer', (data) => {
         const { storeId, listingId, buyerWallet, counterItem } = data;
@@ -1181,7 +788,6 @@ socket.on('collectAnvil', (data) => {
         if (listIdx !== -1) {
             const listing = store.listings[listIdx];
             if (accept) {
-                // Swap items into respective storages
                 if (!store.storage[listing.counterOffer.buyer]) store.storage[listing.counterOffer.buyer] = [];
                 store.storage[listing.counterOffer.buyer].push(listing.offeredItem);
 
@@ -1190,7 +796,6 @@ socket.on('collectAnvil', (data) => {
 
                 store.listings.splice(listIdx, 1);
             } else {
-                // Reject: Return counter-item to buyer's storage, keep listing active
                 if (!store.storage[listing.counterOffer.buyer]) store.storage[listing.counterOffer.buyer] = [];
                 store.storage[listing.counterOffer.buyer].push(listing.counterOffer.item);
                 listing.counterOffer = null;
@@ -1207,11 +812,9 @@ socket.on('collectAnvil', (data) => {
         
         if (listIdx !== -1) {
             const listing = store.listings[listIdx];
-            // Return item to seller storage
             if (!store.storage[wallet]) store.storage[wallet] = [];
             store.storage[wallet].push(listing.offeredItem);
             
-            // If there was a pending counter-offer, return that to the buyer
             if (listing.counterOffer) {
                 if (!store.storage[listing.counterOffer.buyer]) store.storage[listing.counterOffer.buyer] = [];
                 store.storage[listing.counterOffer.buyer].push(listing.counterOffer.item);
@@ -1228,17 +831,12 @@ socket.on('collectAnvil', (data) => {
         const store = storeDb[storeId];
         
         if (store.storage[wallet]) {
-            // Send items back to client (they will be added to inventory locally)
             socket.emit('storageClaimed', { items: store.storage[wallet] });
-            store.storage[wallet] = []; // Clear storage
+            store.storage[wallet] = []; 
             saveStores();
             io.emit('storeUpdated', { storeId, data: store });
         }
     });
-
-    // Inside io.on('connection', (socket) => { ... }) in server.js:
-
-    // Replace the registerRanch socket listener inside server.js with this:
 
     socket.on('registerRanch', (data) => {
         const { gx, gy, w, h } = data;
@@ -1264,17 +862,15 @@ socket.on('collectAnvil', (data) => {
                 speed: 35,
                 hp: 30,
                 maxHp: 30,
-                // Add these default values when instantiating chickens inside server.js:
                 energy: 100,
                 goal: 'wander',
                 state: 'idle',
                 dir: 'East',
                 moveTimer: Math.random() * 3,
-                // Replace the target initialization lines inside both initServerAnimals and registerRanch in server.js:
                 targetX: undefined,
                 targetY: undefined,
-                eggTimer: 15 + Math.random() * 20,  // Ready to lay in 15-35s
-                poopTimer: 10 + Math.random() * 20, // Ready to poop in 10-30s
+                eggTimer: 15 + Math.random() * 20,  
+                poopTimer: 10 + Math.random() * 20, 
                 
                 ranchBounds: { 
                     minX: (gx + 1) * 16, 
@@ -1286,14 +882,11 @@ socket.on('collectAnvil', (data) => {
         }
     });
 
-
-    // A. Plant Seed Request
     socket.on('requestPlantSeed', (data) => {
         const { tx, ty, index } = data;
         const player = players[socket.id];
         if (!player) return;
 
-        // 🎯 THE FIX: Read from main hand if equipped, otherwise fall back to inventory
         let item = player.equipment?.mainHand;
         let isEquipped = true;
 
@@ -1304,17 +897,15 @@ socket.on('collectAnvil', (data) => {
 
         if (!item || !(item.seedType.includes("_seed") || item.seedType === "potato_item")) return;
 
-        // Distance validation
         const px = Math.floor(player.x / 16);
         const py = Math.floor(player.y / 16);
         if (Math.abs(px - tx) + Math.abs(py - ty) > 5) return;
 
         const plantKey = `${tx}_${ty}`;
-        if (serverPlants.has(plantKey)) return; // Spot occupied
+        if (serverPlants.has(plantKey)) return; 
 
         const plantType = item.seedType.replace("_seed", "").replace("_item", "");
         
-        // Register securely on the server
         serverPlants.set(plantKey, {
             gx: tx, gy: ty,
             type: plantType,
@@ -1322,7 +913,6 @@ socket.on('collectAnvil', (data) => {
             timestamp: Date.now()
         });
 
-        // Deduct seed securely from either the active hand slot or backpack
         if (isEquipped) {
             player.equipment.mainHand.count--;
             if (player.equipment.mainHand.count <= 0) {
@@ -1339,16 +929,13 @@ socket.on('collectAnvil', (data) => {
 
         syncPlayerAndSave(socket.id);
 
-        // Broadcast the new plant to all nearby players
         io.emit('plantCreated', { gx: tx, gy: ty, type: plantType, growth: 0 });
     });
 
-    // C. Register Wild Plant Request (Client-notified procedural spawner)
     socket.on('registerWildPlant', (data) => {
         const { gx, gy, type, growth } = data;
         const plantKey = `${gx}_${gy}`;
         
-        // 🎯 THE FIX: Overwrite server-side random flora with the accurate client overworld plant
         serverPlants.set(plantKey, {
             gx: gx, gy: gy,
             type: type,
@@ -1366,7 +953,6 @@ socket.on('collectAnvil', (data) => {
         const plant = serverPlants.get(plantKey);
         if (!plant) return; 
 
-        // Distance validation
         const px = Math.floor(player.x / 16);
         const py = Math.floor(player.y / 16);
         if (Math.abs(px - tx) + Math.abs(py - ty) > 5) return;
@@ -1379,7 +965,6 @@ socket.on('collectAnvil', (data) => {
         const def = SERVER_PLANT_DEFS[plant.type];
         const elapsedSeconds = plant.timestamp ? (Date.now() - plant.timestamp) / 1000 : 0;
         
-        // Strict isNaN guards for startGrowth
         let startGrowth = 0;
         if (plant.growth !== undefined && plant.growth !== null) {
             startGrowth = parseFloat(plant.growth);
@@ -1388,7 +973,6 @@ socket.on('collectAnvil', (data) => {
             startGrowth = 0;
         }
         
-        // Strict isNaN guards for growthRate
         let gRate = 0.4;
         if (plant.growthRate !== undefined && plant.growthRate !== null) {
             gRate = parseFloat(plant.growthRate);
@@ -1397,14 +981,10 @@ socket.on('collectAnvil', (data) => {
             gRate = def?.growthRate || 0.4;
         }
 
-        // 🎯 THE FIX: Adjusted to the 0.1x growth multiplier to match the client's speed
         const currentGrowth = startGrowth + (gRate * 0.1 * elapsedSeconds);
         const isMature = isServerPlantMature(plant, currentGrowth);
 
         if (isMature) {
-            // ==========================================
-            // 🍇 1. SECURE MATURE HARVEST
-            // ==========================================
             const yieldMap = {
                 'turnip': 'TURNIP_ITEM', 'tomato': 'TOMATO_ITEM',
                 'eggplant': 'EGGPLANT_ITEM', 'strawberry': 'STRAWBERRY_ITEM',
@@ -1422,7 +1002,6 @@ socket.on('collectAnvil', (data) => {
                 giveItemToServerInventory(player, createServerItem(cropTemplate));
             }
 
-            // Do not drop seeds for farm crops (only drop for wild flowers/grass)
             const farmCrops = ['turnip', 'tomato', 'eggplant', 'strawberry', 'pumpkin', 'watermelon', 'corn', 'pineapple', 'potato', 'wheat'];
             if (!farmCrops.includes(plant.type)) {
                 const seedConstName = `${plant.type.toUpperCase()}_SEED`;
@@ -1435,7 +1014,6 @@ socket.on('collectAnvil', (data) => {
                 }
             }
 
-            // Cyclical check
             if (def && def.isCyclical) {
                 plant.growth = def.resetGrowth;
                 plant.timestamp = Date.now(); 
@@ -1446,18 +1024,13 @@ socket.on('collectAnvil', (data) => {
             }
         } 
         else {
-            // ==========================================
-            // 🍂 2. SECURE IMMATURE EARLY HARVEST (Wither/Destroy)
-            // ==========================================
             console.log(`🍂 Early Pick! ${player.wallet} pulled immature ${plant.type} at [${tx}, ${ty}]`);
             
-            // Give exactly 1x ruined Plant Matter securely
             const template = SERVER_ITEM_TYPES.PLANT_MATTER;
             if (template) {
                 giveItemToServerInventory(player, createServerItem(template));
             }
 
-            // Early-picked plants are always permanently deleted
             serverPlants.delete(plantKey);
             io.emit('plantRemoved', { gx: tx, gy: ty }); 
         }
@@ -1482,7 +1055,6 @@ socket.on('collectAnvil', (data) => {
             if (pCX === cx && pCY === cy) {
                 const elapsed = (Date.now() - plant.timestamp) / 1000;
                 
-                // Strict isNaN guards for growthRate
                 let gRate = 0.4;
                 if (plant.growthRate !== undefined && plant.growthRate !== null) {
                     gRate = parseFloat(plant.growthRate);
@@ -1491,7 +1063,6 @@ socket.on('collectAnvil', (data) => {
                     gRate = SERVER_PLANT_DEFS[plant.type]?.growthRate || 0.4;
                 }
 
-                // Strict isNaN guards for starting growth
                 let startGrowth = 0;
                 if (plant.growth !== undefined && plant.growth !== null) {
                     startGrowth = parseFloat(plant.growth);
@@ -1500,7 +1071,6 @@ socket.on('collectAnvil', (data) => {
                     startGrowth = 0;
                 }
 
-                // 🎯 THE FIX: Adjusted to the 0.1x growth multiplier to match the client's speed
                 const currentGrowth = Math.min(100, startGrowth + (gRate * 0.1 * elapsed));
                 
                 chunkPlants.push({
@@ -1515,7 +1085,6 @@ socket.on('collectAnvil', (data) => {
         socket.emit('chunkPlantsData', { cx, cy, plants: chunkPlants });
     });
 
-    // --- DOOR ACCESS CONTROL ---
     socket.emit('initDoorStates', doorDb);
 
     socket.on('requestDoorState', (data) => {
@@ -1533,7 +1102,6 @@ socket.on('collectAnvil', (data) => {
         io.emit('doorStateUpdated', { gx, gy, locked });
     });
 
-    // 🎯 UPDATE MOVEMENT (Includes isLunge)
     socket.on('movement', (data) => {
         if (players[socket.id]) {
             players[socket.id].x = data.x;
@@ -1542,43 +1110,35 @@ socket.on('collectAnvil', (data) => {
             players[socket.id].animFrame = data.animFrame;
             players[socket.id].isMoving = data.isMoving;
             players[socket.id].isWindingUp = data.isWindingUp;
-            players[socket.id].isLunge = data.isLunge; // 👈 Save the lunge flag
+            players[socket.id].isLunge = data.isLunge; 
             players[socket.id].currentTileID = data.currentTileID;
             players[socket.id].pet = data.pet;
         }
     });
 
+    socket.on('updateStats', (data) => {
+        const p = players[socket.id];
+        if (!p) return;
 
+        if (data.inventory) delete data.inventory;
 
-// Inside socket.on('updateStats') in server.js:
+        Object.assign(p, data);
+        
+        if (socket.wallet) {
+            userDb[socket.wallet] = {
+                ...userDb[socket.wallet], 
+                ...data, 
+                id: undefined,
+                target: null
+            };
 
-socket.on('updateStats', (data) => {
-    const p = players[socket.id];
-    if (!p) return;
+            fs.writeFileSync('persistence.json', JSON.stringify(userDb, null, 2));
+        }
+    });
 
-    if (data.inventory) delete data.inventory;
-
-    Object.assign(p, data);
-    
-    if (socket.wallet) {
-        userDb[socket.wallet] = {
-            ...userDb[socket.wallet], 
-            ...data, // 🎯 Writes the active energy updates to persistence.json
-            id: undefined,
-            target: null
-        };
-
-        fs.writeFileSync('persistence.json', JSON.stringify(userDb, null, 2));
-    }
-});
-
-    // ==========================================
-    // 🏦 WITHDRAWAL LOGIC
-    // ==========================================
     socket.on('requestWithdrawal', async (reqData) => {
         const player = players[socket.id];
         
-        // Unpack the new object payload
         const amount = typeof reqData === 'object' ? reqData.amount : reqData;
         const targetAddress = (typeof reqData === 'object' && reqData.targetAddress) ? reqData.targetAddress : socket.wallet;
         
@@ -1589,14 +1149,13 @@ socket.on('updateStats', (data) => {
             return;
         }
 
-        // Subtract and create voucher
         player.inGameUni -= amount;
         globalDebt = Math.max(0, globalDebt - amount);
         saveDebt();
         syncPlayerAndSave(socket.id);
         
         socket.emit('balanceUpdated', { inGameUni: player.inGameUni });
-        broadcastEffectiveTGV(); // 👈 ADDED: Updates the HUD for everyone instantly!
+        broadcastEffectiveTGV(); 
 
         const nonce = Math.floor(Math.random() * 1000000000);
         try {
@@ -1606,29 +1165,23 @@ socket.on('updateStats', (data) => {
             console.log(`📜 Withdrawal Voucher generated for ${targetAddress}`);
         } catch (err) {
             console.error("Voucher failed!", err);
-            // Refund on failure
             player.inGameUni += amount;
             globalDebt += amount;
             saveDebt();
             syncPlayerAndSave(socket.id);
             socket.emit('balanceUpdated', { inGameUni: player.inGameUni });
-            broadcastEffectiveTGV(); // 👈 ADDED: Revert the TGV if the voucher fails!
+            broadcastEffectiveTGV(); 
         }
     });
 
-    // 👈 Add this inside your io.on('connection') block:
-socket.on('requestActivityLog', () => {
-    socket.emit('activityData', activityLog);
-});
+    socket.on('requestActivityLog', () => {
+        socket.emit('activityData', activityLog);
+    });
 
-// Inside socket.on('requestPickup'...) in server.js:
-
-    // Locate socket.on('requestPickup') inside server.js and update:
     socket.on('requestPickup', (itemData) => {
         const player = players[socket.id];
         if (!player || !player.inventory) return;
 
-        // Distance validation
         const px = Math.floor(player.x / 16);
         const py = Math.floor(player.y / 16);
         if (Math.abs(px - itemData.tx) + Math.abs(py - itemData.ty) > 5) return;
@@ -1646,16 +1199,14 @@ socket.on('requestActivityLog', () => {
             return;
         }
 
-        // Locate socket.on('requestPickup') inside server.js and modify the item creation:
         const newItem = createServerItem(template);
         
-        // 🎯 THE FIX: Retrieve the exact remaining bites/health from server memory
         const key = `${itemData.tx}_${itemData.ty}`;
         if (serverBacteria.has(key)) {
             const traits = serverBacteria.get(key);
-            const hTraits = traits & 0xFF; // Remaining health (0-100)
+            const hTraits = traits & 0xFF; 
             if (hTraits > 0) {
-                newItem.health = hTraits; // Carry over exact durability
+                newItem.health = hTraits; 
             }
         }
 
@@ -1667,10 +1218,7 @@ socket.on('requestActivityLog', () => {
         const success = giveItemToServerInventory(player, newItem);
         
         if (success) {
-            // Wipe the ground tile
             io.emit('syncTile', { gx: itemData.tx, gy: itemData.ty, traits: 0 });
-            
-            // 🎯 THE FIX: Remove the picked up item from server memory
             serverBacteria.delete(`${itemData.tx}_${itemData.ty}`);
 
             syncPlayerAndSave(socket.id);
@@ -1680,21 +1228,11 @@ socket.on('requestActivityLog', () => {
         }
     });
 
-    // Inside io.on('connection', (socket) => { ... }) in server.js:
-
-    // Inside io.on('connection', (socket) => { ... }) in server.js:
-
-    // ==========================================
-    // 🎒 SECURE SERVER-AUTHORITATIVE INVENTORY
-    // ==========================================
-
-    // 2. Secure Equip Request
     socket.on('requestEquip', (data) => {
-        const { index, currentEnergy } = data; // 👈 🎯 THE FIX: Accept currentEnergy
+        const { index, currentEnergy } = data; 
         const player = players[socket.id];
         if (!player || !player.inventory) return;
 
-        // Update the server's record with the active stamina value
         if (currentEnergy !== undefined) {
             player.energy = parseFloat(currentEnergy) || 100;
         }
@@ -1712,7 +1250,6 @@ socket.on('requestActivityLog', () => {
             player.inventory.splice(index, 1);
         }
 
-        // Recalculate stats server-side
         player.ad = CONFIG.HERO_ATTACK;
         if (player.equipment.mainHand && player.equipment.mainHand.isWeapon) {
             player.ad += (player.equipment.mainHand.ad || 0);
@@ -1721,12 +1258,11 @@ socket.on('requestActivityLog', () => {
         syncPlayerAndSave(socket.id);
         socket.emit('updateInventory', player.inventory);
         socket.emit('updateEquipment', player.equipment);
-        socket.emit('restoreHero', player); // Safely restores active stamina
+        socket.emit('restoreHero', player); 
     });
 
-    // 3. Secure Unequip Request
     socket.on('requestUnequip', (data) => {
-        const { currentEnergy } = data || {}; // 👈 🎯 THE FIX: Accept currentEnergy
+        const { currentEnergy } = data || {}; 
         const player = players[socket.id];
         if (!player || !player.inventory || !player.equipment || !player.equipment.mainHand) return;
 
@@ -1735,7 +1271,6 @@ socket.on('requestActivityLog', () => {
             return;
         }
 
-        // Update the server's record with the active stamina value
         if (currentEnergy !== undefined) {
             player.energy = parseFloat(currentEnergy) || 100;
         }
@@ -1748,11 +1283,9 @@ socket.on('requestActivityLog', () => {
         syncPlayerAndSave(socket.id);
         socket.emit('updateInventory', player.inventory);
         socket.emit('updateEquipment', player.equipment);
-        socket.emit('restoreHero', player); // Safely restores active stamina
+        socket.emit('restoreHero', player); 
     });
 
-
-    // Locate socket.on('requestDrop') inside server.js and update:
     socket.on('requestDrop', (data) => {
         const { index, amount, tx, ty } = data;
         const player = players[socket.id];
@@ -1761,7 +1294,6 @@ socket.on('requestActivityLog', () => {
         const item = player.inventory[index];
         if (!item || item.count < amount) return;
 
-        // Validate player is near the drop coordinate
         const px = Math.floor(player.x / 16);
         const py = Math.floor(player.y / 16);
         if (Math.abs(px - tx) + Math.abs(py - ty) > 5) {
@@ -1780,13 +1312,9 @@ socket.on('requestActivityLog', () => {
             packedTraits = ((Math.floor(hVal) & 0xFF) | ((Math.floor(vVal) & 0xFF) << 8) | ((2 & 0x0F) << 16) | ((typeId & 0xFF) << 20)) >>> 0;
         }
 
-        // Broadcast the new item drop on the ground to all clients
         io.emit('syncTile', { gx: tx, gy: ty, traits: packedTraits });
-
-        // 🎯 THE FIX: Track the dropped item in server memory
         serverBacteria.set(`${tx}_${ty}`, packedTraits);
 
-        // Subtract from server inventory
         item.count -= amount;
         if (item.count <= 0) {
             player.inventory.splice(index, 1);
@@ -1801,7 +1329,6 @@ socket.on('requestActivityLog', () => {
         const player = players[socket.id];
         if (!player || !player.inventory) return;
 
-        // Validate distance to chest
         const cx = Math.floor(player.x / 16);
         const cy = Math.floor(player.y / 16);
         const coords = chestId.split('_');
@@ -1816,7 +1343,6 @@ socket.on('requestActivityLog', () => {
             const item = player.inventory[index];
             if (!item) return;
 
-            // 🎯 THE FIX: Limit chest storage to 8 slots
             if (chestItems.length >= 8) {
                 socket.emit('oreMessage', "This chest is full! Maximum 8 slots.");
                 return;
@@ -1824,7 +1350,6 @@ socket.on('requestActivityLog', () => {
 
             player.inventory.splice(index, 1);
 
-            // Try to merge with an existing stack in the chest first
             let merged = false;
             if (item.maxStack > 1) {
                 const existing = chestItems.find(i => i.seedType === item.seedType && i.count < item.maxStack);
@@ -1851,7 +1376,7 @@ socket.on('requestActivityLog', () => {
 
             const success = giveItemToServerInventory(player, item);
             if (!success) {
-                chestItems.push(item); // Refund chest if backpack full
+                chestItems.push(item); 
                 socket.emit('inventoryFull');
                 return;
             }
@@ -1864,7 +1389,6 @@ socket.on('requestActivityLog', () => {
         io.emit('chestUpdated', { chestId, items: chestItems });
     });
 
-    // 5. Root Cellar Transfer Request
     socket.on('requestCellarTransfer', (data) => {
         const { cellarId, index, direction } = data;
         const player = players[socket.id];
@@ -1906,7 +1430,6 @@ socket.on('requestActivityLog', () => {
         io.emit('cellarUpdated', { cellarId, items: cellarItems });
     });
 
-    // 6. Hay Storage Transfer Request
     socket.on('requestHayTransfer', (data) => {
         const { hayStorageId, index, direction } = data;
         const player = players[socket.id];
@@ -1917,7 +1440,6 @@ socket.on('requestActivityLog', () => {
 
         if (direction === 'to_storage') {
             const item = player.inventory[index];
-            // 🎯 THE FIX: Allow both 'hay' and 'plant_matter' to be transferred to the storage
             if (!item || (item.seedType !== 'hay' && item.seedType !== 'plant_matter')) return;
 
             player.inventory.splice(index, 1);
@@ -1941,318 +1463,10 @@ socket.on('requestActivityLog', () => {
         io.emit('hayStorageUpdated', { hayStorageId, items: hayItems });
     });
 
-    // 7. Secure Altar Sacrifice (Index-based)
-    socket.on('sacrificeItem', (data) => {
-        const { index } = data;
-        const player = players[socket.id];
-        if (!player || !player.inventory) return;
-
-        const item = player.inventory[index];
-        if (!item) return;
-
-        const isValidSeed = POINT_VALUES[item.seedType];
-        if (!isValidSeed) return;
-
-        const count = Math.min(64, Math.max(1, item.count || 1));
-
-        // Calculate Payout securely on server
-        const effectiveTGV = Math.max(0.00000001, currentTVL - globalDebt);
-        const pointsPerSeed = effectiveTGV / 640000;
-        const totalPoints = pointsPerSeed * count;
-
-        // Deduct item from server inventory
-        player.inventory.splice(index, 1);
-
-        // Apply Points and Debt
-        player.inGameUni = (parseFloat(player.inGameUni) || 0.0) + totalPoints;
-        globalDebt = (parseFloat(globalDebt) || 0.0) + totalPoints;
-        
-        saveDebt();
-        syncPlayerAndSave(socket.id); 
-        
-        socket.emit('balanceUpdated', { inGameUni: player.inGameUni });
-        socket.emit('updateInventory', player.inventory); // Sync changes to client
-        
-        if (typeof broadcastEffectiveTGV === 'function') broadcastEffectiveTGV();
-        if (typeof logActivity === 'function') {
-            logActivity('SACRIFICE', socket.wallet || socket.id, `Sacrificed ${count}x ${item.seedType} for ${totalPoints.toFixed(8)} UNI`);
-        }
-
-        console.log(`💎 ${socket.wallet || socket.id} sacrificed ${count}x ${item.seedType} securely`);
-    });
-
-
-// --- ⚔️ UPDATED: LOGARITHMIC ARMOR SCALING ---
-socket.on('pvpAttack', (data) => {
-    const victim = players[data.targetId];
-    const attacker = players[socket.id];
-
-    if (victim && attacker && victim.hp > 0) {
-        // 1. DAMAGE CALCULATION (Logarithmic Scaling)
-        // This math ensures: 
-        // 10 Armor = 0.5 multiplier (50% reduction)
-        // 100 Armor = 0.25 multiplier (75% reduction)
-        // 1000 Armor = 0.125 multiplier (87.5% reduction)
-        
-        const victimArmor = Math.max(1, victim.armor || 1); // Prevent Log10(0) errors
-        const armorReduction = Math.pow(0.5, Math.log10(victimArmor));
-        
-        const finalDamage = Math.max(1, Math.floor(attacker.ad * armorReduction));
-
-        // ... inside server.js -> socket.on('pvpAttack' ...
-        
-        // 👇 1. HEAVEN'S HALO CHECK (Absolute Immunity)
-        if (victim.isInvincible) {
-            console.log(`👼 ${victim.id} is Invincible! Damage ignored.`);
-            // Optionally, tell the attacker "IMMUNE!" (Requires a new emit/UI text)
-            return; // 🛑 EXIT EARLY: No damage applied!
-        }
-
-        // 👇 1. DIVINE BUBBLE CHECK (Blocks 1 instance of damage completely)
-        if (victim.hasDivineBubble) {
-            console.log(`✨ DIVINE BUBBLE POPPED on ${victim.id}! Blocked ${finalDamage} damage.`);
-            victim.hasDivineBubble = false;
-            
-            // Tell clients the bubble popped (so they can update visuals/UI)
-            io.emit('playerHit', {
-                victimId: victim.id,
-                newHp: victim.hp,
-                newShield: victim.shield,
-                bubblePopped: true, // 👈 New flag
-                attackerId: attacker.id
-            });
-            return; // 🛑 EXIT EARLY: No damage applied!
-        }
-
-        
-// 👇 🆕 NEW SHIELD LOGIC
-        if (victim.shield > 0) {
-            // How much of the damage hits the shield?
-            const damageToShield = Math.min(victim.shield, finalDamage);
-            victim.shield -= damageToShield;
-            finalDamage -= damageToShield; // Subtract absorbed damage
-            
-            console.log(`🛡️ Shield absorbed ${damageToShield} damage! Remaining Shield: ${victim.shield}`);
-        }
-
-        // Apply remaining damage to HP
-        victim.hp -= finalDamage;
-        
-        // 3. BROADCAST THE HIT (Now includes shield data!)
-        io.emit('playerHit', {
-            victimId: victim.id,
-            newHp: victim.hp,
-            newShield: victim.shield, // 👈 Send shield updates to everyone
-            attackerId: attacker.id
-        });
-
-        // 4. DEATH HANDLER
-        if (victim.hp <= 0) {
-
-            // Log this to see what the server actually sees
-        console.log(`DEBUG: Victim ${victim.id} had ${victim.xp} XP on server.`);
-
-            victim.hp = 0;
-            
-            // Calculate XP (30% of total)
-            const xpGain = (victim.xp || 0) * 0.30;
-            attacker.xp = (attacker.xp || 0) + xpGain;
-
-            // ✨ ADD THIS: If victim has a wallet, update their DB record immediately
-    if (victim.wallet) {
-        userDb[victim.wallet].hp = 0;
-        userDb[victim.wallet].xp = victim.xp; // Save the loss of XP too
-        fs.writeFileSync('persistence.json', JSON.stringify(userDb, null, 2));
-    }
-
-            io.emit('playerKilled', { 
-                victimId: victim.id, 
-                killerId: attacker.id,
-                xpGained: xpGain,
-                newAttackerXp: attacker.xp
-            });
-
-            console.log(`💀 Player ${victim.id} was slain! Killer earned ${xpGain} XP.`);
-
-            
-        }
-    }
-});
-
-// ==========================================
-    // AREA OF EFFECT (AoE) ABILITY LISTENER
-    // ==========================================
-    socket.on('abilityAoE', (data) => {
-        const attacker = players[socket.id];
-        if (!attacker) return;
-
-        for (let vid in players) {
-            if (vid === socket.id) continue; // Don't hit yourself
-            
-            const victim = players[vid];
-            const dx = victim.x - data.x;
-            const dy = victim.y - data.y;
-            const distSq = (dx * dx) + (dy * dy);
-            const radiusSq = data.radius * data.radius;
-
-            if (distSq <= radiusSq && victim.hp > 0) {
-                
-                // --- p3: DIVINE BUBBLE EXPLOSION ---
-                if (data.type === 'divineBubbleExplosion') {
-                    // 1. Knockback Math
-                    const dist = Math.sqrt(distSq) || 1; 
-                    const pushPower = 32; 
-                    victim.x += (dx / dist) * pushPower;
-                    victim.y += (dy / dist) * pushPower;
-                    
-                    // Tell all clients to update this player's position
-                    io.emit('forcedMovement', { id: victim.id, x: victim.x, y: victim.y });
-
-                    // 2. Apply Unified Magic Damage (Triggers Fever/Resonance)
-                    applyMagicSpellDamage(attacker, victim, data.damage);
-                }
-
-                // --- p5: RADIANT NOVA EXPLOSION ---
-                if (data.type === 'radiantNovaExplosion') {
-                    // 1. Apply Slow CC (Lasts 2.0 seconds)
-                    io.emit('playerCC', { victimId: victim.id, ccType: 'slow', duration: 2.0 });
-
-                    // 2. Apply Unified Magic Damage (Triggers Fever/Resonance)
-                    applyMagicSpellDamage(attacker, victim, data.damage);
-                }
-
-                // --- p11: RING OF PENANCE ---
-                if (data.type === 'ringOfPenance') {
-                    // 1. Apply IMPRISON CC (Mask: 13, Duration: 1.5s)
-                    // Note: You can hardcode 13 here, or copy the CC object into server.js
-                    const IMPRISON_MASK = 1 | 4 | 8; // MOVE + CAST_MOVE + CAST_NON_MOVE
-                    
-                    io.emit('playerCC', { 
-                        victimId: victim.id, 
-                        ccMask: IMPRISON_MASK, 
-                        duration: 1.5 
-                    });
-
-                    // 2. Apply Unified Magic Damage (Triggers Fever/Resonance)
-                    applyMagicSpellDamage(attacker, victim, data.damage);
-                }
-
-                // --- p14: CONSECRATION TICK ---
-                if (data.type === 'consecrationTick') {
-                    // No CC, just raw Magic Damage! 
-                    // This will naturally apply and consume Resonance!
-                    applyMagicSpellDamage(attacker, victim, data.damage);
-                }
-
-                // --- p16: ZENITH GUARDIAN SPAWN ---
-                if (data.type === 'zenithGuardianSpawn') {
-                    // BIND CC: Cannot Move or Attack (1 | 2 = 3)
-                    const BIND_MASK = 1 | 2; 
-                    
-                    io.emit('playerCC', { 
-                        victimId: victim.id, 
-                        ccMask: BIND_MASK, 
-                        duration: 1.5 
-                    });
-
-                    // Apply Magic Damage (Triggers Resonance!)
-                    applyMagicSpellDamage(attacker, victim, data.damage);
-                }
-            }
-        }
-    });
-
-    // Allow players to heal each other
-    socket.on('healPlayer', (data) => {
-        const target = players[data.targetId];
-        if (target && target.hp > 0) {
-            target.hp = Math.min(target.maxHp || 100, target.hp + data.amount);
-            io.emit('playerHealed', { targetId: target.id, newHp: target.hp, amount: data.amount });
-        }
-    });
-
-    // --- ADD THIS inside io.on('connection') in server.js ---
-
-    // Route targeted buffs to allies
-    socket.on('castBuffOnAlly', (data) => {
-        // Send a private message ONLY to the targeted ally
-        io.to(data.targetId).emit('receiveAllyBuff', data);
-    });
-
-    // --- Add inside io.on('connection') ---
-    socket.on('fireProjectile', (data) => {
-        // We add the socket.id so the projectile knows who fired it (no friendly fire)
-        projectiles.push({
-            id: Math.random().toString(36).substr(2, 9),
-            ownerId: socket.id,
-            type: data.type,
-            x: data.x,
-            y: data.y,
-            dx: data.dx,
-            dy: data.dy,
-            speed: data.speed,
-            life: data.life,
-            radius: data.radius,
-            damage: data.damage
-        });
-    });
-
-    // --- Inside io.on('connection') ---
-    socket.on('fireHomingProjectile', (data) => {
-        const attacker = players[socket.id];
-        const target = players[data.targetId];
-        if (!attacker || !target) return;
-
-        projectiles.push({
-            id: Math.random().toString(36).substr(2, 9),
-            ownerId: socket.id,
-            type: data.type,
-            targetId: data.targetId, // Homing flag
-            x: attacker.x + 8,
-            y: attacker.y + 8,
-            speed: 350, // Fast!
-            life: 2.0,  // Fizzles after 2s if it can't catch them
-            damage: data.damage,
-            skillIndex: data.skillIndex
-        });
-    });
-
-
-    // server.js
-// Locate socket.on('syncTile') inside server.js and update:
-    socket.on('syncTile', (data) => {
-        socket.broadcast.emit('syncTile', data);
-
-        // 🎯 THE FIX: Sync manual tile changes (e.g. eating crops/decaying) to server memory
-        if (data.traits === 0) {
-            serverBacteria.delete(`${data.gx}_${data.gy}`);
-        } else {
-            serverBacteria.set(`${data.gx}_${data.gy}`, data.traits);
-        }
-    });
-
-    // G. Handle Item Drops
-    socket.on('dropItem', (data) => {
-        // data = { gx, gy, itemType, health, virulence }
-        socket.broadcast.emit('remoteDrop', data);
-    });
-
-    // --- 🆕 STEP 2: THE SACRIFICE LISTENER ---
-    // ==========================================
-    // 💎 DYNAMIC LIQUIDITY-BASED SACRIFICE
-    // ==========================================
-    // ==========================================
-    // 💎 SECURE DYNAMIC SACRIFICE LOGIC
-    // ==========================================
-    // 💎 SECURE DYNAMIC SACRIFICE LOGIC
-    // ==========================================
-    // 💎 SECURE DYNAMIC SACRIFICE LOGIC
-    // ==========================================
     socket.on('sacrificeItem', (data) => {
         const player = players[socket.id];
         if (!player) return;
 
-        // 🛡️ RATE LIMITER: Only allow 1 sacrifice per second
         const now = Date.now();
         if (player.lastSacrifice && now - player.lastSacrifice < 1000) {
             console.log(`🚨 SPAM BLOCKED: ${socket.wallet} is sending packets too fast.`);
@@ -2263,15 +1477,12 @@ socket.on('pvpAttack', (data) => {
         const isValidSeed = POINT_VALUES[data.itemType];
         if (!isValidSeed) return;
 
-        // 🛡️ HARD CAP: Hackers cannot spoof millions. Max 64 (1 stack).
         const requestedCount = Math.min(64, Math.max(1, data.count || 1)); 
 
-        // Calculate Payout
         const effectiveTGV = Math.max(0.00000001, currentTVL - globalDebt);
         const pointsPerSeed = effectiveTGV / 640000;
         const totalPoints = pointsPerSeed * requestedCount; 
 
-        // Apply Points
         player.inGameUni = (parseFloat(player.inGameUni) || 0.0) + totalPoints;
         globalDebt = (parseFloat(globalDebt) || 0.0) + totalPoints;
         
@@ -2287,13 +1498,197 @@ socket.on('pvpAttack', (data) => {
 
         console.log(`💎 ${socket.wallet || socket.id} sacrificed ${requestedCount}x ${data.itemType}`);
     });
-    // ==========================================
-    // ⛏️ MINING JOB SYSTEM
-    // ==========================================
+
+    socket.on('pvpAttack', (data) => {
+        const victim = players[data.targetId];
+        const attacker = players[socket.id];
+
+        if (victim && attacker && victim.hp > 0) {
+            const victimArmor = Math.max(1, victim.armor || 1); 
+            const armorReduction = Math.pow(0.5, Math.log10(victimArmor));
+            const finalDamage = Math.max(1, Math.floor(attacker.ad * armorReduction));
+
+            if (victim.isInvincible) {
+                console.log(`👼 ${victim.id} is Invincible! Damage ignored.`);
+                return; 
+            }
+
+            if (victim.hasDivineBubble) {
+                console.log(`✨ DIVINE BUBBLE POPPED on ${victim.id}! Blocked ${finalDamage} damage.`);
+                victim.hasDivineBubble = false;
+                
+                io.emit('playerHit', {
+                    victimId: victim.id,
+                    newHp: victim.hp,
+                    newShield: victim.shield,
+                    bubblePopped: true, 
+                    attackerId: attacker.id
+                });
+                return; 
+            }
+
+            if (victim.shield > 0) {
+                const damageToShield = Math.min(victim.shield, finalDamage);
+                victim.shield -= damageToShield;
+                finalDamage -= damageToShield; 
+            }
+
+            victim.hp -= finalDamage;
+            
+            io.emit('playerHit', {
+                victimId: victim.id,
+                newHp: victim.hp,
+                newShield: victim.shield, 
+                attackerId: attacker.id
+            });
+
+            if (victim.hp <= 0) {
+                console.log(`DEBUG: Victim ${victim.id} had ${victim.xp} XP on server.`);
+
+                victim.hp = 0;
+                
+                const xpGain = (victim.xp || 0) * 0.30;
+                attacker.xp = (attacker.xp || 0) + xpGain;
+
+                if (victim.wallet) {
+                    userDb[victim.wallet].hp = 0;
+                    userDb[victim.wallet].xp = victim.xp; 
+                    fs.writeFileSync('persistence.json', JSON.stringify(userDb, null, 2));
+                }
+
+                io.emit('playerKilled', { 
+                    victimId: victim.id, 
+                    killerId: attacker.id,
+                    xpGained: xpGain,
+                    newAttackerXp: attacker.xp
+                });
+
+                console.log(`💀 Player ${victim.id} was slain! Killer earned ${xpGain} XP.`);
+            }
+        }
+    });
+
+    socket.on('abilityAoE', (data) => {
+        const attacker = players[socket.id];
+        if (!attacker) return;
+
+        for (let vid in players) {
+            if (vid === socket.id) continue; 
+            
+            const victim = players[vid];
+            const dx = victim.x - data.x;
+            const dy = victim.y - data.y;
+            const distSq = (dx * dx) + (dy * dy);
+            const radiusSq = data.radius * data.radius;
+
+            if (distSq <= radiusSq && victim.hp > 0) {
+                if (data.type === 'divineBubbleExplosion') {
+                    const dist = Math.sqrt(distSq) || 1; 
+                    const pushPower = 32; 
+                    victim.x += (dx / dist) * pushPower;
+                    victim.y += (dy / dist) * pushPower;
+                    
+                    io.emit('forcedMovement', { id: victim.id, x: victim.x, y: victim.y });
+                    applyMagicSpellDamage(attacker, victim, data.damage);
+                }
+
+                if (data.type === 'radiantNovaExplosion') {
+                    io.emit('playerCC', { victimId: victim.id, ccType: 'slow', duration: 2.0 });
+                    applyMagicSpellDamage(attacker, victim, data.damage);
+                }
+
+                if (data.type === 'ringOfPenance') {
+                    const IMPRISON_MASK = 1 | 4 | 8; 
+                    io.emit('playerCC', { 
+                        victimId: victim.id, 
+                        ccMask: IMPRISON_MASK, 
+                        duration: 1.5 
+                    });
+                    applyMagicSpellDamage(attacker, victim, data.damage);
+                }
+
+                if (data.type === 'consecrationTick') {
+                    applyMagicSpellDamage(attacker, victim, data.damage);
+                }
+
+                if (data.type === 'zenithGuardianSpawn') {
+                    const BIND_MASK = 1 | 2; 
+                    io.emit('playerCC', { 
+                        victimId: victim.id, 
+                        ccMask: BIND_MASK, 
+                        duration: 1.5 
+                    });
+                    applyMagicSpellDamage(attacker, victim, data.damage);
+                }
+            }
+        }
+    });
+
+    socket.on('healPlayer', (data) => {
+        const target = players[data.targetId];
+        if (target && target.hp > 0) {
+            target.hp = Math.min(target.maxHp || 100, target.hp + data.amount);
+            io.emit('playerHealed', { targetId: target.id, newHp: target.hp, amount: data.amount });
+        }
+    });
+
+    socket.on('castBuffOnAlly', (data) => {
+        io.to(data.targetId).emit('receiveAllyBuff', data);
+    });
+
+    socket.on('fireProjectile', (data) => {
+        projectiles.push({
+            id: Math.random().toString(36).substr(2, 9),
+            ownerId: socket.id,
+            type: data.type,
+            x: data.x,
+            y: data.y,
+            dx: data.dx,
+            dy: data.dy,
+            speed: data.speed,
+            life: data.life,
+            radius: data.radius,
+            damage: data.damage
+        });
+    });
+
+    socket.on('fireHomingProjectile', (data) => {
+        const attacker = players[socket.id];
+        const target = players[data.targetId];
+        if (!attacker || !target) return;
+
+        projectiles.push({
+            id: Math.random().toString(36).substr(2, 9),
+            ownerId: socket.id,
+            type: data.type,
+            targetId: data.targetId, 
+            x: attacker.x + 8,
+            y: attacker.y + 8,
+            speed: 350, 
+            life: 2.0,  
+            damage: data.damage,
+            skillIndex: data.skillIndex
+        });
+    });
+
+    socket.on('syncTile', (data) => {
+        socket.broadcast.emit('syncTile', data);
+
+        if (data.traits === 0) {
+            serverBacteria.delete(`${data.gx}_${data.gy}`);
+        } else {
+            serverBacteria.set(`${data.gx}_${data.gy}`, data.traits);
+        }
+    });
+
+    socket.on('dropItem', (data) => {
+        socket.broadcast.emit('remoteDrop', data);
+    });
+
     socket.on('requestOre', (oreId) => {
         if (!oreDb[oreId]) {
             oreDb[oreId] = {
-                workLeft: 3600, // 1 hour of manual striking
+                workLeft: 3600, 
                 maxWork: 3600,
                 lastSpeedUp: 0,
                 claimed: false
@@ -2302,11 +1697,9 @@ socket.on('pvpAttack', (data) => {
         socket.emit('oreData', { oreId, data: oreDb[oreId] });
     });
 
-    // 🌟 NEW: Processes manual strikes from pickaxes!
     socket.on('mineOreStrike', (data) => {
         const { oreId } = data;
         
-        // If someone hits it before opening the menu, initialize it!
         if (!oreDb[oreId]) {
             oreDb[oreId] = { workLeft: 3600, maxWork: 3600, lastSpeedUp: 0, claimed: false };
         }
@@ -2315,14 +1708,12 @@ socket.on('pvpAttack', (data) => {
         if (ore.workLeft > 0) {
             ore.workLeft--;
             
-            // Broadcast every 5 ticks so the server doesn't lag
             if (ore.workLeft % 5 === 0 || ore.workLeft === 0) {
                 io.emit('oreUpdated', { oreId, data: ore });
                 fs.writeFileSync('ores.json', JSON.stringify(oreDb, null, 2));
             }
         }
     });
-
 
     socket.on('collectOre', (data) => {
         const { oreId } = data;
@@ -2338,14 +1729,47 @@ socket.on('pvpAttack', (data) => {
         }
     });
 
-    // ==========================================
-    // ♻️ REFUND FAILED WITHDRAWALS
-    // ==========================================
-    // ♻️ REFUND FAILED WITHDRAWALS
-    // ==========================================
+    socket.on('speedUpOre', (data) => {
+        const { oreId } = data;
+        const player = players[socket.id];
+        const ore = oreDb[oreId];
+        
+        if (!ore || !player) return;
+
+        const SPEEDUP_COST = 1.22; 
+        const COOLDOWN_MS = 24 * 60 * 60 * 1000; 
+        const now = Date.now();
+
+        if (now - ore.lastSpeedUp < COOLDOWN_MS) {
+            socket.emit('oreMessage', "The blast charges are still cooling down. Try again tomorrow!");
+            return;
+        }
+
+        if (player.inGameUni >= SPEEDUP_COST) {
+            player.inGameUni -= SPEEDUP_COST; 
+            ore.workLeft = 0;                 
+            ore.lastSpeedUp = now; 
+            
+            globalDebt = Math.max(0, globalDebt - SPEEDUP_COST); 
+            saveDebt();
+            logActivity('SPEEDUP', socket.wallet || socket.id, `Paid ${SPEEDUP_COST} UNI to blast an Iron Vein`);
+            
+            fs.writeFileSync('ores.json', JSON.stringify(oreDb, null, 2));
+            io.emit('oreUpdated', { oreId, data: ore });
+            socket.emit('balanceUpdated', { inGameUni: player.inGameUni }); 
+            
+            console.log(`🧨 ${socket.wallet} paid ${SPEEDUP_COST} UNI to blast open ${oreId}!`);
+        } else {
+            socket.emit('oreMessage', `Insufficient funds! You need ${SPEEDUP_COST} UNI.`);
+        }
+            
+        broadcastEffectiveTGV();
+        syncPlayerAndSave(socket.id);
+    });
+
     socket.on('refundWithdrawal', (amountStr) => {
         const player = players[socket.id];
-        const amount = parseFloat(amountStr); // Convert back to number
+        const amount = parseFloat(amountStr); 
         
         if (player && amount > 0) {
             player.inGameUni += amount;
@@ -2353,11 +1777,9 @@ socket.on('pvpAttack', (data) => {
             console.log(`♻️ Refunded ${amount.toFixed(8)} UNI to ${socket.wallet}`);
         }
 
-        broadcastEffectiveTGV()
-        syncPlayerAndSave(socket.id)
-
+        broadcastEffectiveTGV();
+        syncPlayerAndSave(socket.id);
     });
-
 
     socket.on('requestCellar', (cellarId) => {
         if (!cellarDb[cellarId]) {
@@ -2372,9 +1794,6 @@ socket.on('pvpAttack', (data) => {
         socket.broadcast.emit('cellarUpdated', data);
     });
 
-    // ==========================================
-    // 🆕 HAY STORAGE SYSTEM
-    // ==========================================
     socket.on('requestHayStorage', (hayStorageId) => {
         if (!hayDb[hayStorageId]) {
             hayDb[hayStorageId] = [];
@@ -2388,128 +1807,102 @@ socket.on('pvpAttack', (data) => {
         socket.broadcast.emit('hayStorageUpdated', data);
     });
 
-// ... inside io.on('connection', (socket) => { ...
+    socket.on('identifyWallet', (data) => {
+        const rawAddress = (typeof data === 'object') ? data.address : data;
+        if (!rawAddress) return;
+        const address = (rawAddress.startsWith('0x')) ? ethers.getAddress(rawAddress) : rawAddress;
+        socket.wallet = address;
 
-socket.on('identifyWallet', (data) => {
-    const rawAddress = (typeof data === 'object') ? data.address : data;
-    if (!rawAddress) return;
-    const address = (rawAddress.startsWith('0x')) ? ethers.getAddress(rawAddress) : rawAddress;
-    socket.wallet = address;
-
-    if (userDb[address]) {
-        console.log(`💾 Restore: ${address} (${userDb[address].inventory?.length || 0} items)`);
-        
-        // 🛡️ THE FIX: Merge the database record into the active RAM object
-        // This ensures stats AND inventory are both restored.
-        players[socket.id] = { 
-            ...players[socket.id], 
-            ...userDb[address], 
-            id: socket.id, 
-            isOffline: false 
-        };
-        
-        socket.emit('restoreHero', players[socket.id]);
-    } else {
-        socket.emit('needsCharacterCreation');
-    }
-});
-
-// 🆕 ADD THIS NEW LISTENER:
-socket.on('createCharacter', (data) => {
-    const { wallet, charClass, skills } = data;
-    const address = (wallet.startsWith('0x')) ? ethers.getAddress(wallet) : wallet;
-
-    players[socket.id].wallet = address;
-    players[socket.id].charClass = charClass;
-    players[socket.id].skills = skills;
-    
-    // 🛡️ THE FIX: Only initialize to empty if there is no saved bag
-    if (!userDb[address] || !userDb[address].inventory) {
-        players[socket.id].inventory = [];
-    } else {
-        players[socket.id].inventory = userDb[address].inventory;
-    }
-    
-    syncPlayerAndSave(socket.id);
-    socket.emit('restoreHero', players[socket.id]);
-});
-
-// ... keep the rest unchanged
-
-socket.on('disconnect', () => {
-    const p = players[socket.id];
-    if (!p) return;
-
-    // --- 🛌 SAVE DATA (for real wallets) ---
-    if (socket.wallet) {
-        syncPlayerAndSave(socket.id);
-    }
-
-    // --- 🧹 GUEST DEBT RECOVERY ---
-    // If a Guest logs off, their points are lost forever.
-    // We remove their balance from the Global Debt to "recycle" the liquidity.
-    if (p.wallet && p.wallet.startsWith('Guest_')) {
-        const abandonedUNI = p.inGameUni || 0;
-        if (abandonedUNI > 0) {
-            globalDebt = Math.max(0, globalDebt - abandonedUNI);
-            saveDebt();
-            broadcastEffectiveTGV(); // 👈 Recalculates TGV for active players
-            console.log(`🧹 Guest ${p.wallet} logged off. ${abandonedUNI.toFixed(8)} UNI recycled to TGV.`);
+        if (userDb[address]) {
+            console.log(`💾 Restore: ${address} (${userDb[address].inventory?.length || 0} items)`);
+            
+            players[socket.id] = { 
+                ...players[socket.id], 
+                ...userDb[address], 
+                id: socket.id, 
+                isOffline: false 
+            };
+            
+            socket.emit('restoreHero', players[socket.id]);
+        } else {
+            socket.emit('needsCharacterCreation');
         }
-    }
+    });
 
-    // --- 🛌 HARDCORE LOGOUT CHECK ---
-    const safeTiles = [60, 61, 42, 48, 50];
-    const isOnSafeTile = safeTiles.includes(p.currentTileID);
+    socket.on('createCharacter', (data) => {
+        const { wallet, charClass, skills } = data;
+        const address = (wallet.startsWith('0x')) ? ethers.getAddress(wallet) : wallet;
 
-    if (isOnSafeTile) {
-        delete players[socket.id];
-        io.emit('playerLeft', socket.id);
-    } else {
-        p.isOffline = true;
-        p.isMoving = false;
-    }
-});
+        players[socket.id].wallet = address;
+        players[socket.id].charClass = charClass;
+        players[socket.id].skills = skills;
+        
+        if (!userDb[address] || !userDb[address].inventory) {
+            players[socket.id].inventory = [];
+        } else {
+            players[socket.id].inventory = userDb[address].inventory;
+        }
+        
+        syncPlayerAndSave(socket.id);
+        socket.emit('restoreHero', players[socket.id]);
+    });
 
+    socket.on('disconnect', () => {
+        const p = players[socket.id];
+        if (!p) return;
+
+        if (socket.wallet) {
+            syncPlayerAndSave(socket.id);
+        }
+
+        if (p.wallet && p.wallet.startsWith('Guest_')) {
+            const abandonedUNI = p.inGameUni || 0;
+            if (abandonedUNI > 0) {
+                globalDebt = Math.max(0, globalDebt - abandonedUNI);
+                saveDebt();
+                broadcastEffectiveTGV(); 
+                console.log(`🧹 Guest ${p.wallet} logged off. ${abandonedUNI.toFixed(8)} UNI recycled to TGV.`);
+            }
+        }
+
+        const safeTiles = [60, 61, 42, 48, 50];
+        const isOnSafeTile = safeTiles.includes(p.currentTileID);
+
+        if (isOnSafeTile) {
+            delete players[socket.id];
+            io.emit('playerLeft', socket.id);
+        } else {
+            p.isOffline = true;
+            p.isMoving = false;
+        }
+    });
 });
 
 function saveStores() {
     fs.writeFileSync('stores.json', JSON.stringify(storeDb, null, 2));
 }
 
-// server.js
 function syncPlayerAndSave(socketId) {
     const p = players[socketId];
     if (!p || !p.wallet) return;
 
-    // 🛡️ THE FIX: Ensure we create a copy of the player that includes the inventory
     userDb[p.wallet] = {
         ...p,
-        id: undefined,  // Strip temp socket ID
-        target: null    // Strip temp combat targets
+        id: undefined,  
+        target: null    
     };
 
     fs.writeFileSync('persistence.json', JSON.stringify(userDb, null, 2));
 }
 
-// Add this function at the bottom of server.js
 function broadcastEffectiveTGV() {
     const effectiveTGV = Math.max(0, currentTVL - globalDebt);
     io.emit('tgvUpdate', { tgv: effectiveTGV });
 }
 
-// Add this interval to the bottom of server.js:
-
-
-// --- Replace your setInterval at the bottom of server.js ---
-
-// ==========================================
-// THE HEARTBEAT (50ms Physics Loop)
-// Update the 50ms heartbeat loop in server.js:
 setInterval(() => {
-    const delta = 0.05; // 50ms in seconds
+    const delta = 0.05; 
 
-    // 1. UPDATE DEBUFF TIMERS (Resonance)
     for (let vid in players) {
         const p = players[vid];
         if (p.resonanceTimer > 0) {
@@ -2520,7 +1913,6 @@ setInterval(() => {
         }
     }
 
-    // Locate serverAnimals.forEach(a => { ... }) inside setInterval in server.js and update:
     serverAnimals.forEach(a => {
         if (a.eggTimer === undefined) a.eggTimer = 15;
         if (a.poopTimer === undefined) a.poopTimer = 10;
@@ -2533,31 +1925,24 @@ setInterval(() => {
         const tx = Math.floor(a.x / 16);
         const ty = Math.floor(a.y / 16);
         
-        // 🎯 THE FIX: Declare the chicken's current chunk coordinates at the top of the loop
         const cx = Math.floor(tx / 100);
         const cy = Math.floor(ty / 100);
 
-        // Lay Egg (only if fed)
         if (a.eggTimer <= 0 && a.energy > 30) {
             a.eggTimer = 30 + Math.random() * 30;
             const packedTraits = (1 & 0xFF) | ((16 & 0xFF) << 20); 
             io.emit('syncTile', { gx: tx, gy: ty, traits: packedTraits });
         }
 
-        // Drop Poop
         if (a.poopTimer <= 0) {
             a.poopTimer = 20 + Math.random() * 30;
             const packedTraits = (3 & 0xFF) | ((12 & 0xFF) << 8) | ((4 & 0xFF) << 20); 
             io.emit('syncTile', { gx: tx, gy: ty, traits: packedTraits });
         }
 
-        // ==========================================
-        // 🧠 CHICKEN HUNGER SEARCH (AUTHORITATIVE)
-        // ==========================================
         if (a.energy < 50 && a.goal !== 'eating') {
             let foundFood = false;
 
-            // 🎯 PRIORITY 1: Search 5-tile radius for Dropped Hay in serverBacteria memory
             for (let ox = -5; ox <= 5; ox++) {
                 for (let oy = -5; oy <= 5; oy++) {
                     const checkKey = `${tx + ox}_${ty + oy}`;
@@ -2566,7 +1951,7 @@ setInterval(() => {
                         const traits = serverBacteria.get(checkKey);
                         const typeID = (traits >> 20) & 0xFF;
                         
-                        if (typeID === 17) { // Found Hay!
+                        if (typeID === 17) { 
                             a.targetX = (tx + ox) * 16 + 8;
                             a.targetY = (ty + oy) * 16 + 8;
                             a.goal = 'eating';
@@ -2580,19 +1965,15 @@ setInterval(() => {
                 if (foundFood) break;
             }
 
-            // Locate "Priority 2: Search for growing crops" in the heartbeat loop of server.js and replace it:
-            // 🎯 PRIORITY 2: Search for growing crops if no hay is available (Optimized)
             if (!foundFood) {
                 let nearestPlant = null;
                 let nearestDist = Infinity;
 
                 for (let [key, plant] of serverPlants) {
-                    // 🎯 THE FIX: Instantly skip plants in different chunks
                     const pCX = Math.floor(plant.gx / 100);
                     const pCY = Math.floor(plant.gy / 100);
                     if (pCX !== cx || pCY !== cy) continue;
 
-                    // 🎯 THE FIX: Instantly skip plants further than an 8-tile radius using cheap subtractions
                     const dx = Math.abs(plant.gx - tx);
                     const dy = Math.abs(plant.gy - ty);
                     if (dx > 8 || dy > 8) continue;
@@ -2638,7 +2019,6 @@ setInterval(() => {
             a.goal = 'wander';
         }
 
-        // Stepping & Eating execution
         if (a.targetX !== undefined) {
             const dx = a.targetX - a.x;
             const dy = a.targetY - a.y;
@@ -2651,12 +2031,9 @@ setInterval(() => {
                 a.state = 'walking';
             } else {
                 a.state = 'idle';
-                // 🎯 CHANGE THESE LINES: Clear using undefined instead of null
                 a.targetX = undefined;
                 a.targetY = undefined;
 
-
-                // Execute bite action
                 if (a.goal === 'eating') {
                     if (a.foodType === 'hay') {
                         const coords = a.foodKey.split('_');
@@ -2666,19 +2043,18 @@ setInterval(() => {
                             let traits = serverBacteria.get(a.foodKey);
                             
                             let health = traits & 0xFF;
-                            health = Math.max(0, health - 10); // Deduct 1 bite (10% of hay bundle)
+                            health = Math.max(0, health - 10); 
 
                             if (health <= 0) {
-                                serverBacteria.delete(a.foodKey); // Depleted
+                                serverBacteria.delete(a.foodKey); 
                                 io.emit('syncTile', { gx: hx, gy: hy, traits: 0 });
                             } else {
-                                // Repack and update
                                 const typeID = (traits >> 20) & 0xFF;
                                 const newTraits = ((health & 0xFF) | ((typeID & 0xFF) << 20)) >>> 0;
                                 serverBacteria.set(a.foodKey, newTraits);
                                 io.emit('syncTile', { gx: hx, gy: hy, traits: newTraits });
                             }
-                            a.energy = 100; // Fed!
+                            a.energy = 100; 
                             console.log(` 🌾 Chicken ate Hay at [${hx}, ${hy}]. Health remaining: ${health}`);
                         }
                     } 
@@ -2687,7 +2063,7 @@ setInterval(() => {
                             const plant = serverPlants.get(a.foodKey);
                             serverPlants.delete(a.foodKey);
                             io.emit('plantRemoved', { gx: plant.gx, gy: plant.gy });
-                            a.energy = 100; // Fed!
+                            a.energy = 100; 
                             console.log(`🌽 Chicken ate crop at [${a.foodKey}]`);
                         }
                     }
@@ -2697,7 +2073,6 @@ setInterval(() => {
         }
     });
 
-    // 3. UPDATE FLYING PROJECTILES
     for (let i = projectiles.length - 1; i >= 0; i--) {
         let p = projectiles[i];
 
@@ -2761,7 +2136,6 @@ setInterval(() => {
         if (hit || p.life <= 0) projectiles.splice(i, 1); 
     }
 
-    // 🎯 4. BROADCAST ALL ENTITIES
     io.emit('position', { 
         playerbase: players,
         projectiles: projectiles,
@@ -2769,8 +2143,6 @@ setInterval(() => {
     });
 }, 50);
 
-
-// 5. START SERVER
 const PORT = process.env.PORT || 10000;
 http.listen(PORT, () => {
     console.log(`

@@ -177,39 +177,28 @@
             </div>
         </div>
 
-        <!-- REVISED SMELTER MENU -->
-        <div id="smelter-menu" class="hidden menu-modal" style="z-index: 3000;">
-            <div class="pixel-panel" style="width: 350px; text-align: center;">
-                <h2 style="margin-top:0;">🔥 SMELTER</h2>
-                <p style="font-size: 8px; margin-bottom: 20px; color:#555;">Stand in front and hold 'F' to smelt ore.</p>
+        <!-- UNIFIED WORKSTATION MODAL -->
+        <div id="workstation-menu" class="hidden menu-modal" style="z-index: 3000;">
+            <div class="pixel-panel" style="width: 380px; text-align: center;">
+                <h2 id="ws-title" style="color: var(--text-dark); margin-top: 0;">WORKSTATION</h2>
+                <p id="ws-subtitle" style="font-size: 8px; margin-bottom: 20px; color:#555;">Hold 'F' to perform work manually.</p>
+                
                 <div style="background: #fff; padding: 15px; border: 4px solid var(--bg-dark); margin-bottom: 20px;">
                     <div style="font-size: 10px; margin-bottom: 10px;">WORK REMAINING</div>
                     <div style="width: 100%; background: #ccc; height: 16px; border: 2px solid #000; position: relative; margin-bottom: 8px;">
-                        <div id="smelter-progress-bar" style="width: 0%; height: 100%; background: var(--highlight);"></div>
-                        <div id="smelter-progress-text" style="position: absolute; width: 100%; top: 2px; font-size: 8px; text-align: center; color: #000;">200 / 200</div>
+                        <div id="ws-progress-bar" style="width: 0%; height: 100%; background: var(--highlight);"></div>
+                        <div id="ws-progress-text" style="position: absolute; width: 100%; top: 2px; font-size: 8px; text-align: center; color: #000;">0 / 100</div>
                     </div>
-                    <div id="smelter-cost-text" style="font-size: 8px; color: var(--banana-dark); height: 10px;"></div>
+                    <div id="ws-cost-text" style="font-size: 8px; color: var(--banana-dark); height: 10px;"></div>
                 </div>
-                <button id="smelter-start-btn" class="pixel-btn" style="width: 100%; margin-bottom: 10px;">START (1x Iron Ore)</button>
-                <button id="close-smelter-btn" class="pixel-btn cancel" style="width: 100%;">LEAVE</button>
-            </div>
-        </div>
 
-        <!-- REVISED ANVIL MENU -->
-        <div id="anvil-menu" class="hidden menu-modal" style="z-index: 3000;">
-            <div class="pixel-panel" style="width: 350px; text-align: center;">
-                <h2 style="margin-top:0;">🔨 ANVIL</h2>
-                <p style="font-size: 8px; margin-bottom: 20px; color:#555;">Stand in front and hold 'F' to hammer metal.</p>
-                <div style="background: #fff; padding: 15px; border: 4px solid var(--bg-dark); margin-bottom: 20px;">
-                    <div style="font-size: 10px; margin-bottom: 10px;">WORK REMAINING</div>
-                    <div style="width: 100%; background: #ccc; height: 16px; border: 2px solid #000; position: relative; margin-bottom: 8px;">
-                        <div id="anvil-progress-bar" style="width: 0%; height: 100%; background: var(--highlight);"></div>
-                        <div id="anvil-progress-text" style="position: absolute; width: 100%; top: 2px; font-size: 8px; text-align: center; color: #000;">300 / 300</div>
-                    </div>
-                    <div id="anvil-cost-text" style="font-size: 8px; color: var(--banana-dark); height: 10px;"></div>
+                <!-- Displays options if the table (like the Kitchen) supports multiple outputs -->
+                <div id="ws-recipe-container" style="margin-bottom: 15px; display: none;">
+                    <select id="ws-recipe-select" class="pixel-input" style="width: 100%; font-size: 10px; border: 4px solid var(--bg-dark);"></select>
                 </div>
-                <button id="anvil-start-btn" class="pixel-btn" style="width: 100%; margin-bottom: 10px;">START (1x Iron Ingot)</button>
-                <button id="close-anvil-btn" class="pixel-btn cancel" style="width: 100%;">LEAVE</button>
+
+                <button id="ws-action-btn" class="pixel-btn" style="width: 100%; margin-bottom: 10px;">START</button>
+                <button id="ws-close-btn" class="pixel-btn cancel" style="width: 100%;">LEAVE</button>
             </div>
         </div>
 
@@ -305,42 +294,6 @@
             </div>
         </div>
 
-        <!-- REVISED KITCHEN MENU -->
-        <div id="kitchen-menu" class="hidden menu-modal" style="z-index: 3000;">
-            <div class="pixel-panel" style="width: 380px; text-align: center;">
-                <h2 style="color: var(--text-dark); margin-top: 0;">🍳 KITCHEN</h2>
-                <p style="font-size: 8px; margin-bottom: 20px; color:#555;">Stand in front and hold 'F' to cook or extract seeds.</p>
-                
-                <div style="background: #fff; padding: 15px; border: 4px solid var(--bg-dark); margin-bottom: 20px;">
-                    <div style="font-size: 10px; margin-bottom: 10px;">WORK REMAINING</div>
-                    <div style="width: 100%; background: #ccc; height: 16px; border: 2px solid #000; position: relative; margin-bottom: 8px;">
-                        <div id="kitchen-progress-bar" style="width: 0%; height: 100%; background: var(--highlight);"></div>
-                        <div id="kitchen-progress-text" style="position: absolute; width: 100%; top: 2px; font-size: 8px; text-align: center; color: #000;">50 / 50</div>
-                    </div>
-                    <div id="kitchen-cost-text" style="font-size: 8px; color: var(--banana-dark); height: 10px;"></div>
-                </div>
-
-                <div id="kitchen-recipe-select-container" style="margin-bottom: 15px;">
-                    <select id="kitchen-recipe-select" class="pixel-input" style="width: 100%; font-size: 10px; border: 4px solid var(--bg-dark);">
-                        <option value="COOK_FISH">Cook River Bass (50 Work)</option>
-                        <option value="EXTRACT_TURNIP_ITEM">Extract Turnip Seeds (20 Work)</option>
-                        <option value="EXTRACT_TOMATO_ITEM">Extract Tomato Seeds (20 Work)</option>
-                        <option value="EXTRACT_EGGPLANT_ITEM">Extract Eggplant Seeds (20 Work)</option>
-                        <option value="EXTRACT_STRAWBERRY_ITEM">Extract Strawberry Seeds (20 Work)</option>
-                        <option value="EXTRACT_PUMPKIN_ITEM">Extract Pumpkin Seeds (20 Work)</option>
-                        <option value="EXTRACT_WATERMELON_ITEM">Extract Watermelon Seeds (20 Work)</option>
-                        <option value="EXTRACT_CORN_ITEM">Extract Corn Seeds (20 Work)</option>
-                        <option value="EXTRACT_PINEAPPLE_ITEM">Extract Pineapple Crown (20 Work)</option>
-                        <option value="EXTRACT_POTATO_ITEM">Extract Potato Eye (20 Work)</option>
-                        <option value="EXTRACT_WHEAT_ITEM">Extract Wheat Seeds (20 Work)</option>
-                    </select>
-                </div>
-
-                <button id="kitchen-start-btn" class="pixel-btn" style="width: 100%; margin-bottom: 10px;">START</button>
-                <button id="close-kitchen-btn" class="pixel-btn cancel" style="width: 100%;">LEAVE KITCHEN</button>
-            </div>
-        </div>
-
         <!-- CARTOGRAPHY (Map Table) -->
         <div id="maptable-menu" class="hidden menu-modal">
             <div class="pixel-panel" style="display: flex; flex-direction: column; align-items: center; width: 860px; max-width: 95vw; max-height: 95vh; overflow: hidden;">
@@ -361,26 +314,6 @@
                 </div>
 
                 <button id="close-maptable-btn" class="pixel-btn cancel" style="width: 100%; max-width: 400px;">STEP AWAY</button>
-            </div>
-        </div>
-
-        <!-- REVISED HAY TABLE MENU -->
-        <div id="hay-table-menu" class="hidden menu-modal" style="z-index: 3000;">
-            <div class="pixel-panel" style="width: 350px; text-align: center;">
-                <h2 style="color: var(--text-dark); margin-top: 0;">🌾 HAY TABLE</h2>
-                <p style="font-size: 8px; margin-bottom: 20px; color:#555;">Stand in front and hold 'F' to dry grass into hay.</p>
-                
-                <div style="background: #fff; padding: 15px; border: 4px solid var(--bg-dark); margin-bottom: 20px;">
-                    <div style="font-size: 10px; margin-bottom: 10px;">WORK REMAINING</div>
-                    <div style="width: 100%; background: #ccc; height: 16px; border: 2px solid #000; position: relative; margin-bottom: 8px;">
-                        <div id="hay-table-progress-bar" style="width: 0%; height: 100%; background: var(--highlight);"></div>
-                        <div id="hay-table-progress-text" style="position: absolute; width: 100%; top: 2px; font-size: 8px; text-align: center; color: #000;">120 / 120</div>
-                    </div>
-                    <div id="hay-table-cost-text" style="font-size: 8px; color: var(--banana-dark); height: 10px;"></div>
-                </div>
-
-                <button id="hay-table-start-btn" class="pixel-btn" style="width: 100%; margin-bottom: 10px;">START (8x Plant Matter)</button>
-                <button id="close-hay-table-btn" class="pixel-btn cancel" style="width: 100%;">STEP AWAY</button>
             </div>
         </div>
 
