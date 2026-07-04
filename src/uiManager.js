@@ -15,6 +15,7 @@ if (typeof window !== 'undefined') {
 }
 
 export let activeDoorCoords = null;
+let selectedSkills = []; // 👈 Declared at file scope to resolve the ReferenceError
 
 // ==========================================
 // 🏗️ UNIFIED WORKSTATION CONFIGURATIONS
@@ -1184,7 +1185,7 @@ export function openMapTableMenu() {
 // ==========================================
 export let activeOreId = null;
 export let activeOreData = null;
-let confirmingOreSpeedUp = false; // 👈 Resolved variable redeclaration collision
+let confirmingOreSpeedUp = false; 
 
 export function openMiningMenu(oreId, data) {
     activeOreId = oreId;
