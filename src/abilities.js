@@ -1,27 +1,23 @@
-import { checkCollision } from './physics.js';
-import { remotePlayers } from './multiplayer.js'; // 👈 Needed for Divine Bubble
-// Add this to the very top of src/abilities.js
-import { getLevelInfo } from './entities.js';
+// src/abilities.js
 
+import { checkCollision } from './physics.js';
+import { remotePlayers } from './multiplayer.js'; 
+import { getLevelInfo } from './entities.js';
 
 if (typeof window !== 'undefined') {
     logStep("abilities.js loaded");
 }
 
 export const ABILITY_REGISTRY = {
-    
-    
     // ==========================================
     // p1 - VAULT
     // ==========================================
     'p1': {
         id: 'p1', name: 'Vault', cooldown: 4.0,
         execute: (hero, inputState) => {
-            // 1. Read Aim Vector
             let dx = inputState.aim.dx;
             let dy = inputState.aim.dy;
 
-            // 2. Auto-Cast Fallback (If quick-tapped, roll in movement dir or facing dir)
             if (dx === 0 && dy === 0) {
                 dx = inputState.moveX; dy = inputState.moveY;
                 if (dx === 0 && dy === 0) {
@@ -31,7 +27,6 @@ export const ABILITY_REGISTRY = {
                     if (hero.dir.includes('East')) dx = 1;
                 }
             } else {
-                // Normalize moving vectors
                 const dist = Math.sqrt(dx*dx + dy*dy);
                 if (dist>0) { dx/=dist; dy/=dist; }
             }
@@ -45,12 +40,14 @@ export const ABILITY_REGISTRY = {
         }
     },
 
+    // ==========================================
+    // p2 - STANCE TOGGLE
+    // ==========================================
     'p2': {
         id: 'p2',
         name: 'Holy Shield / Holy Blast',
-        cooldown: 0.25, // Very short cooldown so it can be toggled mid-swing
+        cooldown: 0.25, 
         execute: (hero, inputState) => {
-            // Toggle the stance
             if (hero.p2_stance === 'blast') {
                 hero.p2_stance = 'shield';
                 console.log("🛡️ Stance: HOLY SHIELD");
@@ -58,8 +55,6 @@ export const ABILITY_REGISTRY = {
                 hero.p2_stance = 'blast';
                 console.log("💥 Stance: HOLY BLAST");
             }
-            
-            // Optional: You can play a small sound effect here later!
         }
     },
 
@@ -68,26 +63,19 @@ export const ABILITY_REGISTRY = {
     // ==========================================
     'p3': {
         id: 'p3', name: 'Divine Bubble', cooldown: 12.0,
-        isCleanse: true, // 👈 NEW: Tells the engine this spell removes CC
+        isCleanse: true, 
         isMovement: false,
         execute: (hero, inputState) => {
             let targetIsSelf = true;
             let targetAllyId = null;
 
-            if (inputState.aim.dx !== 0 || inputState.aim.dy !== 0) {
-                let bestScore = -Infinity;
-                // ... (Keep your existing dot-product targeting logic here) ...
-            }
-
             if (targetIsSelf) {
                 console.log("🛡️ Self-Cast: DIVINE BUBBLE!");
                 hero.buffs.divineBubble = true;
                 
-                // 🌟 THE CLEANSE EFFECT
-                hero.activeCCs = []; // Instantly wipe all hard CC!
-                hero.slowTimer = 0;  // Wipe soft CC (slows)!
+                hero.activeCCs = []; 
+                hero.slowTimer = 0;  
                 
-                // We must recalculate stats to instantly restore movement speed from slows
                 import('./interactionManager.js').then(m => m.recalculateStats());
 
                 const explosionDamage = hero.magic * 0.10;
@@ -104,7 +92,7 @@ export const ABILITY_REGISTRY = {
     },
 
     // ==========================================
-    // p4 - LION'S BREATH / ASCENSION
+    // p4 - ASCENSION
     // ==========================================
     'p4': {
         id: 'p4', name: "Ascension", cooldown: 60.0,
@@ -119,7 +107,6 @@ export const ABILITY_REGISTRY = {
             } else {
                 let dx = inputState.aim.dx; let dy = inputState.aim.dy;
                 
-                // Quick-cast fallback
                 if (dx === 0 && dy === 0) {
                     if (hero.dir.includes('North')) dy = -1;
                     if (hero.dir.includes('South')) dy = 1;
@@ -147,32 +134,26 @@ export const ABILITY_REGISTRY = {
             let dx = inputState.aim.dx; let dy = inputState.aim.dy; 
             let mag = inputState.aim.mag || 1.0;
 
-            // Auto-Cast Fallback (Drop it right in front of you if quick-tapped)
             if (dx === 0 && dy === 0) {
                 if (hero.dir.includes('North')) dy = -1;
                 if (hero.dir.includes('South')) dy = 1;
                 if (hero.dir.includes('West')) dx = -1;
                 if (hero.dir.includes('East')) dx = 1;
-                mag = 0.5; // Half range on auto-cast
+                mag = 0.5; 
             } else {
-                // Normalize moving vectors
                 const dist = Math.sqrt(dx*dx + dy*dy);
                 if (dist>0) { dx/=dist; dy/=dist; }
             }
 
-            // 1. Calculate Target Location (Max Range ~12 tiles / 200px)
             const maxRange = 200;
             const targetX = (hero.x + 8) + (dx * maxRange * mag);
             const targetY = (hero.y + 8) + (dy * maxRange * mag);
 
-            // 2. Spawn the Warning Zone!
             hero.aoeZones.push({
                 type: 'radiantNova',
                 x: targetX, y: targetY,
-                radius: 32, // 2-tile explosion radius
-                life: 0.6,  // 0.6s delay before it blows up!
-                
-                // 💥 SCALING: Base Damage + (120% AD)
+                radius: 32, 
+                life: 0.6,  
                 damage: 20 + (hero.ad * 1.20) 
             });
         }
@@ -184,13 +165,11 @@ export const ABILITY_REGISTRY = {
     'p6': {
         id: 'p6',
         name: 'Flux Shot',
-        cooldown: 5.0, // Short cooldown for an AA reset
+        cooldown: 5.0, 
         execute: (hero, inputState) => {
             console.log("💫 Flux Shot Activated!");
             hero.buffs.fluxShotEmpowered = true;
 
-            // --- AUTO-ATTACK RESET ---
-            // Instantly clear the attack cooldown and cancel any current windup
             hero.attackTimer = 0;
             hero.isWindingUp = false;
             hero.isAttacking = false; 
@@ -201,17 +180,16 @@ export const ABILITY_REGISTRY = {
     // p7 - WARP
     // ==========================================
     'p7': {
-        id: 'p7', name: 'Warp', cooldown: 12.0, // Flash-like cooldown
+        id: 'p7', name: 'Warp', cooldown: 12.0, 
         execute: (hero, inputState, worldMatrix, roomMatrix) => {
             if (hero.energy < 40) {
                 console.log("Not enough energy for Warp!");
-                return 0; // Refunds cooldown if failed
+                return 0; 
             }
 
             let dx = inputState.aim.dx; let dy = inputState.aim.dy;
             let mag = inputState.aim.mag || 1.0;
 
-            // Auto-Cast (Blink in moving/facing direction)
             if (dx === 0 && dy === 0) {
                 dx = inputState.moveX; dy = inputState.moveY;
                 if (dx === 0 && dy === 0) {
@@ -229,13 +207,10 @@ export const ABILITY_REGISTRY = {
             hero.energy -= 40;
             console.log("🌌 Charging Warp...");
 
-            // Max blink distance: ~5 tiles
             const maxWarpDist = 80; 
             const targetX = hero.x + (dx * maxWarpDist * mag);
             const targetY = hero.y + (dy * maxWarpDist * mag);
 
-            // 🛑 SAFETY RAYCAST: Prevent warping into walls!
-            // We take 20 micro-steps toward the target. The moment we hit a wall, we stop right in front of it.
             let safeX = hero.x;
             let safeY = hero.y;
             const steps = 20;
@@ -249,7 +224,6 @@ export const ABILITY_REGISTRY = {
                 let testY = hero.y + stepY * i;
                 let canMove = true;
 
-                // Test the 4 corners of the hitbox at the new position
                 if (!checkCollision(testX + left, testY + top, worldMatrix, roomMatrix, hero)) canMove = false;
                 if (!checkCollision(testX + right, testY + top, worldMatrix, roomMatrix, hero)) canMove = false;
                 if (!checkCollision(testX + left, testY + bottom, worldMatrix, roomMatrix, hero)) canMove = false;
@@ -259,11 +233,10 @@ export const ABILITY_REGISTRY = {
                     safeX = testX;
                     safeY = testY;
                 } else {
-                    break; // Stop at the last safe position before the wall!
+                    break; 
                 }
             }
 
-            // Lock the hero in place for 0.1s, then pop out at safeX/safeY
             hero.warpTimer = 0.1; 
             hero.warpTarget = { x: safeX, y: safeY };
         }
@@ -273,19 +246,18 @@ export const ABILITY_REGISTRY = {
     // p8 - HEAVEN'S HALO
     // ==========================================
     'p8': {
-        id: 'p8', name: "Heaven's Halo", cooldown: 70.0, // Massive Ultimate Cooldown
+        id: 'p8', name: "Heaven's Halo", cooldown: 70.0, 
         execute: (hero, inputState) => {
             if (hero.energy < 40) {
                 console.log("Not enough energy for Heaven's Halo!");
-                return 0; // Refund cooldown
+                return 0; 
             }
 
             console.log("👼 HEAVEN'S HALO ACTIVATED!");
             hero.energy -= 40;
             hero.buffs.isInvincible = true;
-            hero.invincibleTimer = 6.0; // 6 seconds of immunity
+            hero.invincibleTimer = 6.0; 
 
-            // Tell the server we are glowing!
             import('./multiplayer.js').then(module => {
                 if (module.socket) module.socket.emit('updateStats', { isInvincible: true });
             });
@@ -296,16 +268,15 @@ export const ABILITY_REGISTRY = {
     // p9 - FLARE
     // ==========================================
     'p9': {
-        id: 'p9', name: 'Flare', cooldown: 2.5, // Spammable!
+        id: 'p9', name: 'Flare', cooldown: 2.5, 
         execute: (hero, inputState) => {
             if (hero.energy < 15) {
                 console.log("Not enough energy for Flare!");
-                return 0; // Refund cooldown
+                return 0; 
             }
 
             let dx = inputState.aim.dx; let dy = inputState.aim.dy;
             
-            // Auto-Cast (Shoot in moving/facing direction)
             if (dx === 0 && dy === 0) {
                 dx = inputState.moveX; dy = inputState.moveY;
                 if (dx === 0 && dy === 0) {
@@ -322,7 +293,6 @@ export const ABILITY_REGISTRY = {
             hero.energy -= 15;
             console.log("🔥 Casting Flare!");
 
-            // Damage is 35% of Magic Power
             const damage = hero.magic * 0.35;
 
             import('./multiplayer.js').then(module => {
@@ -333,9 +303,9 @@ export const ABILITY_REGISTRY = {
                         y: hero.y + 8,
                         dx: dx,
                         dy: dy,
-                        speed: 300, // Very fast projectile
-                        life: 0.6,  // Travels for 0.6s (Medium range)
-                        radius: 6,  // Hitbox size
+                        speed: 300, 
+                        life: 0.6,  
+                        radius: 6,  
                         damage: damage
                     });
                 }
@@ -352,17 +322,15 @@ export const ABILITY_REGISTRY = {
         execute: (hero, inputState) => {
             if (hero.energy < 20) {
                 console.log("Not enough energy for Ring of Penance!");
-                return 0; // Refund cooldown
+                return 0; 
             }
 
             hero.energy -= 20;
             console.log("⏳ Charging Ring of Penance...");
             
-            // 1. Lock the hero and start the 0.3s cast timer!
             hero.castTimer = 0.3;
             hero.castSpellId = 'p11';
             
-            // 2. Play a brief visual "Charge Up" animation (Optional)
             hero.animState = 'idle'; 
             hero.isMoving = false;
         }
@@ -372,42 +340,38 @@ export const ABILITY_REGISTRY = {
     // p12 - ZEPHYR
     // ==========================================
     'p12': {
-        id: 'p12', name: 'Zephyr', cooldown: 12.0, // Long and unforgiving baseline!
+        id: 'p12', name: 'Zephyr', cooldown: 12.0, 
         isMovement: false,
         execute: (hero, inputState) => {
             const targetId = inputState.aim.targetId;
             
             if (!targetId) {
                 console.log("❌ Zephyr requires a target!");
-                return 0; // Refund cooldown
+                return 0; 
             }
 
             if (hero.energy < 25) {
                 console.log("❌ Not enough energy for Zephyr!");
-                return 0; // Refund cooldown
+                return 0; 
             }
 
             hero.energy -= 25;
             console.log(`💨 Casting Zephyr on ${targetId}!`);
 
-            // 1. Give the caster the 30% Move Speed buff for 2.5s
-            // (We will add the logic for this buff to interactionManager next)
             hero.buffs.zephyrSpeedTimer = 2.5;
             import('./interactionManager.js').then(m => m.recalculateStats());
 
-            // 2. Fire the homing projectile to the server
             import('./multiplayer.js').then(m => {
                 if (m.socket) {
                     m.socket.emit('fireHomingProjectile', {
                         type: 'zephyr',
                         targetId: targetId,
-                        damage: hero.magic * 0.25, // Base 25% Magic Damage
-                        skillIndex: hero.skills.indexOf('p12') // So server knows which CD to refund!
+                        damage: hero.magic * 0.25, 
+                        skillIndex: hero.skills.indexOf('p12') 
                     });
                 }
             });
 
-            // Return the full 12s cooldown (Server will refund it if we hit a resonant target!)
             return 12.0; 
         }
     },
@@ -416,34 +380,16 @@ export const ABILITY_REGISTRY = {
     // p13 - VANGUARD
     // ==========================================
     'p13': {
-        id: 'p13', name: 'Vanguard', cooldown: 8.0, // Medium cooldown
+        id: 'p13', name: 'Vanguard', cooldown: 8.0, 
         isMovement: false,
         execute: (hero, inputState) => {
             const targetId = inputState.aim.targetId;
             
             if (!targetId) {
                 console.log("❌ Vanguard requires a target!");
-                return 0; // Refund cooldown
+                return 0; 
             }
 
-            // 1. Enforce Short Range (~4 tiles = 64 pixels)
-            // (We have to grab the target's distance from the remotePlayers list)
-            let inRange = false;
-            import('./multiplayer.js').then(m => {
-                const target = m.remotePlayers.get(targetId);
-                if (target) {
-                    const dx = target.x - hero.x;
-                    const dy = target.y - hero.y;
-                    const distSq = (dx * dx) + (dy * dy);
-                    if (distSq <= 64 * 64) { // 64 squared
-                        inRange = true;
-                    }
-                }
-            });
-
-            // Hacky workaround for synchronous execution: assume true for now, 
-            // the server will validate the distance anyway!
-            
             if (hero.energy < 15) {
                 console.log("❌ Not enough energy for Vanguard!");
                 return 0; 
@@ -452,13 +398,12 @@ export const ABILITY_REGISTRY = {
             hero.energy -= 15;
             console.log(`💎 Casting Vanguard on ${targetId}!`);
 
-            // Fire the homing projectile to the server
             import('./multiplayer.js').then(m => {
                 if (m.socket) {
                     m.socket.emit('fireHomingProjectile', {
                         type: 'vanguard',
                         targetId: targetId,
-                        damage: hero.magic * 0.15, // Base 15% Magic Damage
+                        damage: hero.magic * 0.15, 
                         skillIndex: hero.skills.indexOf('p13') 
                     });
                 }
@@ -472,20 +417,19 @@ export const ABILITY_REGISTRY = {
     // p14 - CONSECRATION
     // ==========================================
     'p14': {
-        id: 'p14', name: 'Consecration', cooldown: 12.0, // Long cooldown
+        id: 'p14', name: 'Consecration', cooldown: 12.0, 
         isMovement: false,
         execute: (hero, inputState) => {
             if (hero.energy < 25) {
                 console.log("Not enough energy for Consecration!");
-                return 0; // Refund cooldown
+                return 0; 
             }
 
             let dx = inputState.aim.dx; let dy = inputState.aim.dy; 
             let mag = inputState.aim.mag || 1.0;
 
-            // Auto-Cast (Drop it at your feet if quick-tapped)
             if (dx === 0 && dy === 0) {
-                mag = 0; // Center on self
+                mag = 0; 
             } else {
                 const dist = Math.sqrt(dx*dx + dy*dy);
                 if (dist>0) { dx/=dist; dy/=dist; }
@@ -494,18 +438,17 @@ export const ABILITY_REGISTRY = {
             hero.energy -= 25;
             console.log("🔥 Casting Consecration!");
 
-            const maxRange = 150; // Medium cast range
+            const maxRange = 150; 
             const targetX = (hero.x + 8) + (dx * maxRange * mag);
             const targetY = (hero.y + 8) + (dy * maxRange * mag);
 
-            // Spawn the ticking AoE Zone
             hero.aoeZones.push({
                 type: 'consecration',
                 x: targetX, y: targetY,
-                radius: 48, // 3-tile radius
-                life: 4.0,  // Lasts 4 seconds
-                tickTimer: 0, // Triggers immediately on cast!
-                damage: hero.magic * 0.04 // 4% of Magic Power per tick
+                radius: 48, 
+                life: 4.0,  
+                tickTimer: 0, 
+                damage: hero.magic * 0.04 
             });
         }
     },
@@ -514,22 +457,18 @@ export const ABILITY_REGISTRY = {
     // p15 - FLEETING BULWARK
     // ==========================================
     'p15': {
-        id: 'p15', name: 'Fleeting Bulwark', cooldown: 15.0, // High cooldown for a 5s mega-buff
+        id: 'p15', name: 'Fleeting Bulwark', cooldown: 15.0, 
         isMovement: false,
         execute: (hero, inputState) => {
             if (hero.energy < 20) {
                 console.log("Not enough energy for Fleeting Bulwark!");
-                return 0; // Refund cooldown
+                return 0; 
             }
 
-            // 1. Calculate Buff Values based on Caster's Magic Power
             const bonusArmor = Math.floor(hero.magic * 0.07);
             const bonusMr = Math.floor(hero.magic * 0.04);
-            
-            // Base 25% + (5% per 100 Magic, which is 0.05% per 1 Magic)
             const speedMultiplier = 1.25 + (hero.magic * 0.0005); 
 
-            // 2. Targeting Logic (Ally vs Self)
             let targetIsSelf = true;
             let targetAllyId = null;
 
@@ -559,7 +498,6 @@ export const ABILITY_REGISTRY = {
 
             hero.energy -= 20;
 
-            // 3. Apply the Buff!
             if (targetIsSelf) {
                 console.log("🛡️ Self-Cast: Fleeting Bulwark!");
                 
@@ -568,14 +506,11 @@ export const ABILITY_REGISTRY = {
                 hero.bulwarkMrBonus = bonusMr;
                 hero.bulwarkSpeedBonus = speedMultiplier;
 
-                // Apply the raw defensive stats instantly
                 hero.armor += bonusArmor;
                 hero.mr += bonusMr;
 
-                // Recalculate stats to apply the speed multiplier
                 import('./interactionManager.js').then(m => m.recalculateStats());
 
-                // Tell the server we have new stats
                 import('./multiplayer.js').then(module => {
                     if (module.socket) module.socket.emit('updateStats', { armor: hero.armor, mr: hero.mr });
                 });
@@ -583,7 +518,6 @@ export const ABILITY_REGISTRY = {
             } else {
                 console.log(`🛡️ Ally-Cast: Fleeting Bulwark on ${targetAllyId}!`);
                 
-                // Send the buff to the server to route to the ally
                 import('./multiplayer.js').then(module => {
                     if (module.socket) {
                         module.socket.emit('castBuffOnAlly', { 
@@ -601,14 +535,12 @@ export const ABILITY_REGISTRY = {
     },
 
     // ==========================================
-    // p16 - SUMMON: ZENITH GUARDIAN
+    // p16 - ZENITH GUARDIAN
     // ==========================================
     'p16': {
         id: 'p16', name: 'Zenith Guardian', cooldown: 120.0,
         isMovement: false,
         execute: (hero, inputState) => {
-            
-            // 1. RECAST LOGIC (Control the Pet)
             if (hero.pet && hero.pet.active) {
                 console.log("🤖 Redirecting Zenith Guardian!");
                 let dx = inputState.aim.dx; 
@@ -624,11 +556,9 @@ export const ABILITY_REGISTRY = {
                         y: (hero.y + 8) + (dy * range * mag)
                     };
                 }
-                // Return a tiny 1s cooldown so you can't spam the network with move orders
                 return 1.0; 
             }
 
-            // 2. SUMMON LOGIC
             if (hero.energy < 50) {
                 console.log("❌ Not enough energy for Zenith Guardian!");
                 return 0; 
@@ -658,28 +588,20 @@ export const ABILITY_REGISTRY = {
             hero.animState = 'idle'; 
             hero.isMoving = false;
 
-            // 👇 THE FIX: Return a 1.0s cooldown so the button becomes available to Recast 
-            // the exact second the pet finishes spawning!
             return 1.0; 
         }
     },
-    
-    // Future abilities (p2 - p16) will go here!
 };
 
-// --- Replace executeAbility at the bottom of src/abilities.js ---
-
-// --- Replace executeAbility in src/abilities.js ---
 export function executeAbility(hero, skillIndex, inputState, worldMatrix, roomMatrix) {
     if (!hero.skills || !hero.skills[skillIndex]) return; 
     
-    // 🌟 LEVEL GATE CHECK
     const unlockLevels = [1, 25, 50, 75];
     const currentLevel = getLevelInfo(hero.xp).level;
     
     if (currentLevel < unlockLevels[skillIndex]) {
         console.log(`🔒 Skill Locked! Requires Level ${unlockLevels[skillIndex]}.`);
-        return; // Block the cast!
+        return; 
     }
 
     if (hero.cooldowns[skillIndex] > 0) return; 
@@ -706,3 +628,22 @@ export function executeAbility(hero, skillIndex, inputState, worldMatrix, roomMa
         hero.cooldowns[skillIndex] = (overrideCd !== undefined) ? overrideCd : ability.cooldown; 
     }
 }
+
+export const PALADIN_SKILLS = [
+    { id: 'p1', name: 'Vault', icon: '⚔️' },
+    { id: 'p2', name: 'Holy Shield / Holy Blast', icon: '✨' },
+    { id: 'p3', name: 'Divine Bubble', icon: '🛡️' },
+    { id: 'p4', name: "Ascension / Lion's Breath", icon: '🏃' },
+    { id: 'p5', name: 'Radiant Nova', icon: '💪' },
+    { id: 'p6', name: 'Flux Shot', icon: '🔥' },
+    { id: 'p7', name: 'Warp', icon: '🦁' },
+    { id: 'p8', name: "Heaven's Halo", icon: '🌪️' },
+    { id: 'p9', name: 'Flare', icon: '🔨' },
+    { id: 'p10', name: 'Fever', icon: '🤲' },
+    { id: 'p11', name: 'Ring of Penance', icon: '⚡' },
+    { id: 'p12', name: 'Zephyr', icon: '🔆' },
+    { id: 'p13', name: 'Vanguard', icon: '👁️' },
+    { id: 'p14', name: 'Consecration', icon: '💥' },
+    { id: 'p15', name: 'Fleeting Bulwark', icon: '😤' },
+    { id: 'p16', name: 'Summon: Zenith Guardian', icon: '🗡️' }
+];

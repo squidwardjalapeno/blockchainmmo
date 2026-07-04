@@ -11,7 +11,7 @@ import { ITEM_TYPES } from './items.js';
 import { globalFishCount } from './fish.js';
 import { getObjectAt } from './staticObjects.js';
 import { roomMetadata } from './cellDecorator.js';
-import { PALADIN_SKILLS } from './uiManager.js';
+import { PALADIN_SKILLS } from './abilities.js';
 import { getHeroAnimationData, getPetAnimationData, getAnimalAnimationData, getHobbitAnimationData } from './animations.js';
 
 // Add this import to the top of src/renderer.js:

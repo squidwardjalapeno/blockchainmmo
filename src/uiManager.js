@@ -8,6 +8,7 @@ import { getWaitModifier, getRandomFish, globalFishCount } from './fish.js';
 import { submitVoucherToChain, connectWallet } from './blockchainManager.js';
 import { mapCanvas } from './renderer.js';
 import { recalculateStats } from './interactionManager.js';
+import { PALADIN_SKILLS } from './abilities.js'; // 👈 Loaded from abilities.js to break circular loops
 
 if (typeof window !== 'undefined') {
     logStep("uiManager.js loaded");
@@ -92,7 +93,7 @@ export const STORAGE_CONFIGS = {
         subtitle: "Click or Drag items to transfer.",
         paneTitle: "CHEST",
         unloadLabel: "UNLOAD ALL",
-        filter: () => true, // Accept everything
+        filter: () => true, 
         limit: 8,
         transferEvent: 'requestChestTransfer',
         updateEvent: 'updateChest'
@@ -130,7 +131,6 @@ export const uiState = {
 // 🎛️ MAIN UI INITIALIZATION
 // ==========================================
 export function initUI() {
-    const overlay = document.getElementById('menu-overlay');
     const tabs = document.querySelectorAll('#menu-tabs button');
 
     tabs.forEach(tab => {
@@ -636,11 +636,6 @@ export function renderWorkstationUI() {
 
 export function renderCharacterCreation() {
     const grid = document.getElementById('skill-grid');
-    const slots = document.querySelectorAll('.skill-slot');
-    
-    selectedSkills = [];
-    updateSkillSlots();
-
     grid.innerHTML = PALADIN_SKILLS.map(skill => `
         <div class="skill-item" data-id="${skill.id}">
             <div style="font-size: 24px;">${skill.icon}</div>
@@ -657,31 +652,50 @@ export function renderCharacterCreation() {
                 selectedSkills = selectedSkills.filter(s => s !== id);
                 item.classList.remove('selected');
             } else {
-                if (selectedSkills.length < 4) {
-                    selectedSkills.push(id);
-                    item.classList.add('selected');
+                if (selectedSkills.length >= 4) {
+                    alert("You can only select 4 core skills!");
+                    return;
                 }
+                selectedSkills.push(id);
+                item.classList.add('selected');
             }
             updateSkillSlots();
         });
+    });
+
+    document.getElementById('finish-char-btn').addEventListener('click', () => {
+        if (selectedSkills.length === 4) {
+            if (socket) {
+                socket.emit('createCharacter', {
+                    wallet: playerWallet,
+                    charClass: 'Paladin',
+                    skills: selectedSkills
+                });
+            }
+        }
     });
 }
 
 function updateSkillSlots() {
     const slots = document.querySelectorAll('.skill-slot');
-    slots.forEach((slot, i) => {
-        if (selectedSkills[i]) {
-            const skill = PALADIN_SKILLS.find(s => s.id === selectedSkills[i]);
-            slot.innerHTML = skill ? skill.icon : '';
-        } else {
-            slot.innerHTML = '';
-        }
-    });
+    document.getElementById('skill-count').innerText = selectedSkills.length;
+    const reqLevels = [1, 25, 50, 75];
 
-    const finishBtn = document.getElementById('finish-char-btn');
-    if (finishBtn) finishBtn.disabled = (selectedSkills.length !== 4);
-    const countEl = document.getElementById('skill-count');
-    if (countEl) countEl.innerText = selectedSkills.length;
+    for (let i = 0; i < 4; i++) {
+        slots[i].style.flexDirection = 'column';
+
+        if (i < selectedSkills.length) {
+            const skill = PALADIN_SKILLS.find(s => s.id === selectedSkills[i]);
+            slots[i].innerHTML = `
+                <div style="font-size: 24px;">${skill.icon}</div>
+                <div style="font-size: 8px; color: #555; margin-top: 5px;">LVL ${reqLevels[i]}</div>
+            `;
+        } else {
+            slots[i].innerHTML = `<div style="font-size: 8px; color: #888;">LVL ${reqLevels[i]}</div>`;
+        }
+    }
+
+    document.getElementById('finish-char-btn').disabled = (selectedSkills.length !== 4);
 }
 
 export function toggleMenu() {
@@ -1170,7 +1184,7 @@ export function openMapTableMenu() {
 // ==========================================
 export let activeOreId = null;
 export let activeOreData = null;
-let confirmingOreSpeedUp = false;
+let confirmingOreSpeedUp = false; // 👈 Resolved variable redeclaration collision
 
 export function openMiningMenu(oreId, data) {
     activeOreId = oreId;
