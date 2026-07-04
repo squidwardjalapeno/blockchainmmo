@@ -501,8 +501,10 @@ export function drawRootCellar(gx, gy, worldMatrix, roomMatrix, fertilityMatrix,
     const currentId = nextHouseId++;
     console.log(`🕳️ Digging Root Cellar at ${gx}, ${gy} (ID: ${currentId})`);
 
+    // Register precise metadata coordinates
     roomMetadata[currentId] = { 
         type: 'CELLAR', 
+        frontX: gx, // Records the left-most coordinate of the 3-tile wide cellar
         frontY: gy, 
         maxOffset: -2 
     };
@@ -517,8 +519,6 @@ export function drawRootCellar(gx, gy, worldMatrix, roomMatrix, fertilityMatrix,
     }
 
     // 2. EXTERIOR STRUCTURE (New dug-in aesthetic)
-    
-    // Row 0 (Front): Solid wall (50) on left/right, Closed Door (49) in the middle
     setGlobalTile(gx, gy, 50, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     setGlobalTile(gx + 1, gy, 49, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     setGlobalTile(gx + 2, gy, 50, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);

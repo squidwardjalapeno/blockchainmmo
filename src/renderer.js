@@ -281,7 +281,7 @@ export function drawMap(worldMatrix, roomMatrix) {
                 }
 
                 const meta = roomMetadata[hHouseId];
-                const isCellarWall = (meta && meta.type === 'CELLAR' && l - meta.frontY === -2);
+                const isCellarWall = (meta && meta.type === 'CELLAR' && l - meta.frontY === -2 && k >= meta.frontX && k < meta.frontX + 3);
 
                 if (rID === hHouseId || isInsideCellarTop || isCellarWall) {
                     const sY = Math.floor((l * 16) + viewport.offset[1]); 
@@ -344,7 +344,7 @@ export function drawMap(worldMatrix, roomMatrix) {
                             const tImg = images.transparentTileset;
                             const tid = transMap[obj.type];
                             if (tImg && tImg.complete) {
-                                ctx2.drawImage(tImg, (tid % 10) * 16, Math.floor(tid / 10) * 16, 16, 16, sX, sY, 16, 16);
+                                    ctx2.drawImage(tImg, (tid % 10) * 16, Math.floor(tid / 10) * 16, 16, 16, sX, sY, 16, 16);
                             }
                         } else if (oldMap[obj.type] !== undefined) {
                             const oid = oldMap[obj.type];
