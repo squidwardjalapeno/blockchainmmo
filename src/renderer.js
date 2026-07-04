@@ -118,7 +118,6 @@ export function drawNightTint() {
     }
 }
 
-// src/renderer.js
 export function drawMap(worldMatrix, roomMatrix) {
     const w = canvas2.width;
     const h = canvas2.height;
@@ -128,16 +127,18 @@ export function drawMap(worldMatrix, roomMatrix) {
     const startY = viewport.startTile[1];
     const endY = viewport.endTile[1];
 
+    // 1. Get the room ID the hero is standing in
     const hTX = Math.floor((hero.x + 8) / 16);
     const hTY = Math.floor((hero.y + 15) / 16);
-
-    let hHouseId = 0;
-    const hChunkR = roomMatrix[Math.floor(hTX / 100)]?.[Math.floor(hTY / 100)];
-    if (hChunkR) {
-        hHouseId = hChunkR[((hTY % 100 + 100) % 100 * 100) + ((hTX % 100 + 100) % 100)];
-    }
-
+    const hCX = Math.floor(hTX / 100);
+    const hCY = Math.floor(hTY / 100);
+    const hLX = ((hTX % 100) + 100) % 100;
+    const hLY = ((hTY % 100) + 100) % 100;
+    
+    const hHouseId = roomMatrix[hCX]?.[hCY]?.[(hLY * 100) + hLX] || 0;
+    
     const tileImg = images.worldTilesColor;
+    if (!tileImg || !tileImg.complete) return;
 
     // Reset the visible trees collector for the active viewport frame
     visibleTrees = [];
@@ -279,9 +280,11 @@ export function drawMap(worldMatrix, roomMatrix) {
                     }
                 }
 
-                if (rID === hHouseId || isInsideCellarTop) {
+                const meta = roomMetadata[hHouseId];
+                const isCellarWall = (meta && meta.type === 'CELLAR' && l - meta.frontY === -2);
+
+                if (rID === hHouseId || isInsideCellarTop || isCellarWall) {
                     const sY = Math.floor((l * 16) + viewport.offset[1]); 
-                    const meta = roomMetadata[hHouseId];
                     let base = 42; 
 
                     if (meta && meta.type === 'LARGE_BARN') {
@@ -301,6 +304,14 @@ export function drawMap(worldMatrix, roomMatrix) {
                             if (oy === 0) base = 27; else if (oy === meta.maxOffset) base = 41; 
                         }
                     } 
+                    else if (meta && meta.type === 'CELLAR') {
+                        const oy = l - meta.frontY;
+                        if (oy === -2) {
+                            base = 41; // Top-most row of cellar gets the interior wall tile
+                        } else {
+                            base = 42; // Floor tiles
+                        }
+                    }
                     else {
                         // Route the interior wall tile (41) to the top row (367) and preserve the middle row as wooden floor (42)
                         if (isInsideCellarTop) {

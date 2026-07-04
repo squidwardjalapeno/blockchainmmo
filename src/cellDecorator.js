@@ -497,10 +497,15 @@ export function drawVillageHall(gx, gy, worldMatrix, roomMatrix, fertilityMatrix
 
 // js/cellDecorator.js
 
-// Locate and replace drawRootCellar inside src/cellDecorator.js:
 export function drawRootCellar(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     const currentId = nextHouseId++;
     console.log(`🕳️ Digging Root Cellar at ${gx}, ${gy} (ID: ${currentId})`);
+
+    roomMetadata[currentId] = { 
+        type: 'CELLAR', 
+        frontY: gy, 
+        maxOffset: -2 
+    };
 
     // 1. FILL FOOTPRINT (3x3 Flooring)
     for (let i = 0; i < 3; i++) {
@@ -532,6 +537,7 @@ export function drawRootCellar(gx, gy, worldMatrix, roomMatrix, fertilityMatrix,
     registerObject(gx + 0, gy - 1, 'FOOD_STORAGE', { houseId: currentId });
     registerObject(gx + 2, gy - 1, 'FOOD_STORAGE', { houseId: currentId });
 }
+
 // js/cellDecorator.js
 
 export function drawBarn(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {

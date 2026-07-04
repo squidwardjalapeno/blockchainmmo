@@ -31,7 +31,15 @@ export let activeStorageContext = {
     type: null // 'CHEST', 'CELLAR', or 'HAY'
 };
 
-const VALID_FOOD_TYPES = ["fish", "cooked_fish", "grass_item"];
+const VALID_FOOD_TYPES = [
+    "fish", "cooked_fish", "raw_chicken", "egg",
+    "turnip_item", "tomato_item", "eggplant_item", "strawberry_item", 
+    "pumpkin_item", "watermelon_item", "corn_item", "pineapple_item", 
+    "potato_item", "wheat_item",
+    "fish_trout", "fish_panfish", "fish_mackerel", "fish_muskellunge", 
+    "fish_trevally", "fish_squid", "fish_octopus", "fish_eel", "fish_angler"
+];
+
 const VALID_HAY_TYPES = ["hay", "plant_matter"];
 
 export const STORAGE_CONFIGS = {

@@ -1875,7 +1875,15 @@ socket.on('requestActivityLog', () => {
 
         if (direction === 'to_cellar') {
             const item = player.inventory[index];
-            if (!item || !["fish", "cooked_fish", "grass_item"].includes(item.seedType)) return;
+            const VALID_FOOD_TYPES = [
+                "fish", "cooked_fish", "raw_chicken", "egg",
+                "turnip_item", "tomato_item", "eggplant_item", "strawberry_item", 
+                "pumpkin_item", "watermelon_item", "corn_item", "pineapple_item", 
+                "potato_item", "wheat_item",
+                "fish_trout", "fish_panfish", "fish_mackerel", "fish_muskellunge", 
+                "fish_trevally", "fish_squid", "fish_octopus", "fish_eel", "fish_angler"
+            ];
+            if (!item || !VALID_FOOD_TYPES.includes(item.seedType)) return;
 
             player.inventory.splice(index, 1);
             cellarItems.push(item);
