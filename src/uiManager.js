@@ -1170,12 +1170,12 @@ export function openMapTableMenu() {
 // ==========================================
 export let activeOreId = null;
 export let activeOreData = null;
-let confirmingSpeedUp = false;
+let confirmingOreSpeedUp = false;
 
 export function openMiningMenu(oreId, data) {
     activeOreId = oreId;
     activeOreData = data;
-    confirmingSpeedUp = false; 
+    confirmingOreSpeedUp = false; 
     document.getElementById('mining-menu').classList.remove('hidden');
     renderMiningUI();
 }
@@ -1211,11 +1211,11 @@ function renderMiningUI() {
         actionBtn.disabled = false;
         text.innerText = "JOB COMPLETE";
         costText.innerText = "";
-        confirmingSpeedUp = false;
+        confirmingOreSpeedUp = false;
     } else {
         actionBtn.disabled = false;
         
-        if (confirmingSpeedUp) {
+        if (confirmingOreSpeedUp) {
             actionBtn.innerText = "SPEED - UP NOW!";
             actionBtn.className = "pixel-btn safe";
             costText.innerText = "COST: 50 UNI"; 
@@ -1231,7 +1231,7 @@ export function initMiningListeners() {
     document.getElementById('close-mining-btn').addEventListener('click', () => {
         document.getElementById('mining-menu').classList.add('hidden');
         activeOreId = null;
-        confirmingSpeedUp = false;
+        confirmingOreSpeedUp = false;
     });
 
     document.getElementById('mining-action-btn').addEventListener('click', () => {
@@ -1240,12 +1240,12 @@ export function initMiningListeners() {
         if (activeOreData.workLeft <= 0) {
             if (socket) socket.emit('collectOre', { oreId: activeOreId });
         } else {
-            if (!confirmingSpeedUp) {
-                confirmingSpeedUp = true;
+            if (!confirmingOreSpeedUp) {
+                confirmingOreSpeedUp = true;
                 renderMiningUI(); 
             } else {
                 if (socket) socket.emit('speedUpOre', { oreId: activeOreId });
-                confirmingSpeedUp = false; 
+                confirmingOreSpeedUp = false; 
                 renderMiningUI(); 
             }
         }
