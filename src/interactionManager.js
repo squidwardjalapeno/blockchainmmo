@@ -1,40 +1,26 @@
+// src/interactionManager.js
 
-import { hero, getLevelInfo } from './entities.js';
+import { hero, getLevelInfo, CC_RESTRICT } from './entities.js';
 import { getTileData, checkCollision, moveEntity } from './physics.js';
 import { ITEM_TYPES, createItem } from './items.js';
-// Near the top of src/interactionManager.js
 import { updatePlants, createPlant, plants, PLANT_DEFS } from './plants.js';
 import { getBacteriaData, seedBacteria, BACTERIA_TYPES } from './bacteria.js';
 import { inputState } from './input.js';
 import { socket, playerWallet, remotePlayers, syncInventoryWithServer } from './multiplayer.js';
-
-import { openChestMenu, openTempleMenu, openKitchenMenu, openMapTableMenu, openCellarMenu, openHayTableMenu, openHayStorageMenu, openWithdrawMenu, } from './uiManager.js'; 
+import { openTempleMenu, openMapTableMenu, openWithdrawMenu } from './uiManager.js'; 
 import { getObjectAt } from './staticObjects.js';
-import { CONFIG } from './config.js'
-import { CC_RESTRICT } from './entities.js'; // 👈 Import the restriction masks
-
+import { CONFIG } from './config.js';
 import { animals } from './animals.js';
-
-
-
-// To this:
-if (typeof window !== 'undefined') {
-    logStep("interactionManager.js");
-}
-
-
-// 🛑 ADD THIS LINE (or add it to your existing combat.js import)
 import { currentTarget } from './combat.js';
-// js/interactionManager.js
 import { getWaitModifier, getRandomFish, globalFishCount } from './fish.js';
 
+if (typeof window !== 'undefined') {
+    logStep("interactionManager.js loaded");
+}
 
-// Add this helper to check for keys
 function hasKeyForHouse(houseId) {
     return hero.inventory.some(item => item.isKey && item.houseId === houseId);
 }
-
-// src/interactionManager.js
 
 export function giveItemToHero(newItem) {
     if (!newItem) return false;
@@ -72,7 +58,6 @@ export function giveItemToHero(newItem) {
 
     return success;
 }
-
 
 export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityMatrix) {
     // 1. FORGIVING HITBOX LOGIC (For Interactions)
@@ -331,7 +316,6 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
     }
 
     // --- WORK LOGIC (F Key Toggle) ---
-    // Locate the hold-'F' trigger check inside handleInteractions() in src/interactionManager.js:
     if (inputState.keyF) {
         inputState.keyF = false; 
         
@@ -364,7 +348,6 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
             // Increment the 1-second timer
             hero.workTimer += modifier;
             
-            // Locate the workTimer tick check inside handleInteractions() in src/interactionManager.js:
             if (hero.workTimer >= 1.0) {
                 hero.workTimer -= 1.0; 
                 
@@ -399,12 +382,9 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
                 hero.equipment.mainHand = null;
             }
 
-                        syncInventoryWithServer(); // 👈 Added here
-
+            syncInventoryWithServer(); 
         }
     }
-
-    // Inside handleInteractions() in src/interactionManager.js:
 
     // --- 7. PLANT SEED (V Key) ---
     if (inputState.keyV) {
@@ -421,7 +401,6 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
                 if (tileID === 63 && (roomID === 0 || roomID === 9999) && !plants.has(`${feetTX}_${feetTY}`)) {
                     
                     // 🎯 THE SECURE FIX: Request a seed-plant from the server!
-                    // We find the index of the held item inside the client's inventory array
                     const index = hero.inventory.indexOf(item);
                     
                     if (socket) {
@@ -437,8 +416,6 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
     }
 }
 
-// --- Add to src/interactionManager.js ---
-
 export function recalculateStats() {
     // Start with base stats
     hero.ad = hero.baseAd;
@@ -448,26 +425,14 @@ export function recalculateStats() {
         hero.ad += (hero.equipment.mainHand.ad || 0);
     }
     
-    // Add Armor stats (for the future!)
-    if (hero.equipment.armor) {
-        // hero.armor = hero.baseArmor + hero.equipment.armor.def;
-    }
-// Inside recalculateStats()
     hero.speed = CONFIG.HERO_SPEED;
     if (hero.cc && hero.cc.isSlowed) hero.speed *= 0.5;
-    if (hero.buffs && hero.buffs.zephyrSpeedTimer > 0) hero.speed *= 1.30; // 👈 +30% Speed!
+    if (hero.buffs && hero.buffs.zephyrSpeedTimer > 0) hero.speed *= 1.30; 
 
     // 🆕 APPLY BULWARK SPEED!
     if (hero.bulwarkTimer > 0) {
         hero.speed *= hero.bulwarkSpeedBonus; 
     }
-
-    /*
-    // 👇 DEBUG TOOL: SONIC TOMATO
-    if (hero.buffs && hero.buffs.tomatoDebug) {
-        hero.speed += 900;
-    }
-        */
 
     // 🆕 Check for Passives!
     hero.passives.hasFever = hero.skills.includes('p10');
@@ -478,20 +443,17 @@ export function recalculateStats() {
             if (module.socket) module.socket.emit('updateStats', { 
                 ad: hero.ad, 
                 speed: hero.speed,
-                passives: hero.passives // 👈 Send passive flags to server!
+                passives: hero.passives 
             });
         });
     }
     
-    console.log(`⚔️ Stats Recalculated! AD: ${hero.ad}, SPEED: ${hero.speed}`);
+    console.log(`Stats Recalculated! AD: ${hero.ad}, SPEED: ${hero.speed}`);
 }
-
-// In src/interactionManager.js -> consumeFood()
 
 function consumeFood() {
     if (hero.hp <= 0) return;
 
-    // 🤚 Check the Main Hand
     if (!hero.equipment || !hero.equipment.mainHand) {
         console.log("❌ Equip a food item in your hand first!");
         return;
@@ -502,11 +464,11 @@ function consumeFood() {
     // 🍱 THE FOOD REGISTRY (Energy restored per item)
     const foodValues = { 
         "cooked_fish": 60,
-        "fish_muskellunge": 100, // Legendary food!
+        "fish_muskellunge": 100, 
         "fish_trevally": 80, "fish_angler": 80, "fish_octopus": 60,
         "fish_squid": 50, "fish_eel": 45, "fish_mackerel": 35,
         "fish_trout": 25, "fish": 20, "fish_panfish": 15,
-        "pineapple_item": 50,    // Rare, slow growth
+        "pineapple_item": 50,    
         "eggplant_item": 40,
         "tomato_item": 35,
         "pumpkin_item": 30,
@@ -514,52 +476,37 @@ function consumeFood() {
         "potato_item": 25,
         "corn_item": 25,
         "turnip_item": 20,
-        "egg": 20,              // Consistent ranching yield
-        "fish": 15,             // Raw fish penalty
-        "strawberry_item": 15,   // Small snack
-        "wheat_item": 10        // Lowest tier
+        "egg": 20,              
+        "strawberry_item": 15,   
+        "wheat_item": 10        
     };
 
     if (foodValues[item.seedType] !== undefined) {
         const restoreAmount = foodValues[item.seedType];
         
-        // Apply restoration
         hero.energy = Math.min(hero.maxEnergy, hero.energy + restoreAmount);
         console.log(`🍗 Consumed ${item.name}! +${restoreAmount} Energy.`);
 
-
-        // 🎒 Subtract from stack
         item.count--;
         if (item.count <= 0) {
             hero.equipment.mainHand = null; 
         }
 
-        // Sync stamina to the server
         import('./multiplayer.js').then(m => {
             if (m.socket) m.socket.emit('updateStats', { energy: hero.energy });
         });
 
-                syncInventoryWithServer(); // 👈 Sync changes to server
-
+        syncInventoryWithServer(); 
         
-        // Refresh UI to update the hand slot / inventory count
         import('./uiManager.js').then(m => m.renderTabContent());
     } else {
         console.log(`❌ ${item.name} is not edible!`);
     }
 }
 
-// 🗑️ CLEANED UP ACTION PROCESSOR
 function processAction(tx, ty, worldMatrix, roomMatrix) {
-    // Cooking is now strictly handled by the Kitchen UI, 
-    // so the Spacebar action only defaults to Fishing!
     processCasting(tx, ty, worldMatrix, roomMatrix); 
 }
-
-/**
- * 🎣 CASTING LOGIC
- */
-// Inside processCasting() in src/interactionManager.js:
 
 function processCasting(tx, ty, world, room) {
     let bx = 0, by = 0;
@@ -569,13 +516,12 @@ function processCasting(tx, ty, world, room) {
     if (hero.dir === 'East')   bx = 1;
 
     const target = getTileData((tx + bx) * 16, (ty + by) * 16, world, room);
-    if (target.tileID === 17) { // Water
+    if (target.tileID === 17) { 
         hero.isFishing = true;
         hero.hasBite = false;
         hero.bobberX = (tx + bx) * 16 + 8;
         hero.bobberY = (ty + by) * 16 + 8;
 
-        // 🎯 THE SECURE FIX: Ask the server to cast the line securely!
         if (socket) {
             socket.emit('requestCastLine', { tx: tx + bx, ty: ty + by });
         }
@@ -584,32 +530,19 @@ function processCasting(tx, ty, world, room) {
     }
 }
 
-/**
- * 🎣 REELING LOGIC
- */
-// Inside processFishing() in src/interactionManager.js:
-
 function processFishing(modifier) {
     if (!hero.hasBite) {
         hero.fishTimer -= modifier;
-        if (hero.fishTimer <= 0) hero.hasBite = true; // Visual bite trigger
+        if (hero.fishTimer <= 0) hero.hasBite = true; 
     } else if (inputState.action) {
-        
-        // 🎯 THE SECURE FIX: Request to reel in from the server
         if (socket) {
             socket.emit('requestReelIn');
         }
-        
         inputState.action = false;
     }
 }
 
-// Inside processPickup() in src/interactionManager.js:
-
-// Inside src/interactionManager.js:
-
 function processPickup(tx, ty) {
-    // Client-side safety: Stop early if the local UI bag is full
     if (hero.inventory.length >= hero.maxSlots) return false;
 
     // ==========================================
@@ -631,13 +564,11 @@ function processPickup(tx, ty) {
                 let extractedHouseId = undefined;
                 let itemName = template.name;
 
-                // If it is a key (typeID 61), extract the unique 16-bit houseId from the ground traits
                 if (typeID === 61) { 
-                    extractedHouseId = traits & 0xFFFF; // Extract bottom 16 bits
+                    extractedHouseId = traits & 0xFFFF; 
                     itemName = `Key to House #${extractedHouseId}`;
                 }
 
-                // Request the item pickup securely from the server
                 if (socket) {
                     socket.emit('requestPickup', {
                         tx: tx, ty: ty,
@@ -650,7 +581,7 @@ function processPickup(tx, ty) {
                     });
                 }
 
-                bac.data[bac.idx] = 0; // Clear locally so it disappears instantly from the screen
+                bac.data[bac.idx] = 0; 
                 return true;
             }
         }
@@ -661,70 +592,55 @@ function processPickup(tx, ty) {
     // ==========================================
     const plantKey = `${tx}_${ty}`;
     if (plants.has(plantKey)) {
-        // 🎯 THE SECURE FIX: Send the harvest request for ALL plants (mature or immature).
-        // The server will decide the correct yields and handle removals for everyone.
         if (socket) {
             socket.emit('requestHarvest', { tx: tx, ty: ty });
         }
         return true;
     }
 
-    return false; // Nothing found directly under feet
+    return false; 
 }
-// js/interactionManager.js
 
 export function updateHeroStats(modifier, hero) {
-
-    // 🆕 Tick down ability cooldowns
     for (let i = 0; i < 4; i++) {
         if (hero.cooldowns[i] > 0) {
             hero.cooldowns[i] = Math.max(0, hero.cooldowns[i] - modifier);
         }
     }
-    // 1. If we are in "Cooldown" (negative), move back to 0
     if (hero.attackTimer < 0) {
         hero.attackTimer += modifier; 
     } 
-    // 2. ONLY subtract if we ARE NOT currently winding up for a punch!
     else if (!hero.isWindingUp) {
         hero.attackTimer = Math.max(0, hero.attackTimer - modifier);
     }
 
-    // 2. 🆕 SURVIVAL: Energy Drain
     if (hero.hp > 0) {
         hero.energy = Math.max(0, hero.energy - (CONFIG.ENERGY_DRAIN_RATE * modifier));
         
         if (hero.energy <= 0) {
             hero.energy = 0;
-            hero.hp = 0; // Death by starvation
+            hero.hp = 0; 
             console.log("💀 You starved to death! Gather food to survive.");
             
-            // Immediately tell server we died from hunger
             if (socket) socket.emit('updateStats', { hp: 0, energy: 0 });
         }
     }
 
-    // 🌟 ASCENSION TIMER TICK
     if (hero.buffs && hero.buffs.isAscended) {
         hero.ascensionTimer -= modifier;
         if (hero.ascensionTimer <= 0) {
             hero.buffs.isAscended = false;
-            // Remove the bonus stats, clamping HP so it doesn't drop below 1
             hero.maxHp -= 100;
             hero.hp = Math.max(1, Math.min(hero.hp, hero.maxHp)); 
             hero.armor -= 20;
             hero.mr -= 20;
             console.log("🌟 Ascension ended. Stats normalized.");
             
-            // Put p4 back on its massive ultimate cooldown!
             const p4Index = hero.skills.indexOf('p4');
             if (p4Index !== -1) hero.cooldowns[p4Index] = 60.0;
         }
     }
 
-    // --- Inside updateHeroStats() in src/interactionManager.js ---
-
-    // 👼 HEAVEN'S HALO TIMER TICK
     if (hero.buffs && hero.buffs.isInvincible) {
         hero.invincibleTimer -= modifier;
         if (hero.invincibleTimer <= 0) {
@@ -734,21 +650,15 @@ export function updateHeroStats(modifier, hero) {
         }
     }
 
-    // Inside updateHeroStats()
-    // 💨 ZEPHYR SPEED BUFF TICK
     if (hero.buffs && hero.buffs.zephyrSpeedTimer > 0) {
         hero.buffs.zephyrSpeedTimer -= modifier;
         if (hero.buffs.zephyrSpeedTimer <= 0) recalculateStats(); 
     }
 
-    // --- Inside updateHeroStats() in src/interactionManager.js ---
-
-    // 🛡️ FLEETING BULWARK TICK
     if (hero.bulwarkTimer > 0) {
         hero.bulwarkTimer -= modifier;
         if (hero.bulwarkTimer <= 0) {
             console.log("🛡️ Fleeting Bulwark faded.");
-            // Remove the exact amount of armor/mr we gained
             hero.armor -= hero.bulwarkArmorBonus;
             hero.mr -= hero.bulwarkMrBonus;
             
@@ -756,19 +666,17 @@ export function updateHeroStats(modifier, hero) {
             hero.bulwarkMrBonus = 0;
             hero.bulwarkSpeedBonus = 0;
 
-            recalculateStats(); // Removes the speed buff
+            recalculateStats(); 
             
             if (socket) socket.emit('updateStats', { armor: hero.armor, mr: hero.mr });
         }
     }
 
-    // 1. TICK SLOWS (Soft CC - Kept completely separate!)
     if (hero.slowTimer > 0) {
         hero.slowTimer -= modifier;
         if (hero.slowTimer <= 0) recalculateStats(); 
     }
 
-    // 2. TICK HARD CC & BUILD BITMASK
     let currentMask = 0;
     if (hero.activeCCs) {
         for (let i = hero.activeCCs.length - 1; i >= 0; i--) {
@@ -781,7 +689,6 @@ export function updateHeroStats(modifier, hero) {
         }
     }
 
-    // 3. EVALUATE THE 5 FLAGS DIRECTLY FROM YOUR SPREADSHEET RULES!
     if (hero.ccFlags) {
         hero.ccFlags.canMove = !(currentMask & CC_RESTRICT.MOVE);
         hero.ccFlags.canAttack = !(currentMask & CC_RESTRICT.ATTACK);
@@ -790,20 +697,14 @@ export function updateHeroStats(modifier, hero) {
         hero.ccFlags.canCleanse = !(currentMask & CC_RESTRICT.CLEANSE);
     }
 
-    // 🔥 UPDATE SPELLS (Projectiles & AoE Zones)
     updateSpells(modifier);
 
-    // 🤖 UPDATE PET AI
     if (hero.pet && hero.pet.active) {
         updatePetAI(modifier, hero.pet);
     }
 }
 
-
-
 export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remotePlayers) {
-
-    // 1. RE-SYNC LOCKED TARGET (Ghost Killer)
     if (hero.target) {
         if (hero.target.isAnimal) {
             const liveData = animals.find(a => a.id === hero.target.id);
@@ -814,41 +715,30 @@ export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remoteP
         }
     }
 
-    // 2. CHECK MANUAL MOVEMENT
     let isManualMove = false;
     if (inputState.inputType === 'touch' && inputState.leftJoystick.active) isManualMove = true;
     if (inputState.moveX !== 0 || inputState.moveY !== 0) isManualMove = true;
 
-    // 2. HOLD-TO-SCAN & LOCK (Triggered by holding the Attack Button)
-    // 2. HOLD-TO-SCAN & LOCK (Triggered by holding the Attack Button)
     if (inputState.mainBtn) {
         import('./combat.js').then(c => {
-            // 🌟 FIX: Pass world and room matrix so it can see Ores!
             c.scanForTarget(hero, 150, worldMatrix, roomMatrix);
             
             if (c.currentTarget) {
-                // Keep updating the hover target
                 hero.target = c.currentTarget;
                 c.setLockedTarget(c.currentTarget);
                 
-                // Only engage the physical auto-attack if we are NOT manually walking
                 if (!isManualMove) {
                     hero.isAttacking = true;
                 }
             }
         });
-        
-        // 👈 NEW: Don't set mainBtn = false here anymore! 
-        // Let the input.js 'keyup' or 'touchend' events handle turning it off!
     } else {
-        // If we let go of the button AND we aren't actively fighting, drop the red circle!
         if (!hero.isAttacking) {
             hero.target = null;
             import('./combat.js').then(c => c.setLockedTarget(null));
         }
     }
 
-    // 4. CANCEL ATTACK ON DEATH OR MOVEMENT
     if (hero.hp <= 0) {
         hero.isAttacking = false;
         hero.target = null;
@@ -858,17 +748,12 @@ export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remoteP
     }
 
     if (isManualMove) {
-        // 👈 MOBA FIX: Moving cancels the attack and the wind-up, but KEEPS the target locked!
         hero.isAttacking = false;
         hero.isWindingUp = false;
         return; 
     }
 
-    // 5. COMBAT STATE MACHINE
     if (hero.isAttacking && hero.target) {
-        
-        // --- PHASE B: COMMITTED WIND-UP & IMPACT ---
-        // If we already started swinging, DO NOT check distance. Commit to the attack!
         if (hero.isWindingUp) {
             hero.attackTimer += modifier;
             const windUpLimit = 0.3 / (hero.attackSpeed || 1.0);
@@ -900,9 +785,6 @@ export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remoteP
                     }
                 }
 
-                // ... (flux shield math is here)
-
-                // 🌟 NEW: Handle Ore Mining vs Creature Damage
                 if (hero.target.isOre) {
                     if (hero.equipment.mainHand && hero.equipment.mainHand.seedType === 'tool_pickaxe') {
                         if (socket) socket.emit('mineOreStrike', { oreId: hero.target.id });
@@ -911,10 +793,9 @@ export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remoteP
                         console.log("❌ You need a Pickaxe to mine this ore!");
                     }
                 } 
-                // 🎯 THE FIX: Allow player strikes to deduct Hobbit HP locally!
                 else if (hero.target.isAnimal || hero.target.isHobbit) { 
                     hero.target.hp -= finalDamage; 
-                    console.log(`🗡️ Hit Hobbit for ${finalDamage} damage! (HP: ${hero.target.hp}/${hero.target.maxHp})`);
+                    console.log(`🗡️ Hit Hobbit/Animal for ${finalDamage} damage! (HP: ${hero.target.hp}/${hero.target.maxHp})`);
                 } 
                 else { 
                     applyPlayerDamage(hero.target, finalDamage); 
@@ -926,7 +807,7 @@ export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remoteP
                 }
                 
                 hero.isWindingUp = false;      
-                hero.attackTimer = -1.7; // Go on cooldown
+                hero.attackTimer = -1.7; 
                 
                 if (hero.target && hero.target.hp <= 0) {
                     hero.isAttacking = false;
@@ -935,7 +816,6 @@ export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remoteP
                 }
             }
         } 
-        // --- PHASE A: RANGE CHECK & START WIND-UP ---
         else {
             const hx = hero.x + 8;
             const hy = hero.y + 8;
@@ -948,42 +828,26 @@ export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remoteP
             const attackRange = hero.attackRange || 24;
 
             if (currentDistSq <= attackRange * attackRange) {
-                // We are in range! Face the target.
                 if (Math.abs(dx) > Math.abs(dy)) hero.dir = dx > 0 ? 'East' : 'West';
                 else hero.dir = dy > 0 ? 'South' : 'North';
 
-                // If cooldown is ready, START THE SWING!
                 if (hero.attackTimer >= 0) {
                     hero.isWindingUp = true;
                 }
             }
-            // If out of range, do nothing here. The 60-FPS physics engine in input.js will auto-chase!
         }
     }
 }
 
-
-
-
 function applyPlayerDamage(target, damage) {
-    // 1. Send hit to server
     if (socket) {
         socket.emit('pvpAttack', {
             targetId: target.id,
             damage: damage
         });
     }
-
     console.log(`⚔️ PvP HIT sent! Waiting for server truth...`);
-
-    // ❌ REMOVED: target.hp = Math.max(0, target.hp - damage);
-    // ❌ REMOVED: if (target.hp <= 0) { ... }
-    
-    // THE NEW LOGIC: 
-    // We let the 'playerHit' listener in multiplayer.js 
-    // handle the HP update and the death check.
 }
-
 
 function findNearestPlayer(hero, remotePlayers, range) {
     let nearest = null;
@@ -1007,22 +871,25 @@ export function upgradeStat(statName) {
     const info = getLevelInfo(hero.xp);
     const spentPoints = (hero.spentPoints || 0);
     
-    if (info.points - spentPoints <= 0) return; // No points left
+    if (info.points - spentPoints <= 0) return; 
 
     switch(statName) {
         case 'hp':
             hero.maxHp += 10;
-            hero.hp += 10; // Heal them for the gain
+            hero.hp += 10; 
             break;
         case 'speed':
             hero.speed += 10;
             break;
         case 'ad':
             hero.ad += 1;
+            break;
         case 'armor':
             hero.armor += 1;
+            break;
         case 'mr':
             hero.mr += 1;
+            break;
         case 'magic':
             hero.magic += 1;
             break;
@@ -1030,11 +897,8 @@ export function upgradeStat(statName) {
 
     hero.spentPoints = spentPoints + 1;
     
-    // Sync the new stats to the server
     socket.emit('updateStats', {
-
-        xp: hero.xp, // 👈 THE SERVER NEEDS THIS
-        
+        xp: hero.xp, 
         maxHp: hero.maxHp,
         ad: hero.ad,
         armor: hero.armor,
@@ -1044,11 +908,7 @@ export function upgradeStat(statName) {
     });
 }
 
-
-
-// --- 3. Add this new function at the bottom of the file ---
 function updateSpells(modifier) {
-    // 1. Move Projectiles
     for (let i = hero.projectiles.length - 1; i >= 0; i--) {
         let p = hero.projectiles[i];
         p.x += p.dx * p.speed * modifier;
@@ -1057,41 +917,35 @@ function updateSpells(modifier) {
 
         if (p.life <= 0) {
             console.log("💥 Lion's Breath Exploded!");
-            // A. Burst Heal
             applyAoEHeal(p.x, p.y, 40, p.healTick);
             
-            // B. Spawn Persistent Scorched Earth
             hero.aoeZones.push({
                 x: p.x, y: p.y,
                 radius: 40,
-                life: 4.0, // Lasts 4 seconds
+                life: 4.0, 
                 tickTimer: 0,
-                healAmount: hero.magic * 0.1 // Small heal over time
+                healAmount: hero.magic * 0.1 
             });
             hero.projectiles.splice(i, 1);
         }
     }
 
-    // 2. Tick AoE Zones
     for (let i = hero.aoeZones.length - 1; i >= 0; i--) {
         let z = hero.aoeZones[i];
         z.life -= modifier;
 
-        // 🌟 RADIANT NOVA LOGIC
         if (z.type === 'radiantNova') {
             if (z.life <= 0) {
                 console.log("🌠 Radiant Nova Detonated!");
                 if (socket) socket.emit('abilityAoE', { type: 'radiantNovaExplosion', x: z.x, y: z.y, radius: z.radius, damage: z.damage });
                 hero.aoeZones.splice(i, 1);
             }
-            continue; // 👈 This skips the healing logic below and moves to the next zone!
+            continue; 
         }
 
-        // 🌟 CONSECRATION LOGIC
         if (z.type === 'consecration') {
             z.tickTimer -= modifier;
             if (z.tickTimer <= 0) {
-                // Tell the server to deal damage in this area!
                 if (socket) {
                     socket.emit('abilityAoE', { 
                         type: 'consecrationTick', 
@@ -1101,20 +955,18 @@ function updateSpells(modifier) {
                         damage: z.damage 
                     });
                 }
-                z.tickTimer = 1.0; // Reset timer for the next second
+                z.tickTimer = 1.0; 
             }
             if (z.life <= 0) hero.aoeZones.splice(i, 1);
             continue; 
         }
 
-        // 🔥 LION'S BREATH (HEALING ZONE) LOGIC
         z.tickTimer -= modifier;
         if (z.tickTimer <= 0) {
             applyAoEHeal(z.x, z.y, z.radius, z.healAmount);
-            z.tickTimer = 1.0; // Apply heal every 1 second
+            z.tickTimer = 1.0; 
         }
 
-        // Clean up healing zones when they expire
         if (z.life <= 0) {
             hero.aoeZones.splice(i, 1);
         }
@@ -1122,7 +974,6 @@ function updateSpells(modifier) {
 }
 
 function applyAoEHeal(x, y, radius, amount) {
-    // Heal Self
     const dx = (hero.x + 8) - x;
     const dy = (hero.y + 8) - y;
     if (dx * dx + dy * dy <= radius * radius) {
@@ -1130,7 +981,6 @@ function applyAoEHeal(x, y, radius, amount) {
         if (socket) socket.emit('updateStats', { hp: hero.hp });
     }
     
-    // Heal Allies (Currently heals all remote players in radius)
     remotePlayers.forEach((p, id) => {
         const pdx = (p.x + 8) - x;
         const pdy = (p.y + 8) - y;
@@ -1140,53 +990,43 @@ function applyAoEHeal(x, y, radius, amount) {
     });
 }
 
-// --- Add to the bottom of src/interactionManager.js ---
 function updatePetAI(modifier, pet) {
     pet.life -= modifier;
     
-    // 💀 DEATH / EXPIRE LOGIC
     if (pet.life <= 0 || pet.hp <= 0) {
         pet.active = false;
         console.log("🤖 Zenith Guardian departed.");
         
-        // 👇 TRIGGER THE MASSIVE COOLDOWN HERE!
-        // Find which slot holds p16 and set it to 120 seconds
         const p16Index = hero.skills.indexOf('p16');
         if (p16Index !== -1) {
             hero.cooldowns[p16Index] = 120.0; 
         }
-
-        return; // Exit the loop, pet is dead!
+        return; 
     }
 
-    // 1. LAY ON HANDS (Auto-Heal Owner)
     pet.healTimer -= modifier;
     if (pet.healTimer <= 0) {
         const healAmount = hero.magic * 0.20;
         hero.hp = Math.min(hero.maxHp, hero.hp + healAmount);
         console.log(`🤲 Guardian Healed you for ${healAmount}!`);
         if (socket) socket.emit('updateStats', { hp: hero.hp });
-        pet.healTimer = 10.0; // Lay on hands has a 10s internal CD
+        pet.healTimer = 10.0; 
     }
 
-    // 2. MOVEMENT & TARGETING
     let targetX = hero.x + 8;
     let targetY = hero.y + 8;
     let isAttacking = false;
     let enemyTarget = null;
 
     if (pet.overrideTarget) {
-        // Player used Recast to send the pet somewhere
         targetX = pet.overrideTarget.x;
         targetY = pet.overrideTarget.y;
         
-        // If it reaches the destination, clear the override
         if (Math.hypot(pet.x - targetX, pet.y - targetY) < 16) {
             pet.overrideTarget = null; 
         }
     } else {
-        // AI Mode: Find nearest enemy
-        let nearestDist = 200; // Aggro radius
+        let nearestDist = 200; 
         remotePlayers.forEach((p, id) => {
             if (p.hp <= 0) return;
             const dist = Math.hypot((p.x + 8) - pet.x, (p.y + 8) - pet.y);
@@ -1200,79 +1040,58 @@ function updatePetAI(modifier, pet) {
             targetX = enemyTarget.x + 8;
             targetY = enemyTarget.y + 8;
             
-            // If in punch range, stop moving and attack!
             if (nearestDist < 24) {
                 isAttacking = true;
             }
         }
     }
 
-    // Move the Pet
     if (!isAttacking) {
         const dx = targetX - pet.x;
         const dy = targetY - pet.y;
         const dist = Math.hypot(dx, dy);
         
         if (dist > 16) { 
-            pet.dx = dx; // 👈 Track direction
-            pet.dy = dy; // 👈 Track direction
+            pet.dx = dx; 
+            pet.dy = dy; 
             
             pet.x += (dx / dist) * pet.speed * modifier;
             pet.y += (dy / dist) * pet.speed * modifier;
         } else {
-            pet.dx = 0; // 👈 Stop moving
-            pet.dy = 0; // 👈 Stop moving
+            pet.dx = 0; 
+            pet.dy = 0; 
         }
     } else {
         pet.dx = 0; 
         pet.dy = 0;
     }
 
-
-    // 3. COMBAT
     pet.attackTimer -= modifier;
     if (isAttacking && pet.attackTimer <= 0 && enemyTarget) {
         console.log("🤖 Guardian smashed an enemy!");
-        pet.attackTimer = 1.5; // Pet attacks every 1.5s
+        pet.attackTimer = 1.5; 
         
-        // Deal damage directly via server
         if (socket) {
             socket.emit('pvpAttack', {
                 targetId: enemyTarget.id,
-                damage: pet.ad // Uses Pet's AD
+                damage: pet.ad 
             });
         }
     }
 }
-/**
- * 🏦 3. FINANCIAL ACTIONS (B, P)
- * Slow, Web3/Blockchain interactions.
- */
+
 export function handleFinancialActions() {
-    // Banking (Voucher Redemption)
     if (inputState.keyB) {
         inputState.keyB = false;
-        if (pendingVouchers.length > 0) {
-            // 🛑 SAFETY: Stop the hero from moving before opening MetaMask
+        if (typeof pendingVouchers !== 'undefined' && pendingVouchers.length > 0) {
             hero.isMoving = false; 
             redeemAllVouchers(); 
         }
     }
 
-    // Withdrawal Menu (Key P)
     if (inputState.keyP) {
         inputState.keyP = false;
         hero.isMoving = false;
-        openWithdrawMenu(); // 🆕 Now opens the menu
+        openWithdrawMenu(); 
     }
-}
-
-
-// Helper to map IDs back to types
-function getSeedTypeFromID(id) {
-    if (id === 1) return "fish";
-    if (id === 3) return "plant_matter"; // 🎯 FIXED
-    if (id === 4) return "chicken_poop";
-    if (id === 5) return "cooked_fish";
-    return null;
 }
