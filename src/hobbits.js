@@ -8,6 +8,7 @@ import { worldTime } from './clock.js';
 import { plants, PLANT_DEFS, createPlant } from './plants.js';
 import { ITEM_TYPES, createItem } from './items.js';
 import { getBacteriaData } from './bacteria.js';
+import { findPath } from './pathfinding.js'; // 👈 Loaded from pathfinding.js
 
 export const hobbits = [];
 
@@ -234,7 +235,7 @@ function tryHobbitTrade(hobbit, counterX, counterY) {
             }
         }
     } 
-    else if (hobbit.job === 'Farmer') {
+    else if (hobbit.job === 'Farmer' && foodItem) {
         const foodItem = hobbit.inventory.find(i => !i.isKey && i.seedType !== 'plant_matter');
         if (!foodItem) {
             console.warn(`[TRADE DEBUG] ❌ Farmer has no agricultural yields in inventory to trade.`);
@@ -344,36 +345,19 @@ function assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix) {
     }
 }
 
+/**
+ * 🧠 REFURBISHED: Leverages the unified findPath utility to navigate to exact coordinates
+ */
 function findPathToCoords(startTX, startTY, targetTX, targetTY, worldMatrix, roomMatrix, hobbit = null) {
-    const queue = [{ x: startTX, y: startTY, path: [] }];
-    const visited = new Set([`${startTX}_${startTY}`]);
-    const maxDepth = 80; 
+    const isWalkableFn = (tx, ty, fromX, fromY) => {
+        return isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix, hobbit, fromX, fromY);
+    };
 
-    while (queue.length > 0) {
-        const curr = queue.shift();
+    const isTargetFn = (tx, ty) => {
+        return tx === targetTX && ty === targetTY; // Match target coordinates exactly
+    };
 
-        if (curr.x === targetTX && curr.y === targetTY) {
-            return curr.path;
-        }
-
-        if (curr.path.length >= maxDepth) continue;
-
-        const neighbors = [
-            { x: curr.x, y: curr.y - 1 }, { x: curr.x, y: curr.y + 1 },
-            { x: curr.x - 1, y: curr.y }, { x: curr.x + 1, y: curr.y }
-        ];
-
-        for (let n of neighbors) {
-            const key = `${n.x}_${n.y}`;
-            if (!visited.has(key)) {
-                visited.add(key);
-                if (isWalkableForHobbit(n.x, n.y, worldMatrix, roomMatrix, hobbit, curr.x, curr.y)) {
-                    queue.push({ x: n.x, y: n.y, path: [...curr.path, { x: n.x, y: n.y }] });
-                }
-            }
-        }
-    }
-    return null;
+    return findPath(startTX, startTY, isWalkableFn, isTargetFn, 80); // Hobbits use maxDepth of 80
 }
 
 function findNearestMaturePlant(hobbit, range = 480) { 
@@ -833,7 +817,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         // ⚡ TIER 1: VIEWPORT ACTIVE (On-Screen Real-Time)
         // ==========================================
         
-        // Deplete energy gradually in real-time
         hobbit.energy = Math.max(0, hobbit.energy - (modifier * 0.5));
 
         const currTX = Math.floor((hobbit.x + 8) / 16);
@@ -857,7 +840,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             hobbit.pathTimer -= modifier;
         }
 
-        // --- CORE BEHAVIORAL GOAL ALLOCATOR ---
         if (target && targetDist <= 20) {
             hobbit.goal = 'engage';
             if (hobbit.state !== 'attacking') {
@@ -893,7 +875,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 }
             }
         } 
-        // Hunger override check (higher priority than jobs, lower than combat self-defense)
         else if (hobbit.energy < 30) {
             const ate = eatFoodIfAvailable(hobbit);
             if (!ate) {

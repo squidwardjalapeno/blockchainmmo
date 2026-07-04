@@ -5,6 +5,7 @@ import { ITEM_TYPES } from './items.js';
 import { moveEntity, getTileData } from './physics.js'; 
 import { hero } from './entities.js'; 
 import { viewport } from './viewport.js'; 
+import { findPath } from './pathfinding.js'; // 👈 Loaded from pathfinding.js
 
 export const animals = []; 
 
@@ -34,46 +35,22 @@ function isWalkable(tx, ty, worldMatrix, roomMatrix) {
     return true;
 }
 
-// 🧠 HELPER: BFS Pathfinding
+/**
+ * 🧠 REFURBISHED: Leverages the unified findPath utility
+ */
 function findPathToTarget(startTX, startTY, worldMatrix, roomMatrix, targetTileID = null) {
-    const queue = [{ x: startTX, y: startTY, path: [] }];
-    const visited = new Set([`${startTX}_${startTY}`]);
-    const maxDepth = 20; // Search radius
-
-    while (queue.length > 0) {
-        const curr = queue.shift();
-
-        // Check for Food
-        if (targetTileID === null && curr.path.length > 0 && plants.has(`${curr.x}_${curr.y}`)) {
-            return curr.path; 
+    const isWalkableFn = (tx, ty) => isWalkable(tx, ty, worldMatrix, roomMatrix);
+    
+    const isTargetFn = (tx, ty) => {
+        if (targetTileID === null) {
+            return plants.has(`${tx}_${ty}`); // Search for any growing plant
+        } else {
+            const tileData = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix);
+            return tileData && tileData.tileID === targetTileID; // Search for specific tile ID (e.g. Nesting Box 44)
         }
-        
-        // Check for Specific Tile (Like the Nesting Box)
-        if (targetTileID !== null && curr.path.length > 0) {
-            const tileData = getTileData(curr.x * 16 + 8, curr.y * 16 + 8, worldMatrix, roomMatrix);
-            if (tileData && tileData.tileID === targetTileID) {
-                return curr.path;
-            }
-        }
+    };
 
-        if (curr.path.length >= maxDepth) continue;
-
-        const neighbors = [
-            { x: curr.x, y: curr.y - 1 }, { x: curr.x, y: curr.y + 1 },
-            { x: curr.x - 1, y: curr.y }, { x: curr.x + 1, y: curr.y } 
-        ];
-
-        for (let n of neighbors) {
-            const key = `${n.x}_${n.y}`;
-            if (!visited.has(key)) {
-                visited.add(key);
-                if (isWalkable(n.x, n.y, worldMatrix, roomMatrix)) {
-                    queue.push({ x: n.x, y: n.y, path: [...curr.path, { x: n.x, y: n.y }] });
-                }
-            }
-        }
-    }
-    return null; 
+    return findPath(startTX, startTY, isWalkableFn, isTargetFn, 20); // Chickens use maxDepth of 20
 }
 
 // 🧠 HELPER: Pick a random nearby walkable tile for wandering
@@ -103,7 +80,6 @@ function macroWander(startX, startY, steps, worldMatrix, roomMatrix) {
     }
     return { x: curX, y: curY };
 }
-
 
 export function updateAnimals(modifier, worldMatrix, roomMatrix) {
     const heroCX = Math.floor(hero.x / 1600);
