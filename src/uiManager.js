@@ -480,6 +480,55 @@ export function initUI() {
     initMiningListeners();
 }
 
+export function openVillageMenu(wellX, wellY, villageData) {
+    document.getElementById('village-menu').classList.remove('hidden');
+    
+    const ownerLabel = document.getElementById('village-owner-label');
+    const progressSection = document.getElementById('village-progress-section');
+    const progressBar = document.getElementById('village-progress-bar');
+    const progressText = document.getElementById('village-progress-text');
+    const claimBtn = document.getElementById('village-claim-btn');
+
+    const shortOwner = villageData.owner ? (villageData.owner.startsWith('0x') ? villageData.owner.substring(0, 6) + "..." : villageData.owner) : "UNCLAIMED";
+    ownerLabel.innerText = shortOwner;
+
+    if (villageData.owner === null) {
+        progressSection.classList.add('hidden');
+        claimBtn.innerText = "CLAIM PEACEFULLY";
+        claimBtn.className = "pixel-btn safe";
+        claimBtn.disabled = false;
+        
+        claimBtn.onclick = () => {
+            if (socket) socket.emit('requestWellInteraction', { wellX, wellY });
+            document.getElementById('village-menu').classList.add('hidden');
+        };
+    } else {
+        progressSection.classList.remove('hidden');
+        const pct = villageData.progress || 0;
+        progressBar.style.width = `${pct}%`;
+        progressText.innerText = `${Math.floor(pct)}%`;
+
+        const isOwner = (villageData.owner === playerWallet);
+        if (isOwner) {
+            claimBtn.innerText = "YOU OWN THIS VILLAGE";
+            claimBtn.className = "pixel-btn";
+            claimBtn.disabled = true;
+        } else {
+            claimBtn.innerText = "INITIATE SIEGE";
+            claimBtn.className = "pixel-btn cancel";
+            claimBtn.disabled = false;
+            claimBtn.onclick = () => {
+                if (socket) socket.emit('requestWellInteraction', { wellX, wellY });
+                document.getElementById('village-menu').classList.add('hidden');
+            };
+        }
+    }
+
+    document.getElementById('close-village-btn').onclick = () => {
+        document.getElementById('village-menu').classList.add('hidden');
+    };
+}
+
 // 🎯 THE FIX: Relocating UI-specific socket events into uiManager to prevent circular dependency loads
 export function setupMultiplayerListeners(s) {
     s.on('needsCharacterCreation', () => {
@@ -1534,7 +1583,7 @@ export function updateHUD() {
                         'deposit_pm': 'STORING FODDER',
                         'sell_food': 'SELLING PRODUCTS',
                         'sell_pm': 'MARKETING RAW MATERIALS',
-                        'withdraw_pm': 'WITHDRAWING SUPPLIES',
+                        'withdraw_pm': 'PREPARING TRADES',
                         'gohome': 'RETURNING HOME',
                         'sleep': 'RESTING',
                         'unlock_door': 'OPENING PREMISES',
@@ -1982,7 +2031,7 @@ window.selectHobbit = (id) => {
 window.assignHobbitJob = (jobName) => {
     if (!selectedHobbitId) return;
     import('./hobbits.js').then(m => {
-        const target = m.hobbits.find(h => h.id === selectedHobbitId);
+        const target = m.hobbits.find(m => m.id === selectedHobbitId);
         if (target) {
             target.job = jobName;
             target.path = []; 
