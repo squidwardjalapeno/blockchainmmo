@@ -18,6 +18,14 @@ export const storeDbCache = new Map();
 export const hayStorageCache = new Map(); 
 export const chestCache = new Map(); 
 
+// Bind the caches to the window to ensure they are accessible globally without circular imports
+if (typeof window !== 'undefined') {
+    window.doorStates = doorStates;
+    window.storeDbCache = storeDbCache;
+    window.hayStorageCache = hayStorageCache;
+    window.chestCache = chestCache;
+}
+
 // Track the chest actively requested by the player's GUI
 export let playerRequestedChestId = null;
 export function setPlayerRequestedChestId(id) {
@@ -32,6 +40,9 @@ export function setWorldMatrix(matrix) {
 
 export function setPlayerWallet(address) {
     playerWallet = address;
+    if (typeof window !== 'undefined') {
+        window.playerWallet = address;
+    }
 }
 
 export function initMultiplayer() {

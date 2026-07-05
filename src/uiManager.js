@@ -1,7 +1,7 @@
 // src/uiManager.js
 
 import { hero, getLevelInfo, gameState } from './entities.js';
-import { socket, playerWallet, setPlayerWallet, syncInventoryWithServer, chestCache, hayStorageCache, storeDbCache, playerRequestedChestId, setPlayerRequestedChestId, doorStates } from './multiplayer.js';
+import { socket, playerWallet, setPlayerWallet, syncInventoryWithServer, playerRequestedChestId, setPlayerRequestedChestId } from './multiplayer.js';
 import { CONFIG } from './config.js';
 import { ITEM_TYPES, createItem } from './items.js';
 import { getWaitModifier, getRandomFish, globalFishCount } from './fish.js';
@@ -513,7 +513,7 @@ export function renderStorageUI() {
     heroInv.innerHTML = hero.inventory.map((item, i) => `
         <div class="inv-item draggable-item" draggable="true" data-index="${i}" data-source="hero">
             <div class="item-icon" style="font-size: 24px;">${getItemIcon(item)}</div>
-            strong>${item.name}</strong>
+            <strong>${item.name}</strong>
             ${item.count > 1 ? `<br><span style="color:var(--banana-dark); font-size:8px;">(x${item.count})</span>` : ''}
         </div>
     `).join('');
@@ -1981,7 +1981,7 @@ export function setupMultiplayerListeners(s) {
     });
 
     s.on('chestData', (data) => { 
-        chestCache.set(data.chestId, data.items);
+        if (window.chestCache) window.chestCache.set(data.chestId, data.items);
         if (data.chestId === playerRequestedChestId) {
             openUnifiedStorage(data.chestId, data.items, 'CHEST'); 
             setPlayerRequestedChestId(null); 
@@ -1989,12 +1989,12 @@ export function setupMultiplayerListeners(s) {
     });
 
     s.on('chestUpdated', (data) => { 
-        chestCache.set(data.chestId, data.items);
+        if (window.chestCache) window.chestCache.set(data.chestId, data.items);
         handleRemoteStorageUpdate(data.chestId, data.items, 'CHEST'); 
     });
     
     s.on('storeData', (data) => { 
-        storeDbCache.set(data.storeId, data.data);
+        if (window.storeDbCache) window.storeDbCache.set(data.storeId, data.data);
         if (window.isManualStoreRequest) {
             window.isManualStoreRequest = false;
             openStoreMenu(data.storeId, data.data); 
@@ -2002,17 +2002,17 @@ export function setupMultiplayerListeners(s) {
     });
 
     s.on('storeUpdated', (data) => { 
-        storeDbCache.set(data.storeId, data.data);
+        if (window.storeDbCache) window.storeDbCache.set(data.storeId, data.data);
         handleRemoteStoreUpdate(data.storeId, data.data); 
     });
 
     s.on('hayStorageData', (data) => { 
-        hayStorageCache.set(data.hayStorageId, data.items);
+        if (window.hayStorageCache) window.hayStorageCache.set(data.hayStorageId, data.items);
         openUnifiedStorage(data.hayStorageId, data.items, 'HAY'); 
     });
 
     s.on('hayStorageUpdated', (data) => { 
-        hayStorageCache.set(data.hayStorageId, data.items);
+        if (window.hayStorageCache) window.hayStorageCache.set(data.hayStorageId, data.items);
         handleRemoteStorageUpdate(data.hayStorageId, data.items, 'HAY'); 
     });
 
@@ -2040,12 +2040,16 @@ export function setupMultiplayerListeners(s) {
     });
 
     s.on('doorState', (data) => {
-        doorStates.set(`${data.gx}_${data.gy}`, { locked: data.locked });
+        if (window.doorStates) {
+            window.doorStates.set(`${data.gx}_${data.gy}`, { locked: data.locked });
+        }
         updateDoorControlUI(data.gx, data.gy, data.locked);
     });
 
     s.on('doorStateUpdated', (data) => {
-        doorStates.set(`${data.gx}_${data.gy}`, { locked: data.locked });
+        if (window.doorStates) {
+            window.doorStates.set(`${data.gx}_${data.gy}`, { locked: data.locked });
+        }
         updateDoorControlUI(data.gx, data.gy, data.locked);
     });
 
