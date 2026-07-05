@@ -834,7 +834,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
 
         const currTX = Math.floor((hobbit.x + 8) / 16);
         const currTY = Math.floor((hobbit.y + 15) / 16); 
-        const pCol = roomMatrix[Math.floor(currTX / 100)]?.[Math.floor(currTY / 100)];
+        const pCol = roomMatrix[Math.floor(currTX / 100)]?.[Math.floor(hobbitCX / 100)];
         const roomID = pCol ? pCol[((currTY % 100 + 100) % 100 * 100) + ((currTX % 100 + 100) % 100)] : 0;
 
         const village = getHobbitVillage(hobbit);
@@ -922,7 +922,10 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         const py = (hero.y + 8) - (hobbit.y + 8);
         const distToHero = Math.hypot(px, py);
 
-        if (distToHero < 80 && hero.hp > 0) {
+        // 🎯 THE FIX: Allied hobbits never auto-aggro their village owner!
+        const isOwner = (villageOwner === playerWallet);
+
+        if (distToHero < 80 && hero.hp > 0 && !isOwner) {
             target = hero;
             targetDist = distToHero;
         }
