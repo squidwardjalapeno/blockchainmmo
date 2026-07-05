@@ -1,7 +1,7 @@
 // src/uiManager.js
 
 import { hero, getLevelInfo, gameState } from './entities.js';
-import { socket, playerWallet, setPlayerWallet, syncInventoryWithServer, chestCache, hayStorageCache, storeDbCache } from './multiplayer.js';
+import { socket, playerWallet, setPlayerWallet, syncInventoryWithServer, chestCache, hayStorageCache, storeDbCache, playerRequestedChestId, setPlayerRequestedChestId } from './multiplayer.js';
 import { CONFIG } from './config.js';
 import { ITEM_TYPES, createItem } from './items.js';
 import { getWaitModifier, getRandomFish, globalFishCount } from './fish.js';
@@ -225,7 +225,7 @@ export function initUI() {
             return;
         }
         if (!playerWallet) {
-            alert("You must connect your wallet to receive blessings!");
+            alert("Connect your wallet to receive blessings!");
             return;
         }
 
@@ -472,6 +472,156 @@ export function initUI() {
     }
 
     initMiningListeners();
+}
+
+// 🎯 THE FIX: Relocating UI-specific socket events into uiManager to prevent circular dependency loads
+export function setupMultiplayerListeners(s) {
+    s.on('needsCharacterCreation', () => {
+        document.getElementById('main-menu').classList.add('hidden');
+        document.getElementById('character-creation-menu').classList.remove('hidden');
+        renderCharacterCreation();
+    });
+
+    s.on('tgvUpdate', (data) => {
+        import('./entities.js').then(m => {
+            m.gameState.tvl = data.tgv; 
+            updateHUD(); 
+        });
+    });
+
+    s.on('updateEquipment', (serverEquipment) => {
+        import('./entities.js').then(m => {
+            m.hero.equipment = serverEquipment;
+            renderTabContent(); 
+        });
+    });
+
+    s.on('updateInventory', (serverInventory) => {
+        import('./entities.js').then(m => {
+            m.hero.inventory = serverInventory;
+            renderTabContent();
+            
+            const templeMenu = document.getElementById('temple-menu');
+            if (templeMenu && !templeMenu.classList.contains('hidden')) {
+                renderTempleUI();
+            }
+            
+            const storageMenu = document.getElementById('storage-menu');
+            if (storageMenu && !storageMenu.classList.contains('hidden')) {
+                renderStorageUI();
+            }
+        });
+    });
+
+    s.on('restoreHero', (data) => {
+        hero.xp = data.xp || 0;
+        hero.hp = data.hp || 100;
+        hero.maxHp = data.maxHp || 100;
+        hero.energy = data.energy !== undefined ? data.energy : 100;
+        hero.maxEnergy = data.maxEnergy || 100;
+        hero.ad = data.ad || 10;
+        hero.armor = data.armor || 0;
+        hero.magic = data.magic || 10;
+        hero.mr = data.mr || 0;
+        hero.speed = data.speed || 100;
+        hero.spentPoints = data.spentPoints || 0;
+        hero.inGameUni = data.inGameUni || 0;
+        hero.inventory = data.inventory || []; 
+        hero.equipment = data.equipment || { mainHand: null };
+
+        if(data.x !== undefined) hero.x = data.x;
+        if(data.y !== undefined) hero.y = data.y;
+
+        if (data.dir) {
+            let safeDir = data.dir;
+            if (safeDir === 'Down') safeDir = 'South';
+            if (safeDir === 'Up') safeDir = 'North';
+            if (safeDir === 'Left') safeDir = 'West';
+            if (safeDir === 'Right') safeDir = 'East';
+            hero.dir = safeDir;
+        } else {
+            hero.dir = 'South';
+        }
+        
+        hero.charClass = data.charClass || "Paladin";
+        hero.skills = data.skills || [];
+
+        updateHUD();
+        renderTabContent(); 
+
+        document.getElementById('main-menu').classList.add('hidden');
+        const charMenu = document.getElementById('character-creation-menu');
+        if (charMenu) charMenu.classList.add('hidden');
+        document.getElementById('hud').style.display = 'block';
+
+        console.log("✅ Identity confirmed. Inventory synced.");
+    });
+
+    s.on('chestData', (data) => { 
+        chestCache.set(data.chestId, data.items);
+        if (data.chestId === playerRequestedChestId) {
+            openUnifiedStorage(data.chestId, data.items, 'CHEST'); 
+            setPlayerRequestedChestId(null); 
+        }
+    });
+
+    s.on('chestUpdated', (data) => { 
+        chestCache.set(data.chestId, data.items);
+        handleRemoteStorageUpdate(data.chestId, data.items, 'CHEST'); 
+    });
+    
+    s.on('storeData', (data) => { 
+        storeDbCache.set(data.storeId, data.data);
+        if (window.isManualStoreRequest) {
+            window.isManualStoreRequest = false;
+            openStoreMenu(data.storeId, data.data); 
+        }
+    });
+
+    s.on('storeUpdated', (data) => { 
+        storeDbCache.set(data.storeId, data.data);
+        handleRemoteStoreUpdate(data.storeId, data.data); 
+    });
+
+    s.on('hayStorageData', (data) => { 
+        hayStorageCache.set(data.hayStorageId, data.items);
+        openUnifiedStorage(data.hayStorageId, data.items, 'HAY'); 
+    });
+
+    s.on('hayStorageUpdated', (data) => { 
+        hayStorageCache.set(data.hayStorageId, data.items);
+        handleRemoteStorageUpdate(data.hayStorageId, data.items, 'HAY'); 
+    });
+
+    s.on('storageClaimed', (data) => { processClaimedStorage(data.items); });
+    s.on('cellarData', (data) => { openUnifiedStorage(data.cellarId, data.items, 'CELLAR'); });
+    s.on('cellarUpdated', (data) => { handleRemoteStorageUpdate(data.cellarId, data.items, 'CELLAR'); });
+    
+    s.on('oreData', (data) => { openMiningMenu(data.oreId, data.data); });
+    s.on('oreUpdated', (data) => { handleRemoteOreUpdate(data.oreId, data.data); });
+    s.on('oreMessage', (msg) => { alert(msg); });
+    
+    s.on('receiveOreLoot', () => {
+        import('./items.js').then(items => {
+            const ore = items.createItem(items.ITEM_TYPES.IRON_ORE);
+            if (im.giveItemToHero(ore)) {
+                alert("You collected the Iron Ore!");
+                renderTabContent(); 
+            } else {
+                alert("Your backpack is full! Make room first.");
+            }
+        });
+    });
+
+    s.on('doorState', (data) => {
+        doorStates.set(`${data.gx}_${data.gy}`, { locked: data.locked });
+        updateDoorControlUI(data.gx, data.gy, data.locked);
+    });
+
+    s.on('doorStateUpdated', (data) => {
+        doorStates.set(`${data.gx}_${data.gy}`, { locked: data.locked });
+        updateDoorControlUI(data.gx, data.gy, data.locked);
+    });
 }
 
 export function openUnifiedStorage(id, items, type) {
@@ -1097,7 +1247,7 @@ window.claimStoredItem = (index) => {
 };
 
 // ==========================================
-// ⛩️ TEMPLE UI LOGIC
+// ⛩️ TEMPLE ALTAR MENU --> Setup listeners
 // ==========================================
 export function openTempleMenu() {
     altarItem = null;
@@ -1292,8 +1442,7 @@ export async function executeWithdrawal(voucher) {
 
 // ==========================================
 // 🔄 HUD UPDATES
-// inside updateHUD() in src/uiManager.js
-
+// ==========================================
 export function updateHUD() {
     const uniDisplay = document.getElementById('uni-display');
     const playerCount = document.getElementById('player-count');
@@ -1347,35 +1496,37 @@ export function updateHUD() {
                     const goalMap = {
                         'wander': 'WANDERING',
                         'food': 'LOOKING FOR FOOD',
+                        'harvest_food': 'HARVESTING SUSTENANCE',
                         'harvest': 'HARVESTING CROPS',
-                        'deposit': 'DEPOSITING LOOT',
-                        'engage': 'ENGAGING ENEMY',
-                        'sleep': 'SLEEPING',
-                        'get_food_from_chest': 'SEARCHING CHEST FOR FOOD',
-                        'harvest_food': 'HARVESTING FOOD (HUNGRY)',
-                        'unlock_door': 'UNLOCKING DOORS',
-                        'lock_door': 'SECURING TOWN',
-                        'collect_egg': 'COLLECTING EGGS',
-                        'sell_food': 'MARKET TRADING (CROPS)',
+                        'collect_egg': 'COLLECTING NEST EGGS',
+                        'get_food_from_chest': 'RETRIEVING SUPPLIES',
                         'deposit_pm': 'STORING FODDER',
-                        'withdraw_pm': 'PREPARING TRADES',
-                        'sell_pm': 'MARKET TRADING (PM)',
-                        'wait_at_barn': 'SHELTERING AT BARN'
+                        'sell_food': 'SELLING PRODUCTS',
+                        'sell_pm': 'MARKETING RAW MATERIALS',
+                        'withdraw_pm': 'WITHDRAWING SUPPLIES',
+                        'gohome': 'RETURNING HOME',
+                        'sleep': 'RESTING',
+                        'unlock_door': 'OPENING PREMISES',
+                        'lock_door': 'SECURING PREMISES',
+                        'wait_at_barn': 'GUARDING BARN'
                     };
 
-                    specGoal.innerText = goalMap[hob.goal] || (hob.goal ? hob.goal.toUpperCase() : 'WANDERING');
-                    specState.innerText = hob.state ? hob.state.toUpperCase() : 'IDLE';
-                    specEnergy.innerText = `${Math.floor(hob.energy || 0)}%`;
+                    specGoal.innerText = goalMap[hob.goal] || hob.goal.toUpperCase().replace('_', ' ');
 
-                    if (hob.inventory && hob.inventory.length > 0) {
-                        specItems.innerHTML = hob.inventory.map(item => `
-                            <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.05); padding: 2px 4px; border: 1px dashed rgba(255,255,255,0.15); margin-bottom: 2px;">
-                                <span>${getItemIcon(item)} ${item.name}</span>
-                                <span style="color: var(--banana-dark);">${item.count > 1 ? `x${item.count}` : ''}</span>
-                            </div>
-                        `).join('');
+                    specState.innerText = hob.state ? hob.state.toUpperCase() : "IDLE";
+
+                    const energyPct = (hob.energy !== undefined ? hob.energy : 100);
+                    specEnergy.innerText = `${Math.floor(energyPct)}%`;
+
+                    const nonKeyItems = hob.inventory.filter(item => !item.isKey);
+                    if (nonKeyItems.length === 0) {
+                        specItems.innerHTML = `<span style="color:#666;">EMPTY</span>`;
                     } else {
-                        specItems.innerHTML = `<div style="color: #666; text-align: center; font-style: italic; padding: 4px;">EMPTY</div>`;
+                        specItems.innerHTML = nonKeyItems.map(item => `
+                            <span style="background: rgba(255,255,255,0.15); padding: 2px 4px; border: 2px solid var(--bg-dark); margin: 2px; font-size:6px; display:inline-block;">
+                                ${getItemIcon(item)} ${item.name} (${item.count})
+                            </span>
+                        `).join('');
                     }
 
                     spectatePanel.classList.remove('hidden');
@@ -1788,7 +1939,9 @@ export function openDoorControlMenu(gx, gy, roomID) {
     document.getElementById('door-menu-title').innerText = `🚪 ROOM #${roomID}`;
     document.getElementById('door-menu').classList.remove('hidden');
     
-    if (socket) socket.emit('requestDoorState', { gx, gy });
+    if (socket) {
+        socket.emit('requestDoorState', { gx, gy });
+    }
 }
 
 export function updateDoorControlUI(gx, gy, locked) {
