@@ -1141,6 +1141,8 @@ export function drawProjectiles(ctx2, serverProjectilesData) {
 
 // inside src/renderer.js
 
+// inside drawTargetCircle() in src/renderer.js
+
 export function drawTargetCircle(ctx2, target) {
     if (!target || target.hp <= 0) return; 
 
@@ -1150,12 +1152,15 @@ export function drawTargetCircle(ctx2, target) {
     const pulse = Math.sin(Date.now() / 150) * 2;
     const radius = 12 + pulse;
 
-    // Determine if target is an allied hobbit
+    // 🎯 OPTIMIZATION: Check if target is an allied hobbit using cachedWell
     let isAlly = false;
-    if (target.isHobbit && typeof window !== 'undefined' && window.getVillageAt) {
-        const hx = target.homeX || Math.floor(target.x / 16);
-        const hy = target.homeY || Math.floor(target.y / 16);
-        const well = window.getVillageAt(hx, hy);
+    if (target.isHobbit) {
+        if (target.cachedWell === undefined && typeof window !== 'undefined' && window.getVillageAt) {
+            const hx = target.homeX || Math.floor(target.x / 16);
+            const hy = target.homeY || Math.floor(target.y / 16);
+            target.cachedWell = window.getVillageAt(hx, hy);
+        }
+        const well = target.cachedWell;
         if (well && window.villageOwners) {
             const data = window.villageOwners.get(`${well.x}_${well.y}`);
             const playerWallet = window.playerWallet;

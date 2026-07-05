@@ -18,6 +18,8 @@ if (typeof window !== 'undefined') logStep("combat.js");
 
 // inside src/combat.js
 
+// inside src/combat.js
+
 export function scanForTarget(hero, range = 150, worldMatrix, roomMatrix) {
     if (lockedTarget) {
         currentTarget = lockedTarget;
@@ -33,11 +35,14 @@ export function scanForTarget(hero, range = 150, worldMatrix, roomMatrix) {
         const dy = entity.y - hero.y;
         const distSq = dx * dx + dy * dy;
 
-        // Skip targeting automated locking sweeps if the hobbit belongs to our owned village
-        const isAlly = entity.isHobbit && typeof window !== 'undefined' && window.getVillageAt && (() => {
-            const hx = entity.homeX || Math.floor(entity.x / 16);
-            const hy = entity.homeY || Math.floor(entity.y / 16);
-            const well = window.getVillageAt(hx, hy);
+        // 🎯 OPTIMIZATION: Check if entity is an allied hobbit using cachedWell
+        const isAlly = entity.isHobbit && (() => {
+            if (entity.cachedWell === undefined && typeof window !== 'undefined' && window.getVillageAt) {
+                const hx = entity.homeX || Math.floor(entity.x / 16);
+                const hy = entity.homeY || Math.floor(entity.y / 16);
+                entity.cachedWell = window.getVillageAt(hx, hy);
+            }
+            const well = entity.cachedWell;
             if (well && window.villageOwners) {
                 const data = window.villageOwners.get(`${well.x}_${well.y}`);
                 const playerWallet = window.playerWallet;
@@ -46,7 +51,7 @@ export function scanForTarget(hero, range = 150, worldMatrix, roomMatrix) {
             return false;
         })();
 
-        if (isAlly) return; 
+        if (isAlly) return; // Skip auto-locking on allies!
 
         if (distSq < range * range && distSq < nearestDist) {
             nearestDist = distSq;
@@ -56,7 +61,7 @@ export function scanForTarget(hero, range = 150, worldMatrix, roomMatrix) {
 
     remotePlayers.forEach(checkEntity);
     animals.forEach(checkEntity);
-    hobbits.forEach(checkEntity); 
+    hobbits.forEach(checkEntity); // Scan Hobbits for combat locking!
 
     // Scan the local map area for Ore Deposits (Tile 29)
     if (worldMatrix && roomMatrix) {

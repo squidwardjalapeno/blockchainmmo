@@ -837,7 +837,11 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         const pCol = roomMatrix[Math.floor(currTX / 100)]?.[Math.floor(hobbitCX / 100)];
         const roomID = pCol ? pCol[((currTY % 100 + 100) % 100 * 100) + ((currTX % 100 + 100) % 100)] : 0;
 
-        const village = getHobbitVillage(hobbit);
+        // 🎯 OPTIMIZATION: Lazy-cache the home village reference once to avoid heavy trig calculations every frame
+        if (hobbit.cachedWell === undefined) {
+            hobbit.cachedWell = getHobbitVillage(hobbit);
+        }
+        const village = hobbit.cachedWell;
         let isVillageContested = false;
         let villageOwner = null;
 
