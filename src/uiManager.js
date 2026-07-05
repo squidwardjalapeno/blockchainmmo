@@ -1,7 +1,7 @@
 // src/uiManager.js
 
 import { hero, getLevelInfo, gameState } from './entities.js';
-import { socket, playerWallet, setPlayerWallet, syncInventoryWithServer, chestCache, hayStorageCache, storeDbCache, playerRequestedChestId, setPlayerRequestedChestId } from './multiplayer.js';
+import { socket, playerWallet, setPlayerWallet, syncInventoryWithServer, chestCache, hayStorageCache, storeDbCache, playerRequestedChestId, setPlayerRequestedChestId, doorStates } from './multiplayer.js';
 import { CONFIG } from './config.js';
 import { ITEM_TYPES, createItem } from './items.js';
 import { getWaitModifier, getRandomFish, globalFishCount } from './fish.js';
@@ -513,7 +513,7 @@ export function renderStorageUI() {
     heroInv.innerHTML = hero.inventory.map((item, i) => `
         <div class="inv-item draggable-item" draggable="true" data-index="${i}" data-source="hero">
             <div class="item-icon" style="font-size: 24px;">${getItemIcon(item)}</div>
-            <strong>${item.name}</strong>
+            strong>${item.name}</strong>
             ${item.count > 1 ? `<br><span style="color:var(--banana-dark); font-size:8px;">(x${item.count})</span>` : ''}
         </div>
     `).join('');
@@ -2025,7 +2025,10 @@ export function setupMultiplayerListeners(s) {
     s.on('oreMessage', (msg) => { alert(msg); });
     
     s.on('receiveOreLoot', () => {
-        import('./items.js').then(items => {
+        Promise.all([
+            import('./items.js'),
+            import('./interactionManager.js')
+        ]).then(([items, im]) => {
             const ore = items.createItem(items.ITEM_TYPES.IRON_ORE);
             if (im.giveItemToHero(ore)) {
                 alert("You collected the Iron Ore!");
