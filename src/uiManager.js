@@ -1292,7 +1292,8 @@ export async function executeWithdrawal(voucher) {
 
 // ==========================================
 // 🔄 HUD UPDATES
-// ==========================================
+// inside updateHUD() in src/uiManager.js
+
 export function updateHUD() {
     const uniDisplay = document.getElementById('uni-display');
     const playerCount = document.getElementById('player-count');
@@ -1324,18 +1325,69 @@ export function updateHUD() {
 
     const spectateBanner = document.getElementById('spectate-banner');
     const spectateName = document.getElementById('spectate-target-name');
+    const spectatePanel = document.getElementById('spectate-info-panel');
+    const specName = document.getElementById('spec-info-name');
+    const specRole = document.getElementById('spec-info-role');
+    const specGoal = document.getElementById('spec-info-goal');
+    const specState = document.getElementById('spec-info-state');
+    const specEnergy = document.getElementById('spec-info-energy');
+    const specItems = document.getElementById('spec-info-items');
+
     if (spectateBanner && spectateName) {
         if (gameState.spectatedHobbitId && window.hobbits) {
             const hob = window.hobbits.find(h => h.id === gameState.spectatedHobbitId);
             if (hob) {
                 spectateName.innerText = hob.name;
                 spectateBanner.classList.remove('hidden');
+
+                if (spectatePanel && specName && specRole && specGoal && specState && specEnergy && specItems) {
+                    specName.innerText = hob.name;
+                    specRole.innerText = hob.job ? hob.job.toUpperCase() : "IDLE";
+
+                    const goalMap = {
+                        'wander': 'WANDERING',
+                        'food': 'LOOKING FOR FOOD',
+                        'harvest': 'HARVESTING CROPS',
+                        'deposit': 'DEPOSITING LOOT',
+                        'engage': 'ENGAGING ENEMY',
+                        'sleep': 'SLEEPING',
+                        'get_food_from_chest': 'SEARCHING CHEST FOR FOOD',
+                        'harvest_food': 'HARVESTING FOOD (HUNGRY)',
+                        'unlock_door': 'UNLOCKING DOORS',
+                        'lock_door': 'SECURING TOWN',
+                        'collect_egg': 'COLLECTING EGGS',
+                        'sell_food': 'MARKET TRADING (CROPS)',
+                        'deposit_pm': 'STORING FODDER',
+                        'withdraw_pm': 'PREPARING TRADES',
+                        'sell_pm': 'MARKET TRADING (PM)',
+                        'wait_at_barn': 'SHELTERING AT BARN'
+                    };
+
+                    specGoal.innerText = goalMap[hob.goal] || (hob.goal ? hob.goal.toUpperCase() : 'WANDERING');
+                    specState.innerText = hob.state ? hob.state.toUpperCase() : 'IDLE';
+                    specEnergy.innerText = `${Math.floor(hob.energy || 0)}%`;
+
+                    if (hob.inventory && hob.inventory.length > 0) {
+                        specItems.innerHTML = hob.inventory.map(item => `
+                            <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.05); padding: 2px 4px; border: 1px dashed rgba(255,255,255,0.15); margin-bottom: 2px;">
+                                <span>${getItemIcon(item)} ${item.name}</span>
+                                <span style="color: var(--banana-dark);">${item.count > 1 ? `x${item.count}` : ''}</span>
+                            </div>
+                        `).join('');
+                    } else {
+                        specItems.innerHTML = `<div style="color: #666; text-align: center; font-style: italic; padding: 4px;">EMPTY</div>`;
+                    }
+
+                    spectatePanel.classList.remove('hidden');
+                }
             } else {
                 gameState.spectatedHobbitId = null;
                 spectateBanner.classList.add('hidden');
+                if (spectatePanel) spectatePanel.classList.add('hidden');
             }
         } else {
             spectateBanner.classList.add('hidden');
+            if (spectatePanel) spectatePanel.classList.add('hidden');
         }
     }
 }

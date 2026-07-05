@@ -119,6 +119,21 @@
                 <button id="stop-spectate-btn" class="pixel-btn cancel" style="padding: 4px 8px; font-size: 8px;">STOP</button>
             </div>
 
+            <!-- 🧝 SPECTATED HOBBIT DIAGNOSTIC PANEL (Far Right) -->
+            <div id="spectate-info-panel" class="hidden" style="position: fixed; right: 20px; top: 80px; width: 180px; background: rgba(0, 0, 0, 0.85); border: 4px solid var(--bg-dark); padding: 12px; color: white; font-size: 8px; line-height: 1.4; z-index: 1000; box-shadow: 4px 4px 0px rgba(0,0,0,0.5); text-shadow: 1px 1px 0 #000; pointer-events: auto;">
+                <h3 id="spec-info-name" style="color: var(--banana); font-size: 10px; margin: 0 0 8px 0; text-transform: uppercase; border-bottom: 2px dashed var(--bg-dark); padding-bottom: 4px; text-align: center;">Frodo Baggins</h3>
+                <div style="margin-bottom: 6px;">ROLE: <span id="spec-info-role" style="color: var(--highlight); font-weight: bold;">FORAGER</span></div>
+                <div style="margin-bottom: 6px;">GOAL: <span id="spec-info-goal" style="color: #FFD700;">WANDERING</span></div>
+                <div style="margin-bottom: 6px;">STATE: <span id="spec-info-state" style="color: #ddd;">IDLE</span></div>
+                <div style="margin-bottom: 8px;">ENERGY: <span id="spec-info-energy" style="color: #FF1493;">100%</span></div>
+                <div style="border-top: 2px dashed var(--bg-dark); padding-top: 6px;">
+                    <div style="margin-bottom: 4px; color: var(--banana);">BACKPACK:</div>
+                    <div id="spec-info-items" style="display: flex; flex-direction: column; gap: 3px; max-height: 120px; overflow-y: auto;">
+                        <!-- Items injected here -->
+                    </div>
+                </div>
+            </div>
+
             <!-- 💬 CHAT BOX -->
             <div id="chat-container" style="position: fixed; left: 20px; bottom: 20px; width: 300px; display: flex; flex-direction: column; pointer-events: none; z-index: 1000;">
                 <!-- Message History -->
