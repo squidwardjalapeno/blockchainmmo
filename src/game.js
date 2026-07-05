@@ -175,11 +175,10 @@ var update = function (modifier) {
             }
         }
         
-        // 👇 THE FIX: Let chickens run smoothly here (Removed the 'false' arg)
+        // 👇 THE FIX: Let chickens and hobbits run smoothly here (Removed the 'false' arg)
         if (DEBUG_FLAGS.ENABLE_WORLD_SIM) {
             updateAnimals(modifier * 3, worldMatrix, roomMatrix); 
             updateHobbits(modifier * 3, worldMatrix, roomMatrix); // 👈 ADDED HERE
-
         }
     }
 
@@ -200,12 +199,10 @@ var update = function (modifier) {
         }
         worldTime.isNight = (worldTime.hour >= 20 || worldTime.hour < 6); // Night is 8:00 PM to 6:00 AM
 
-        if (logicTick % 3 === 0) {
-            if (DEBUG_FLAGS.ENABLE_WORLD_SIM) {
-                // 🎯 THE FIX: Pass modifier * 3 (actual elapsed seconds) instead of 1.0
-                updatePlants(modifier * 3, fertilityMatrix, worldMatrix, roomMatrix); 
-                updateBacteria(worldMatrix, fertilityMatrix);
-            }
+        // 🎯 OPTIMIZATION: Shift low-frequency plant growth and rot spread to the 1Hz slow-tick loop
+        if (DEBUG_FLAGS.ENABLE_WORLD_SIM) {
+            updatePlants(1.0, fertilityMatrix, worldMatrix, roomMatrix); 
+            updateBacteria(worldMatrix, fertilityMatrix);
         }
 
         // 🐟 Replenish global fish population
@@ -375,9 +372,12 @@ async function mainInit() {
 
         logStep("Step 1: Continents & Biomes (Handled in populateWorld)");
 
+        // ❌ REMOVED: Global shorelines are now generated dynamically per chunk in ensureLocalCells to reduce load times
+        /*
         await measureStep("Step 2: Drawing Global Shorelines", () => {
             generateGlobalShorelines(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
         });
+        */
 
         await measureStep("Step 3: Drawing Rivers & Main Village Roads", () => {
             linkLakes(worldMap, worldMatrix, roomMatrix, fertilityMatrix);
