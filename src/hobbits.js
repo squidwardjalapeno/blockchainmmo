@@ -1,9 +1,9 @@
 // src/hobbits.js
 import { viewport } from './viewport.js';
 import { moveEntity, getTileData } from './physics.js'; 
-import { hero, getFocusCoordinates } from './entities.js';
+import { hero, getFocusCoordinates } from './entities.js'; 
 import { getObjectAt, staticObjects, solidTiles } from './staticObjects.js';
-import { socket, doorStates, storeDbCache, hayStorageCache, chestCache, playerWallet } from './multiplayer.js';
+import { socket, doorStates, storeDbCache, hayStorageCache, chestCache, playerWallet, remotePlayers } from './multiplayer.js';
 import { worldTime } from './clock.js'; 
 import { plants, PLANT_DEFS, createPlant } from './plants.js';
 import { ITEM_TYPES, createItem } from './items.js';
@@ -349,7 +349,7 @@ function assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix) {
 }
 
 /**
- * 🧠 REFURBISHED: Leverages the unified findPath utility to navigate to exact coordinates
+ * 🧠 BFS Pathfinding Helper
  */
 function findPathToCoords(startTX, startTY, targetTX, targetTY, worldMatrix, roomMatrix, hobbit = null) {
     const isWalkableFn = (tx, ty, fromX, fromY) => {
@@ -357,10 +357,10 @@ function findPathToCoords(startTX, startTY, targetTX, targetTY, worldMatrix, roo
     };
 
     const isTargetFn = (tx, ty) => {
-        return tx === targetTX && ty === targetTY; // Match target coordinates exactly
+        return tx === targetTX && ty === targetTY; 
     };
 
-    return findPath(startTX, startTY, isWalkableFn, isTargetFn, 80); // Hobbits use maxDepth of 80
+    return findPath(startTX, startTY, isWalkableFn, isTargetFn, 80); 
 }
 
 function findNearestMaturePlant(hobbit, range = 480) { 
@@ -383,6 +383,17 @@ function findNearestMaturePlant(hobbit, range = 480) {
         }
     }
     return nearest;
+}
+
+export function getHobbitVillage(hobbit) {
+    const hx = hobbit.homeX || Math.floor(hobbit.x / 16);
+    const hy = hobbit.homeY || Math.floor(hobbit.y / 16);
+    
+    // Dynamically query coordinates from cellDecorator to obtain the active well context
+    if (typeof window !== 'undefined' && window.getVillageAt) {
+        return window.getVillageAt(hx, hy);
+    }
+    return null;
 }
 
 // ==========================================
@@ -464,8 +475,8 @@ export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null, 
 
 export function updateHobbits(modifier, worldMatrix, roomMatrix) {
     const focus = getFocusCoordinates();
-    const heroCX = Math.floor(hero.x / 1600);
-    const heroCY = Math.floor(hero.y / 1600);
+    const heroCX = Math.floor(focus.x / 1600);
+    const heroCY = Math.floor(focus.y / 1600);
     const now = Date.now();
 
     // ==========================================
@@ -790,9 +801,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     if (hobbit.goal === 'engage' && currentDistToHero <= 24) {
                         if (hero.hp > 0) {
                             hero.hp = Math.max(0, hero.hp - hobbit.ad);
-                            if (socket && socket.connected) {
-                                socket.emit('updateStats', { hp: hero.hp });
-                            }
+                            if (socket) socket.emit('updateStats', { hp: hero.hp });
                         }
                         hobbit.path = [];
                     }
@@ -827,6 +836,84 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         const currTY = Math.floor((hobbit.y + 15) / 16); 
         const pCol = roomMatrix[Math.floor(currTX / 100)]?.[Math.floor(currTY / 100)];
         const roomID = pCol ? pCol[((currTY % 100 + 100) % 100 * 100) + ((currTX % 100 + 100) % 100)] : 0;
+
+        const village = getHobbitVillage(hobbit);
+        let isVillageContested = false;
+        let villageOwner = null;
+
+        if (village && typeof window !== 'undefined' && window.villageOwners) {
+            const data = window.villageOwners.get(`${village.x}_${village.y}`);
+            if (data) {
+                villageOwner = data.owner;
+                if (data.progress > 0) {
+                    isVillageContested = true;
+                }
+            }
+        }
+
+        // ==========================================
+        // ⚔️ CONTESTED DEFENDER AI STATE MACHINES
+        // ==========================================
+        if (isVillageContested && villageOwner) {
+            let enemyTarget = null;
+            let enemyDist = Infinity;
+
+            const px = (hero.x + 8) - (hobbit.x + 8);
+            const py = (hero.y + 8) - (hobbit.y + 8);
+            const distToHero = Math.hypot(px, py);
+
+            if (playerWallet !== villageOwner && hero.hp > 0 && distToHero < 200) {
+                enemyTarget = hero;
+                enemyDist = distToHero;
+            }
+
+            if (!enemyTarget && remotePlayers) {
+                remotePlayers.forEach((p, id) => {
+                    if (p.hp <= 0) return;
+                    const pName = p.wallet || id;
+                    if (pName !== villageOwner) {
+                        const dist = Math.hypot((p.x + 8) - (hobbit.x + 8), (p.y + 8) - (hobbit.y + 8));
+                        if (dist < 200 && dist < enemyDist) {
+                            enemyDist = dist;
+                            enemyTarget = p;
+                        }
+                    }
+                });
+            }
+
+            if (enemyTarget) {
+                hobbit.goal = 'defend_home';
+                if (enemyDist <= 24) {
+                    hobbit.state = 'idle';
+                    hobbit.path = [];
+                    if (hobbit.attackTimer <= 0) {
+                        hobbit.state = 'attacking';
+                        hobbit.attackTimer = 0.5;
+                        const tdx = enemyTarget.x - hobbit.x;
+                        const tdy = enemyTarget.y - hobbit.y;
+                        hobbit.dir = Math.abs(tdx) > Math.abs(tdy) ? (tdx > 0 ? 'East' : 'West') : (tdy > 0 ? 'South' : 'North');
+                    }
+                } else if (hobbit.pathTimer <= 0) {
+                    hobbit.pathTimer = 0.5;
+                    const tTX = Math.floor((enemyTarget.x + 8) / 16);
+                    const tTY = Math.floor((enemyTarget.y + 8) / 16);
+                    const path = findPathToCoords(currTX, currTY, tTX, tTY, worldMatrix, roomMatrix, hobbit);
+                    if (path) {
+                        hobbit.path = path;
+                        hobbit.state = 'walking';
+                    }
+                }
+                
+                hobbit.attackTimer = Math.max(0, hobbit.attackTimer - modifier);
+                if (hobbit.state === 'attacking' && hobbit.attackTimer <= 0) {
+                    if (enemyTarget === hero) {
+                        hero.hp = Math.max(0, hero.hp - hobbit.ad);
+                        if (socket) socket.emit('updateStats', { hp: hero.hp });
+                    }
+                }
+                return; // Interrupt typical work routines during siege
+            }
+        }
 
         let target = null;
         let targetDist = Infinity;
@@ -1738,9 +1825,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     hero.hp = Math.max(0, hero.hp - hobbit.ad);
                     console.log(`💥 Hobbit dealt ${hobbit.ad} damage to you!`);
                     
-                    if (socket && socket.connected) {
-                        socket.emit('updateStats', { hp: hero.hp });
-                    }
+                    if (socket) socket.emit('updateStats', { hp: hero.hp });
                 }
             }
             

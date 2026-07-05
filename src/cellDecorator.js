@@ -1376,6 +1376,27 @@ function promotePath(startNode, endNode, adj, tileID, thickness, maxRangeSq, wor
     }
 }
 
+// src/cellDecorator.js
+
+export function getVillageAt(gx, gy) {
+    for (let i = 0; i < plannedWells.length; i++) {
+        const well = plannedWells[i];
+        if (well.spokes && well.spokes.length > 0) {
+            const dx = gx - well.x;
+            const dy = gy - well.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist > 600) continue;
+            let angle = Math.atan2(dy, dx);
+            if (angle < 0) angle += Math.PI * 2;
+            const numSpokes = well.spokes.length;
+            const index = Math.round((angle / (Math.PI * 2)) * numSpokes) % numSpokes;
+            const spoke = well.spokes[index];
+            if (dist < spoke.r + 2.0) return well;
+        }
+    }
+    return null;
+}
+
 const decoratedCells = new Set();
 
 export function ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {

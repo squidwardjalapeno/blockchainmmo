@@ -59,6 +59,8 @@ export function giveItemToHero(newItem) {
     return success;
 }
 
+// inside src/interactionManager.js
+
 export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityMatrix) {
     // 1. FORGIVING HITBOX LOGIC (For Interactions)
     let bx = 0, by = 0;
@@ -124,7 +126,25 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
                 return; // Block interaction!
             }
 
-            // Replaces the old openSmelterMenu
+            // 🎯 WELL INTERACTION LOGIC (Ownership & Capture UI)
+            if (obj.type === 'WELL_OBJECT') {
+                import('./cellDecorator.js').then(m => {
+                    const well = m.getVillageAt(tx, ty);
+                    if (well) {
+                        if (window.villageOwners) {
+                            const key = `${well.x}_${well.y}`;
+                            const vData = window.villageOwners.get(key) || { owner: null, progress: 0 };
+                            import('./uiManager.js').then(ui => {
+                                ui.openVillageMenu(well.x, well.y, vData);
+                            });
+                        }
+                    }
+                });
+                inputState.interact = false;
+                inputState.action = false;
+                return;
+            }
+
             if (obj.type === 'SMELTER') {
                 if (socket) socket.emit('requestSmelter', `smelter_${tx}_${ty}`);
                 inputState.interact = false; return;
@@ -153,7 +173,6 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
             if (obj.type === 'STORE_COUNTER') {
                 if (!playerWallet) { alert("Connect your wallet to trade!"); return; }
                 if (socket) {
-                    // 🎯 THE FIX: Mark as player-triggered so the UI opens on response
                     window.isManualStoreRequest = true; 
                     socket.emit('requestStore', `store_${tx}_${ty}`);
                 }
@@ -169,11 +188,9 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
                 return;
             }
 
-            // Search for CHEST_STORAGE inside src/interactionManager.js and modify that block:
             if (obj.type === 'CHEST_STORAGE') {
                 if (socket) {
                     import('./multiplayer.js').then(m => {
-                        // 🎯 THE FIX: Declare that the player explicitly requested this chest ID
                         m.setPlayerRequestedChestId(`chest_${tx}_${ty}`);
                         m.socket.emit('requestChest', `chest_${tx}_${ty}`);
                     });
@@ -190,7 +207,6 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
                 return;
             }
 
-            // Locate handleInteractions() inside src/interactionManager.js and modify the KITCHEN interaction:
             if (obj.type === 'KITCHEN') {
                 import('./uiManager.js').then(m => m.openKitchenMenu(`kitchen_${tx}_${ty}`));
                 inputState.interact = false;
@@ -205,7 +221,6 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
                 return;
             }
 
-            // Locate handleInteractions() inside src/interactionManager.js and modify the HAY_TABLE interaction:
             if (obj.type === 'HAY_TABLE') {
                 import('./uiManager.js').then(m => m.openHayTableMenu(`haytable_${tx}_${ty}`));
                 inputState.interact = false;
@@ -233,7 +248,6 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
                 return;
             }
 
-            // Locate handleInteractions() inside src/interactionManager.js and add this block:
             if (obj.type === 'HOBBIT_MANAGER') {
                 import('./uiManager.js').then(m => m.openHobbitManagerMenu());
                 inputState.interact = false;
@@ -247,7 +261,6 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
         if (target && [49, 12, 35, 13].includes(target.tileID) && target.roomID !== 0) {
             doorTarget = target;
         } else {
-            // 🎯 THE FIX: Fallback to feet tile if standing directly in an open doorway
             const feetTile = getTileData(hero.x + 8, hero.y + 15, worldMatrix, roomMatrix);
             if (feetTile && [35, 13].includes(feetTile.tileID) && feetTile.roomID !== 0) {
                 doorTarget = feetTile;
@@ -285,7 +298,6 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
                     return;
                 }
             } else {
-                // Player already HAS the key -> Open Door Control UI!
                 import('./uiManager.js').then(m => m.openDoorControlMenu(doorTarget.gx, doorTarget.gy, doorTarget.roomID));
                 inputState.interact = false;
                 inputState.action = false;
@@ -294,7 +306,6 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
         }
 
         if (target.tileID === 29) {
-            // Tell the server we want to look at this specific ore vein
             if (socket) socket.emit('requestOre', `ore_${tx}_${ty}`);
             inputState.interact = false;
             inputState.action = false;
@@ -309,7 +320,6 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
     }
 
     // --- 5. PICKUP LOGIC (E key only) ---
-    // 👇 THE FIX: ONLY checks the tile directly under your feet!
     if (inputState.interact) {
         const picked = processPickup(feetTX, feetTY);
         if (picked) inputState.interact = false;
@@ -319,7 +329,6 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
     if (inputState.keyF) {
         inputState.keyF = false; 
         
-        // 🎯 THE FIX: Add HAY_TABLE to the work object initializer
         if (obj && (obj.type === 'SMELTER' || obj.type === 'ANVIL' || obj.type === 'KITCHEN' || obj.type === 'HAY_TABLE')) {
             hero.isWorking = true;
             hero.workingObj = { tx: tx, ty: ty, type: obj.type };
@@ -328,24 +337,18 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
         }
     }
 
-    // 2. Continuously process work if active
     if (hero.isWorking && hero.workingObj) {
-        
-        // Did the player tap a movement key or touch the joystick?
         let isManualMove = false;
         if (inputState.inputType === 'touch' && inputState.leftJoystick.active) isManualMove = true;
         if (inputState.moveX !== 0 || inputState.moveY !== 0) isManualMove = true;
 
         if (isManualMove) {
-            // Movement breaks concentration!
             hero.isWorking = false;
             hero.workingObj = null;
             hero.workTimer = 0;
             console.log("🛑 Work cancelled by movement.");
         } else {
-            hero.isMoving = false; // Lock hero in place while hammering/smelting
-            
-            // Increment the 1-second timer
+            hero.isMoving = false; 
             hero.workTimer += modifier;
             
             if (hero.workTimer >= 1.0) {
@@ -358,7 +361,6 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
                 } else if (hero.workingObj.type === 'KITCHEN') {
                     if (socket) socket.emit('workKitchenStrike', { jobId: `kitchen_${hero.workingObj.tx}_${hero.workingObj.ty}` });
                 }
-                // 🎯 THE FIX: Direct the manual work strike to the hay table socket event
                 else if (hero.workingObj.type === 'HAY_TABLE') {
                     if (socket) socket.emit('workHayTableStrike', { jobId: `haytable_${hero.workingObj.tx}_${hero.workingObj.ty}` });
                 }
@@ -371,8 +373,6 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
         inputState.drop = false;
         if (hero.equipment.mainHand) {
             const item = hero.equipment.mainHand;
-            
-            // 👇 THE FIX: Pass raw 16-bit ID directly! No bit-splitting!
             let dropHealth = item.isKey ? item.houseId : item.health;
 
             seedBacteria(feetTX, feetTY, item.seedType, dropHealth, item.virulence);
@@ -399,10 +399,7 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
                 const roomID = roomMatrix[cx]?.[cy]?.[(ly * 100) + lx] || 0;
 
                 if (tileID === 63 && (roomID === 0 || roomID === 9999) && !plants.has(`${feetTX}_${feetTY}`)) {
-                    
-                    // 🎯 THE SECURE FIX: Request a seed-plant from the server!
                     const index = hero.inventory.indexOf(item);
-                    
                     if (socket) {
                         socket.emit('requestPlantSeed', { tx: feetTX, ty: feetTY, index: index });
                     }

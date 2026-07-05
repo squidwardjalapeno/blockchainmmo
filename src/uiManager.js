@@ -128,6 +128,12 @@ export const uiState = {
     currentTab: 'inventory'
 };
 
+// 🏰 CLIENT-SIDE VILLAGE OWNERSHIP CACHE
+export const villageOwners = new Map();
+if (typeof window !== 'undefined') {
+    window.villageOwners = villageOwners;
+}
+
 // ==========================================
 // 🎛️ MAIN UI INITIALIZATION
 // ==========================================
@@ -621,6 +627,31 @@ export function setupMultiplayerListeners(s) {
     s.on('doorStateUpdated', (data) => {
         doorStates.set(`${data.gx}_${data.gy}`, { locked: data.locked });
         updateDoorControlUI(data.gx, data.gy, data.locked);
+    });
+
+    // 🏰 CORE VILLAGE CAPTURE SYNC LISTENERS
+    s.on('villageOwnerUpdated', (data) => {
+        villageOwners.set(`${data.wellX}_${data.wellY}`, {
+            owner: data.owner,
+            progress: data.progress,
+            contested: false,
+            capturer: null
+        });
+        updateHUD();
+    });
+
+    s.on('villageCaptureProgress', (data) => {
+        villageOwners.set(`${data.wellX}_${data.wellY}`, {
+            owner: villageOwners.get(`${data.wellX}_${data.wellY}`)?.owner || null,
+            progress: data.progress,
+            contested: data.contested || false,
+            capturer: data.capturer || null
+        });
+        updateHUD();
+    });
+
+    s.on('wellInteractionMessage', (data) => {
+        alert(data.message);
     });
 }
 
@@ -1541,6 +1572,44 @@ export function updateHUD() {
             if (spectatePanel) spectatePanel.classList.add('hidden');
         }
     }
+
+    const contestHud = document.getElementById('village-contest-hud');
+    const contestProgress = document.getElementById('village-contest-progress');
+    const contestText = document.getElementById('village-contest-text');
+    
+    if (contestHud && contestProgress && contestText) {
+        const px = Math.floor((hero.x + 8) / 16);
+        const py = Math.floor((hero.y + 15) / 16);
+        
+        let insideContestedVillage = false;
+        
+        if (typeof window !== 'undefined' && window.getVillageAt) {
+            const well = window.getVillageAt(px, py);
+            if (well) {
+                const key = `${well.x}_${well.y}`;
+                const data = villageOwners.get(key);
+                if (data && data.progress > 0) {
+                    insideContestedVillage = true;
+                    contestProgress.style.width = `${data.progress}%`;
+                    contestText.innerText = `${Math.floor(data.progress)}%`;
+                    
+                    if (data.contested) {
+                        contestProgress.style.backgroundColor = "#ffa500"; 
+                    } else if (data.capturer === playerWallet) {
+                        contestProgress.style.backgroundColor = "#d95757"; 
+                    } else {
+                        contestProgress.style.backgroundColor = "var(--highlight)"; 
+                    }
+                }
+            }
+        }
+        
+        if (insideContestedVillage) {
+            contestHud.classList.remove('hidden');
+        } else {
+            contestHud.classList.add('hidden');
+        }
+    }
 }
 
 window.equipItem = (invIndex) => {
@@ -1952,4 +2021,186 @@ export function updateDoorControlUI(gx, gy, locked) {
             label.style.color = locked ? "#d95757" : "var(--highlight)";
         }
     }
+}
+
+// 🎯 THE FIX: Relocating UI-specific socket events into uiManager to prevent circular dependency loads
+export function setupMultiplayerListeners(s) {
+    s.on('needsCharacterCreation', () => {
+        document.getElementById('main-menu').classList.add('hidden');
+        document.getElementById('character-creation-menu').classList.remove('hidden');
+        renderCharacterCreation();
+    });
+
+    s.on('tgvUpdate', (data) => {
+        import('./entities.js').then(m => {
+            m.gameState.tvl = data.tgv; 
+            updateHUD(); 
+        });
+    });
+
+    s.on('updateEquipment', (serverEquipment) => {
+        import('./entities.js').then(m => {
+            m.hero.equipment = serverEquipment;
+            renderTabContent(); 
+        });
+    });
+
+    s.on('updateInventory', (serverInventory) => {
+        import('./entities.js').then(m => {
+            m.hero.inventory = serverInventory;
+            renderTabContent();
+            
+            const templeMenu = document.getElementById('temple-menu');
+            if (templeMenu && !templeMenu.classList.contains('hidden')) {
+                renderTempleUI();
+            }
+            
+            const storageMenu = document.getElementById('storage-menu');
+            if (storageMenu && !storageMenu.classList.contains('hidden')) {
+                renderStorageUI();
+            }
+        });
+    });
+
+    s.on('restoreHero', (data) => {
+        hero.xp = data.xp || 0;
+        hero.hp = data.hp || 100;
+        hero.maxHp = data.maxHp || 100;
+        hero.energy = data.energy !== undefined ? data.energy : 100;
+        hero.maxEnergy = data.maxEnergy || 100;
+        hero.ad = data.ad || 10;
+        hero.armor = data.armor || 0;
+        hero.magic = data.magic || 10;
+        hero.mr = data.mr || 0;
+        hero.speed = data.speed || 100;
+        hero.spentPoints = data.spentPoints || 0;
+        hero.inGameUni = data.inGameUni || 0;
+        hero.inventory = data.inventory || []; 
+        hero.equipment = data.equipment || { mainHand: null };
+
+        if(data.x !== undefined) hero.x = data.x;
+        if(data.y !== undefined) hero.y = data.y;
+
+        if (data.dir) {
+            let safeDir = data.dir;
+            if (safeDir === 'Down') safeDir = 'South';
+            if (safeDir === 'Up') safeDir = 'North';
+            if (safeDir === 'Left') safeDir = 'West';
+            if (safeDir === 'Right') safeDir = 'East';
+            hero.dir = safeDir;
+        } else {
+            hero.dir = 'South';
+        }
+        
+        hero.charClass = data.charClass || "Paladin";
+        hero.skills = data.skills || [];
+
+        updateHUD();
+        renderTabContent(); 
+
+        document.getElementById('main-menu').classList.add('hidden');
+        const charMenu = document.getElementById('character-creation-menu');
+        if (charMenu) charMenu.classList.add('hidden');
+        document.getElementById('hud').style.display = 'block';
+
+        console.log("✅ Identity confirmed. Inventory synced.");
+    });
+
+    s.on('chestData', (data) => { 
+        chestCache.set(data.chestId, data.items);
+        if (data.chestId === playerRequestedChestId) {
+            openUnifiedStorage(data.chestId, data.items, 'CHEST'); 
+            setPlayerRequestedChestId(null); 
+        }
+    });
+
+    s.on('chestUpdated', (data) => { 
+        chestCache.set(data.chestId, data.items);
+        handleRemoteStorageUpdate(data.chestId, data.items, 'CHEST'); 
+    });
+    
+    s.on('storeData', (data) => { 
+        storeDbCache.set(data.storeId, data.data);
+        if (window.isManualStoreRequest) {
+            window.isManualStoreRequest = false;
+            openStoreMenu(data.storeId, data.data); 
+        }
+    });
+
+    s.on('storeUpdated', (data) => { 
+        storeDbCache.set(data.storeId, data.data);
+        handleRemoteStoreUpdate(data.storeId, data.data); 
+    });
+
+    s.on('hayStorageData', (data) => { 
+        hayStorageCache.set(data.hayStorageId, data.items);
+        openUnifiedStorage(data.hayStorageId, data.items, 'HAY'); 
+    });
+
+    s.on('hayStorageUpdated', (data) => { 
+        hayStorageCache.set(data.hayStorageId, data.items);
+        handleRemoteStorageUpdate(data.hayStorageId, data.items, 'HAY'); 
+    });
+
+    s.on('storageClaimed', (data) => { processClaimedStorage(data.items); });
+    s.on('cellarData', (data) => { openUnifiedStorage(data.cellarId, data.items, 'CELLAR'); });
+    s.on('cellarUpdated', (data) => { handleRemoteStorageUpdate(data.cellarId, data.items, 'CELLAR'); });
+    
+    s.on('oreData', (data) => { openMiningMenu(data.oreId, data.data); });
+    s.on('oreUpdated', (data) => { handleRemoteOreUpdate(data.oreId, data.data); });
+    s.on('oreMessage', (msg) => { alert(msg); });
+    
+    s.on('receiveOreLoot', () => {
+        import('./items.js').then(items => {
+            const ore = items.createItem(items.ITEM_TYPES.IRON_ORE);
+            if (im.giveItemToHero(ore)) {
+                alert("You collected the Iron Ore!");
+                renderTabContent(); 
+            } else {
+                alert("Your backpack is full! Make room first.");
+            }
+        });
+    });
+
+    s.on('doorState', (data) => {
+        doorStates.set(`${data.gx}_${data.gy}`, { locked: data.locked });
+        updateDoorControlUI(data.gx, data.gy, data.locked);
+    });
+
+    s.on('doorStateUpdated', (data) => {
+        doorStates.set(`${data.gx}_${data.gy}`, { locked: data.locked });
+        updateDoorControlUI(data.gx, data.gy, data.locked);
+    });
+
+    // 🏰 CORE VILLAGE CAPTURE SYNC LISTENERS
+    s.on('villageOwnerUpdated', (data) => {
+        villageOwners.set(`${data.wellX}_${data.wellY}`, {
+            owner: data.owner,
+            progress: data.progress,
+            contested: false,
+            capturer: null
+        });
+        updateHUD();
+    });
+
+    s.on('villageCaptureProgress', (data) => {
+        villageOwners.set(`${data.wellX}_${data.wellY}`, {
+            owner: villageOwners.get(`${data.wellX}_${data.wellY}`)?.owner || null,
+            progress: data.progress,
+            contested: data.contested || false,
+            capturer: data.capturer || null
+        });
+        updateHUD();
+    });
+
+    s.on('wellInteractionMessage', (data) => {
+        alert(data.message);
+    });
+}
+
+// 🏰 DECOUPLED WELL RESOLVER TO AVOID COMPILE-TIME LOOPS
+if (typeof window !== 'undefined') {
+    import('./cellDecorator.js').then(m => {
+        window.getVillageAt = m.getVillageAt;
+    });
 }

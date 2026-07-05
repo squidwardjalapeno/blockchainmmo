@@ -16,7 +16,8 @@ export function setLockedTarget(target) {
 
 if (typeof window !== 'undefined') logStep("combat.js");
 
-// Runs constantly to find the nearest valid thing to punch
+// inside src/combat.js
+
 export function scanForTarget(hero, range = 150, worldMatrix, roomMatrix) {
     if (lockedTarget) {
         currentTarget = lockedTarget;
@@ -32,6 +33,21 @@ export function scanForTarget(hero, range = 150, worldMatrix, roomMatrix) {
         const dy = entity.y - hero.y;
         const distSq = dx * dx + dy * dy;
 
+        // Skip targeting automated locking sweeps if the hobbit belongs to our owned village
+        const isAlly = entity.isHobbit && typeof window !== 'undefined' && window.getVillageAt && (() => {
+            const hx = entity.homeX || Math.floor(entity.x / 16);
+            const hy = entity.homeY || Math.floor(entity.y / 16);
+            const well = window.getVillageAt(hx, hy);
+            if (well && window.villageOwners) {
+                const data = window.villageOwners.get(`${well.x}_${well.y}`);
+                const playerWallet = window.playerWallet;
+                return data && data.owner === playerWallet;
+            }
+            return false;
+        })();
+
+        if (isAlly) return; 
+
         if (distSq < range * range && distSq < nearestDist) {
             nearestDist = distSq;
             bestTarget = entity;
@@ -40,10 +56,9 @@ export function scanForTarget(hero, range = 150, worldMatrix, roomMatrix) {
 
     remotePlayers.forEach(checkEntity);
     animals.forEach(checkEntity);
-    hobbits.forEach(checkEntity); // 👈 🎯 THE FIX: Scan Hobbits for combat locking!
+    hobbits.forEach(checkEntity); 
 
-
-    // ⛏️ NEW: Scan the local map area for Ore Deposits (Tile 29)
+    // Scan the local map area for Ore Deposits (Tile 29)
     if (worldMatrix && roomMatrix) {
         const hTX = Math.floor((hero.x + 8) / 16);
         const hTY = Math.floor((hero.y + 8) / 16);
@@ -62,13 +77,12 @@ export function scanForTarget(hero, range = 150, worldMatrix, roomMatrix) {
                     
                     if (distSq < range * range && distSq < nearestDist) {
                         nearestDist = distSq;
-                        // Create a "Dummy Target" for the combat engine to lock onto!
                         bestTarget = {
                             id: `ore_${tx}_${ty}`,
                             x: tx * 16,
                             y: ty * 16,
                             isOre: true,
-                            hp: 1, maxHp: 1 // Satisfies the combat engine checks
+                            hp: 1, maxHp: 1 
                         };
                     }
                 }

@@ -1139,6 +1139,8 @@ export function drawProjectiles(ctx2, serverProjectilesData) {
     });
 }
 
+// inside src/renderer.js
+
 export function drawTargetCircle(ctx2, target) {
     if (!target || target.hp <= 0) return; 
 
@@ -1148,14 +1150,29 @@ export function drawTargetCircle(ctx2, target) {
     const pulse = Math.sin(Date.now() / 150) * 2;
     const radius = 12 + pulse;
 
-    ctx2.strokeStyle = "rgba(255, 0, 0, 0.8)"; 
+    // Determine if target is an allied hobbit
+    let isAlly = false;
+    if (target.isHobbit && typeof window !== 'undefined' && window.getVillageAt) {
+        const hx = target.homeX || Math.floor(target.x / 16);
+        const hy = target.homeY || Math.floor(target.y / 16);
+        const well = window.getVillageAt(hx, hy);
+        if (well && window.villageOwners) {
+            const data = window.villageOwners.get(`${well.x}_${well.y}`);
+            const playerWallet = window.playerWallet;
+            if (data && data.owner === playerWallet) {
+                isAlly = true;
+            }
+        }
+    }
+
+    ctx2.strokeStyle = isAlly ? "rgba(0, 150, 255, 0.8)" : "rgba(255, 0, 0, 0.8)"; 
     ctx2.lineWidth = 2;
     ctx2.beginPath();
     ctx2.arc(screenX, screenY, radius, 0, Math.PI * 2);
     ctx2.stroke();
     
     if (!target.isOre) {
-        drawHealthBar(ctx2, target, "#FF4444"); 
+        drawHealthBar(ctx2, target, isAlly ? "#00FFFF" : "#FF4444"); 
     }
 }
 

@@ -207,6 +207,31 @@ const chunkPlantsGenerated = new Set();
 const serverAnimals = [];              
 const activeJobs = new Map(); // Unified jobs DB
 
+// 🏰 SERVER-SIDE VILLAGE REGISTRY STATE
+const serverVillages = new Map(); // key: "wellX_wellY", value: { x, y, owner, captureProgress, capturer, contested }
+
+function getVillagePlayerCounts(wellX, wellY, owner) {
+    let allies = 0;
+    let enemies = 0;
+
+    for (let id in players) {
+        const p = players[id];
+        if (p.hp <= 0 || p.isOffline) continue;
+
+        const dist = Math.hypot(p.x - (wellX * 16), p.y - (wellY * 16));
+        if (dist <= 2400) { // 150 tiles boundary radius inside the ring road
+            const pName = p.wallet || `Guest_${p.id.substring(0, 4)}`;
+            if (pName === owner) {
+                allies++;
+            } else {
+                enemies++;
+            }
+        }
+    }
+
+    return { allies, enemies };
+}
+
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/src', express.static(path.join(__dirname, 'src'))); 
 app.use('/js', express.static(path.join(__dirname, 'src')));  
@@ -466,6 +491,46 @@ io.on('connection', (socket) => {
         player.equipment = data.equipment || { mainHand: null };
 
         syncPlayerAndSave(socket.id);
+    });
+
+    // ==========================================
+    // 🎛️ MULTIPLAYER VILLAGE CORE CONTROL LISTENERS
+    // ==========================================
+    socket.on('requestWellInteraction', (data) => {
+        const { wellX, wellY } = data;
+        const key = `${wellX}_${wellY}`;
+        const player = players[socket.id];
+        if (!player) return;
+
+        if (!serverVillages.has(key)) {
+            serverVillages.set(key, {
+                x: wellX,
+                y: wellY,
+                owner: null,
+                captureProgress: 0,
+                capturer: null,
+                contested: false
+            });
+        }
+
+        const village = serverVillages.get(key);
+
+        if (village.owner === null) {
+            village.owner = player.wallet || `Guest_${player.id.substring(0, 4)}`;
+            village.captureProgress = 0;
+            village.capturer = null;
+            io.emit('villageOwnerUpdated', { wellX, wellY, owner: village.owner, progress: 0 });
+            io.emit('chatMessage', { sender: "SYSTEM", message: `🏘️ Village at [${wellX}, ${wellY}] claimed peacefully by ${village.owner}!` });
+        } else {
+            const counts = getVillagePlayerCounts(wellX, wellY, village.owner);
+            
+            if (counts.enemies > counts.allies) {
+                village.capturer = player.wallet || `Guest_${player.id.substring(0, 4)}`;
+                io.emit('villageCaptureProgress', { wellX, wellY, progress: village.captureProgress, capturer: village.capturer });
+            } else {
+                socket.emit('wellInteractionMessage', { message: "The village is secured by defenders! Defeat them to capture." });
+            }
+        }
     });
 
     // ==========================================
@@ -1085,6 +1150,20 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('requestWithdrawalRefund', (amountStr) => {
+        const player = players[socket.id];
+        const amount = parseFloat(amountStr); 
+        
+        if (player && amount > 0) {
+            player.inGameUni += amount;
+            socket.emit('balanceUpdated', { inGameUni: player.inGameUni });
+            console.log(`♻️ Refunded ${amount.toFixed(8)} UNI to ${socket.wallet}`);
+        }
+
+        broadcastEffectiveTGV();
+        syncPlayerAndSave(socket.id);
+    });
+
     socket.on('requestActivityLog', () => {
         socket.emit('activityData', activityLog);
     });
@@ -1245,7 +1324,7 @@ io.on('connection', (socket) => {
         const coords = chestId.split('_');
         const tx = parseInt(coords[1]);
         const ty = parseInt(coords[2]);
-        if (Math.abs(cx - tx) + Math.abs(py - ty) > 5) return; 
+        if (Math.abs(cx - tx) + Math.abs(cy - ty) > 5) return; 
 
         if (!chestDb[chestId]) chestDb[chestId] = [];
         const chestItems = chestDb[chestId];
@@ -1339,6 +1418,19 @@ io.on('connection', (socket) => {
 
         socket.emit('updateInventory', player.inventory);
         io.emit('cellarUpdated', { cellarId, items: cellarItems });
+    });
+
+    socket.on('requestHayStorage', (hayStorageId) => {
+        if (!hayDb[hayStorageId]) {
+            hayDb[hayStorageId] = [];
+        }
+        socket.emit('hayStorageData', { hayStorageId, items: hayDb[hayStorageId] });
+    });
+
+    socket.on('updateHayStorage', (data) => {
+        hayDb[data.hayStorageId] = data.items;
+        fs.writeFileSync('hay.json', JSON.stringify(hayDb, null, 2));
+        socket.broadcast.emit('hayStorageUpdated', data);
     });
 
     socket.on('requestHayTransfer', (data) => {
@@ -1612,17 +1704,8 @@ io.on('connection', (socket) => {
         const { oreId } = data;
         
         if (!oreDb[oreId]) {
-            oreDb[oreId] = { workLeft: 3600, maxWork: 3600, lastSpeedUp: 0, claimed: false };
-        }
-
-        const ore = oreDb[oreId];
-        if (ore.workLeft > 0) {
-            ore.workLeft--;
-            
-            if (ore.workLeft % 5 === 0 || ore.workLeft === 0) {
-                io.emit('oreUpdated', { oreId, data: ore });
-                fs.writeFileSync('ores.json', JSON.stringify(oreDb, null, 2));
-            }
+            io.emit('oreUpdated', { oreId, data: oreDb[oreId] });
+            fs.writeFileSync('ores.json', JSON.stringify(oreDb, null, 2));
         }
     });
 
@@ -1703,19 +1786,6 @@ io.on('connection', (socket) => {
         cellarDb[data.cellarId] = data.items;
         fs.writeFileSync('cellars.json', JSON.stringify(cellarDb, null, 2));
         socket.broadcast.emit('cellarUpdated', data);
-    });
-
-    socket.on('requestHayStorage', (hayStorageId) => {
-        if (!hayDb[hayStorageId]) {
-            hayDb[hayStorageId] = [];
-        }
-        socket.emit('hayStorageData', { hayStorageId, items: hayDb[hayStorageId] });
-    });
-
-    socket.on('updateHayStorage', (data) => {
-        hayDb[data.hayStorageId] = data.items;
-        fs.writeFileSync('hay.json', JSON.stringify(hayDb, null, 2));
-        socket.broadcast.emit('hayStorageUpdated', data);
     });
 
     socket.on('identifyWallet', (data) => {
@@ -2045,6 +2115,39 @@ setInterval(() => {
         }
 
         if (hit || p.life <= 0) projectiles.splice(i, 1); 
+    }
+
+    // 🏰 UPDATE ACTIVE VILLAGE CAPTURE STATE MACHINES
+    for (let [key, village] of serverVillages) {
+        if (village.owner === null) continue;
+
+        const counts = getVillagePlayerCounts(village.x, village.y, village.owner);
+
+        if (village.capturer) {
+            if (counts.enemies > counts.allies) {
+                village.captureProgress = Math.min(100, village.captureProgress + delta * 5);
+                if (village.captureProgress >= 100) {
+                    village.owner = village.capturer;
+                    village.captureProgress = 0;
+                    village.capturer = null;
+                    io.emit('villageOwnerUpdated', { wellX: village.x, wellY: village.y, owner: village.owner, progress: 0 });
+                    io.emit('chatMessage', { sender: "SYSTEM", message: `🏘️ Village at [${village.x}, ${village.y}] has been captured by ${village.owner}!` });
+                } else {
+                    io.emit('villageCaptureProgress', { wellX: village.x, wellY: village.y, progress: village.captureProgress, capturer: village.capturer });
+                }
+            } else if (counts.allies > counts.enemies) {
+                village.captureProgress = Math.max(0, village.captureProgress - delta * 5);
+                if (village.captureProgress === 0) {
+                    village.capturer = null; // Secured!
+                    io.emit('villageOwnerUpdated', { wellX: village.x, wellY: village.y, owner: village.owner, progress: 0 });
+                    io.emit('chatMessage', { sender: "SYSTEM", message: `🏘️ Village at [${village.x}, ${village.y}] has been secured by the defenders!` });
+                } else {
+                    io.emit('villageCaptureProgress', { wellX: village.x, wellY: village.y, progress: village.captureProgress, capturer: village.owner });
+                }
+            } else {
+                io.emit('villageCaptureProgress', { wellX: village.x, wellY: village.y, progress: village.captureProgress, contested: true });
+            }
+        }
     }
 
     io.emit('position', { 
