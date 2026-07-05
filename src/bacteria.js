@@ -1,6 +1,7 @@
 // src/bacteria.js
 import { CONFIG } from './config.js';
-import { hero } from './entities.js';
+// src/bacteria.js
+import { hero, getFocusCoordinates } from './entities.js';
 import { plants } from './plants.js';
 import { ITEM_TYPES } from './items.js';
 import { socket } from './multiplayer.js'; 
@@ -78,6 +79,7 @@ export function getBacteriaData(gx, gy) {
 }
 
 export function updateBacteria(worldMatrix, fertilityMatrix) {
+    const focus = getFocusCoordinates();
     const heroGTX = Math.floor(hero.x / CONFIG.TILE_SIZE);
     const heroGTY = Math.floor(hero.y / CONFIG.TILE_SIZE);
     const heroCX = Math.floor(heroGTX / CONFIG.CELL_SIZE);

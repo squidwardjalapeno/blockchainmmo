@@ -2,7 +2,7 @@
 import { viewport } from './viewport.js';
 import { images } from './assetLoader.js';
 import { CONFIG } from './config.js';
-import { hero, getLevelInfo, gameState } from './entities.js';
+import { hero, getLevelInfo, gameState, getFocusCoordinates } from './entities.js';
 import { plants, PLANT_DEFS } from './plants.js';
 import { getBacteriaData, bacteriaCells, BACTERIA_TYPES } from './bacteria.js';
 import { animals } from './animals.js';
@@ -13,8 +13,6 @@ import { getObjectAt } from './staticObjects.js';
 import { roomMetadata } from './cellDecorator.js';
 import { PALADIN_SKILLS } from './abilities.js';
 import { getHeroAnimationData, getPetAnimationData, getAnimalAnimationData, getHobbitAnimationData } from './animations.js';
-
-// Add this import to the top of src/renderer.js:
 import { worldTime } from './clock.js'; // 👈 ADD THIS IMPORT
 
 if (typeof window !== 'undefined') {
@@ -108,11 +106,9 @@ export function clearAll() {
     ctx3.clearRect(0, 0, canvas3.width, canvas3.height); // UI/HUD Overlay
 }
 
-// Add this function to src/renderer.js:
-
 export function drawNightTint() {
     if (worldTime.isNight) {
-        // Draws a highly atmospheric dark blue tint over the world
+        // Draws an atmospheric dark blue tint over the world
         ctx2.fillStyle = "rgba(0, 0, 50, 0.25)"; 
         ctx2.fillRect(0, 0, canvas2.width, canvas2.height);
     }
@@ -127,9 +123,10 @@ export function drawMap(worldMatrix, roomMatrix) {
     const startY = viewport.startTile[1];
     const endY = viewport.endTile[1];
 
-    // 1. Get the room ID the hero is standing in
-    const hTX = Math.floor((hero.x + 8) / 16);
-    const hTY = Math.floor((hero.y + 15) / 16);
+    // 1. Get the room ID the focus target is standing in
+    const focus = getFocusCoordinates();
+    const hTX = Math.floor((focus.x + 8) / 16);
+    const hTY = Math.floor((focus.y + 15) / 16);
     const hCX = Math.floor(hTX / 100);
     const hCY = Math.floor(hTY / 100);
     const hLX = ((hTX % 100) + 100) % 100;
@@ -363,8 +360,6 @@ export function drawMap(worldMatrix, roomMatrix) {
     }
 }
 
-// Add this function to src/renderer.js:
-
 export function drawStaticObjects() {
     const startX = viewport.startTile[0];
     const endX = viewport.endTile[0];
@@ -398,19 +393,16 @@ export function drawStaticObjects() {
                     ctx2.drawImage(woodsImg, (106 % 12) * 16, Math.floor(106 / 12) * 16, 16, 16, sX, sY, 16, 16);
                     ctx2.drawImage(woodsImg, (107 % 12) * 16, Math.floor(107 / 12) * 16, 16, 16, sX + 16, sY, 16, 16);
                     visibleTrees.push({ sX, sY });
-
-                    
                 }
             }
         }
     }
 }
 
-// Replace drawPlants() in src/renderer.js with this:
-
 export function drawPlants(roomMatrix) {
-    const hTX = Math.floor((hero.x + 8) / 16);
-    const hTY = Math.floor((hero.y + 15) / 16); // 👈 THE FIX: Changed from +8 to +15 to align with physical stepping collision
+    const focus = getFocusCoordinates();
+    const hTX = Math.floor((focus.x + 8) / 16);
+    const hTY = Math.floor((focus.y + 15) / 16); // 👈 Aligned with physical stepping collision
     const rCol = roomMatrix[Math.floor(hTX / 100)]?.[Math.floor(hTY / 100)];
     const heroHouseId = rCol ? rCol[((hTY % 100 + 100) % 100 * 100) + ((hTX % 100 + 100) % 100)] : 0;
 
@@ -442,8 +434,6 @@ export function drawPlants(roomMatrix) {
         );
     });
 }
-
-// Inside drawHobbits() in src/renderer.js:
 
 const renderCache = {};
 
@@ -488,10 +478,11 @@ export function drawDroppedItems() {
     const w = canvas2.width;
     const h = canvas2.height;
     
-    const cameraLeft = hero.x + 8 - (w / 2);
-    const cameraRight = hero.x + 8 + (w / 2);
-    const cameraTop = hero.y + 8 - (h / 2);
-    const cameraBottom = hero.y + 8 + (h / 2);
+    const focus = getFocusCoordinates();
+    const cameraLeft = focus.x + 8 - (w / 2);
+    const cameraRight = focus.x + 8 + (w / 2);
+    const cameraTop = focus.y + 8 - (h / 2);
+    const cameraBottom = focus.y + 8 + (h / 2);
 
     const startTX = Math.floor(cameraLeft / 16) - 1;
     const endTX = Math.floor(cameraRight / 16) + 1;
@@ -548,7 +539,6 @@ export function drawDroppedItems() {
 
             const offset = Math.floor((16 - drawSize) / 2);
 
-            // Locate this block near the bottom of drawDroppedItems() inside src/renderer.js:
             if (typeID === 16) { 
                 const eggCount = Math.min(8, hTraits); 
                 for (let i = 0; i < eggCount; i++) {
@@ -572,7 +562,6 @@ export function drawDroppedItems() {
                     drawSize, drawSize 
                 );
 
-                // 🎯 THE FIX: Draw a tiny durability bar under dropped Hay (Type ID 17)
                 if (typeID === 17) {
                     const pct = hTraits / 100;
                     const barW = 12;
@@ -590,7 +579,6 @@ export function drawDroppedItems() {
     }
 }
 
-// Locate drawAnimals() inside src/renderer.js and replace:
 export function drawAnimals() {
     const w = canvas2.width | 0;
     const h = canvas2.height | 0;
@@ -611,7 +599,6 @@ export function drawAnimals() {
             );
         }
 
-        // 🎯 THE FIX: Use standard energy / fullness scaling (Yellow stamina style)
         const energyPct = (chicken.energy !== undefined ? chicken.energy : 100) / 100;
         ctx2.fillStyle = "black";
         ctx2.fillRect(screenX + 2, screenY - 4, 12, 2);
@@ -815,71 +802,53 @@ export function drawHero() {
             
             ctx2.stroke();
         }
-
     }
 }
 
-// Inside src/renderer.js:
 export function drawRemotePlayers(ctx2, remotePlayersData, roomMatrix) {
-    // 1. Resolve local player's current location room ID using feet coordinates
-    const hTX = Math.floor((hero.x + 8) / 16);
-    const hTY = Math.floor((hero.y + 15) / 16); // 👈 THE FIX: Aligned with physical collision threshold
+    const focus = getFocusCoordinates();
+    const hTX = Math.floor((focus.x + 8) / 16);
+    const hTY = Math.floor((focus.y + 15) / 16); // 👈 Aligned with physical collision threshold
     const rCol = roomMatrix[Math.floor(hTX / 100)]?.[Math.floor(hTY / 100)];
     const heroHouseId = rCol ? rCol[((hTY % 100 + 100) % 100 * 100) + ((hTX % 100 + 100) % 100)] : 0;
 
     remotePlayersData.forEach(p => {
-        // Resolve this remote player's room ID using their feet coordinate
         const pTX = Math.floor((p.x + 8) / 16);
         const pTY = Math.floor((p.y + 15) / 16);
         const pCol = roomMatrix[Math.floor(pTX / 100)]?.[Math.floor(pTY / 100)];
         const pRoomId = pCol ? pCol[((pTY % 100 + 100) % 100 * 100) + ((pTX % 100 + 100) % 100)] : 0;
 
-        // ==========================================
-        // 🚪 INSIDE/OUTSIDE VISIBILITY PARTITION
-        // ==========================================
         if (heroHouseId !== 0 && heroHouseId !== 9999) {
-            // Local player is inside a building: hide players outside or in other rooms
             if (pRoomId !== heroHouseId) return;
         } else {
-            // Local player is outside in overworld: hide players inside buildings
             if (pRoomId !== 0 && pRoomId !== 9999) return;
         }
 
-        // Calculate screen positions
         let sx = Math.floor(p.x + viewport.offset[0]);
         let sy = Math.floor(p.y + viewport.offset[1]);
 
-        // Viewport culling bounds
         if (sx < -32 || sx > canvas2.width + 32 || sy < -32 || sy > canvas2.height + 32) return;
         
         if (p.isOffline) ctx2.globalAlpha = 0.5; 
         
         const isLunge = p.isLunge; 
 
-        // Resolve assets and build key
         let imgKey = `heroWalk${p.dir || 'South'}`;
         if (isLunge) {
             imgKey = `heroLunge${p.dir || 'South'}`; 
         }
         
-        // ==========================================
-        // 🛡️ LUNGE GHOST FIX: Automatic Fallback
-        // ==========================================
         let img = images[imgKey];
         if (!img || !img.complete || img.naturalWidth === 0) {
-            // Fallback to walking spritesheet for that direction if lunge sheet fails to load
             imgKey = `heroWalk${p.dir || 'South'}`;
             img = images[imgKey];
             if (!img || !img.complete || img.naturalWidth === 0) {
-                img = images.heroWalkSouth; // Hard safe fallback
+                img = images.heroWalkSouth; 
             }
         }
 
         if (!img || !img.complete || img.naturalWidth === 0) return;
 
-        // ==========================================
-        // VISUAL EFFECTS (Behind Hero)
-        // ==========================================
         if (p.bulwarkTimer && p.bulwarkTimer > 0) {
             ctx2.strokeStyle = "rgba(100, 200, 255, 0.8)"; 
             ctx2.lineWidth = 2;
@@ -917,19 +886,12 @@ export function drawRemotePlayers(ctx2, remotePlayersData, roomMatrix) {
             ctx2.stroke();
         }
 
-        // ==========================================
-        // DRAW HERO SPRITE
-        // ==========================================
-        // 🎯 THE FIX: Use Frame 0 for lunge (single-frame file) to prevent out-of-bounds crops
         const frame = isLunge ? 0 : (p.animFrame || 0);
 
         ctx2.drawImage(img, frame * 16, 0, 16, 16, sx, sy, 16, 16);
         ctx2.shadowBlur = 0;
         ctx2.globalAlpha = 1.0; 
 
-        // ==========================================
-        // VISUAL EFFECTS (In Front of Hero)
-        // ==========================================
         if (p.cc && p.cc.hasResonance) {
             ctx2.fillStyle = "#FF1493"; 
             ctx2.beginPath();
@@ -940,9 +902,6 @@ export function drawRemotePlayers(ctx2, remotePlayersData, roomMatrix) {
             ctx2.fill();
         }
 
-        // ==========================================
-        // UI: NAMEPLATE & HEALTH BARS
-        // ==========================================
         ctx2.fillStyle = p.isOffline ? "#888888" : "white"; 
         ctx2.font = "8px Arial";
         ctx2.textAlign = "center";
@@ -962,9 +921,6 @@ export function drawRemotePlayers(ctx2, remotePlayersData, roomMatrix) {
         ctx2.fillStyle = "#FF0000"; 
         ctx2.fillRect(sx, sy - 4, barW * (p.hp / (p.maxHp || 100)), barH);
 
-        // ==========================================
-        // DRAW REMOTE ZENITH GUARDIANS
-        // ==========================================
         if (p.pet && p.pet.active) {
             const petSx = Math.floor(p.pet.x + viewport.offset[0]);
             const petSy = Math.floor(p.pet.y + viewport.offset[1]);
@@ -986,15 +942,13 @@ export function drawRemotePlayers(ctx2, remotePlayersData, roomMatrix) {
     });
 }
 
-// Add to the bottom of src/renderer.js:
-
-// Inside src/renderer.js, replace the drawHobbits function with this:
 export function drawHobbits(ctx2, activeHobbits, roomMatrix) {
     const w = canvas2.width;
     const h = canvas2.height;
 
-    const hTX = Math.floor((hero.x + 8) / 16);
-    const hTY = Math.floor((hero.y + 15) / 16);
+    const focus = getFocusCoordinates();
+    const hTX = Math.floor((focus.x + 8) / 16);
+    const hTY = Math.floor((focus.y + 15) / 16);
     const rCol = roomMatrix[Math.floor(hTX / 100)]?.[Math.floor(hTY / 100)];
     const heroHouseId = rCol ? rCol[((hTY % 100 + 100) % 100 * 100) + ((hTX % 100 + 100) % 100)] : 0;
 

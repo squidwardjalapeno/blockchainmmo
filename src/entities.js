@@ -183,8 +183,22 @@ export const hero = {
 
 export const gameState = {
     lastLoggedCell: null,
-    tvl: 0 // 🆕 Store Total Value Locked here
+    tvl: 0, // 🆕 Store Total Value Locked here
+    spectatedHobbitId: null
+
 };
+
+export function getFocusCoordinates() {
+    if (gameState.spectatedHobbitId && typeof window !== 'undefined' && window.hobbits) {
+        const hob = window.hobbits.find(h => h.id === gameState.spectatedHobbitId);
+        if (hob) {
+            return { x: hob.x, y: hob.y, floor: hob.floor || 1 };
+        } else {
+            gameState.spectatedHobbitId = null; // Clear spectate if the hobbit died or is missing
+        }
+    }
+    return { x: hero.x, y: hero.y, floor: hero.floor || 1 };
+}
 
 // --- Replace getLevelInfo in src/entities.js ---
 

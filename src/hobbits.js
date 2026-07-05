@@ -1,7 +1,7 @@
 // src/hobbits.js
 import { viewport } from './viewport.js';
 import { moveEntity, getTileData } from './physics.js'; 
-import { hero } from './entities.js'; 
+import { hero, getFocusCoordinates } from './entities.js';
 import { getObjectAt, staticObjects, solidTiles } from './staticObjects.js';
 import { socket, doorStates, storeDbCache, hayStorageCache, chestCache, playerWallet } from './multiplayer.js';
 import { worldTime } from './clock.js'; 
@@ -11,6 +11,9 @@ import { getBacteriaData } from './bacteria.js';
 import { findPath } from './pathfinding.js'; // 👈 Loaded from pathfinding.js
 
 export const hobbits = [];
+if (typeof window !== 'undefined') {
+    window.hobbits = hobbits;
+}
 
 const HOBBIT_FIRST_NAMES = ["Bilbo", "Frodo", "Samwise", "Merry", "Pippin", "Bango", "Bungo", "Drogo", "Hamfast", "Longo", "Olo", "Paladin", "Rufus", "Sancho", "Tobold", "Wilibald"];
 const HOBBIT_LAST_NAMES = ["Baggins", "Gamgee", "Brandybuck", "Took", "Gardner", "Greenhand", "Grubb", "Chubb", "Proudfoot", "Bolger", "Boffin", "Sandyman", "Cotton", "Twofoot", "Underhill", "Hornblower"];
@@ -460,6 +463,7 @@ export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null, 
 // ==========================================
 
 export function updateHobbits(modifier, worldMatrix, roomMatrix) {
+    const focus = getFocusCoordinates();
     const heroCX = Math.floor(hero.x / 1600);
     const heroCY = Math.floor(hero.y / 1600);
     const now = Date.now();

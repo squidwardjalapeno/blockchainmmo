@@ -463,6 +463,14 @@ export function initUI() {
         }
     });
 
+    const stopSpectateBtn = document.getElementById('stop-spectate-btn');
+    if (stopSpectateBtn) {
+        stopSpectateBtn.onclick = () => {
+            gameState.spectatedHobbitId = null;
+            updateHUD();
+        };
+    }
+
     initMiningListeners();
 }
 
@@ -1313,6 +1321,23 @@ export function updateHUD() {
     if (tgvDisplay) {
         tgvDisplay.innerText = `TGV: ${(gameState.tvl || 0).toFixed(8)} UNI`;
     }
+
+    const spectateBanner = document.getElementById('spectate-banner');
+    const spectateName = document.getElementById('spectate-target-name');
+    if (spectateBanner && spectateName) {
+        if (gameState.spectatedHobbitId && window.hobbits) {
+            const hob = window.hobbits.find(h => h.id === gameState.spectatedHobbitId);
+            if (hob) {
+                spectateName.innerText = hob.name;
+                spectateBanner.classList.remove('hidden');
+            } else {
+                gameState.spectatedHobbitId = null;
+                spectateBanner.classList.add('hidden');
+            }
+        } else {
+            spectateBanner.classList.add('hidden');
+        }
+    }
 }
 
 window.equipItem = (invIndex) => {
@@ -1661,11 +1686,14 @@ function renderHobbitManagerUI() {
                 <span style="font-size:8px; color: #555;">CURRENT ROLE: <strong style="color:var(--highlight);">${selected.job.toUpperCase()}</strong></span>
             `;
 
+            const isSpectating = (gameState.spectatedHobbitId === selected.id);
+
             buttonContainer.innerHTML = `
                 <button onclick="window.assignHobbitJob('Forager')" class="pixel-btn ${selected.job === 'Forager' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">FORAGER</button>
                 <button onclick="window.assignHobbitJob('Farmer')" class="pixel-btn ${selected.job === 'Farmer' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">FARMER</button>
                 <button onclick="window.assignHobbitJob('Trader')" class="pixel-btn ${selected.job === 'Trader' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">TRADER</button>
                 <button onclick="window.assignHobbitJob('Idle')" class="pixel-btn ${selected.job === 'Idle' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">IDLE</button>
+                <button id="spectate-btn" onclick="window.toggleSpectateHobbit('${selected.id}')" class="pixel-btn ${isSpectating ? 'safe' : 'cancel'}" style="padding: 8px; font-size: 8px; margin-top: 10px; width: 100%;">${isSpectating ? '🛑 STOP SPECTATING' : '👁️ SPECTATE'}</button>
             `;
         } else {
             detailsEl.innerText = "Select a hobbit to modify their duties.";
@@ -1690,6 +1718,17 @@ window.assignHobbitJob = (jobName) => {
             renderHobbitManagerUI();
         }
     });
+};
+
+window.toggleSpectateHobbit = (id) => {
+    if (gameState.spectatedHobbitId === id) {
+        gameState.spectatedHobbitId = null;
+    } else {
+        gameState.spectatedHobbitId = id;
+        document.getElementById('hobbit-manager-menu').classList.add('hidden');
+    }
+    renderHobbitManagerUI();
+    updateHUD();
 };
 
 export function openDoorControlMenu(gx, gy, roomID) {

@@ -10,7 +10,7 @@ import { applyShorelineRules } from './terrainRules.js';
 import { inputState, initInput, handleHeroUpdate } from './input.js';
 import { viewport } from './viewport.js';
 import { ctx2, ctx3, canvas2, canvas3, drawMap, drawStaticObjects, drawJoystick, drawProjectiles, drawTargetCircle, drawWorkingIndicator, drawHeroRange, drawHealthBar, drawEnergyBar, drawAbilityButtons, drawXPStatus, drawAimIndicator, initRenderer, clearAll, drawAnimals, drawPlants, drawHero, drawRemotePlayers, drawBobber, preRenderMinimap, drawDroppedItems, drawCanopy, drawNightTint } from './renderer.js';
-import { hero, resetEntities, gameState } from './entities.js';
+import { hero, resetEntities, gameState, getFocusCoordinates } from './entities.js';
 import { CONFIG } from './config.js'
 import { checkCollision, getTileData } from './physics.js'; 
 import { updateBacteria, seedBacteria, getBacteriaData } from './bacteria.js'; 
@@ -114,9 +114,10 @@ var update = function (modifier) {
         return; 
     }
 
-    // 👇 NEW: Location Banner Tracker
-    const currentCX = Math.floor(hero.x / 1600);
-    const currentCY = Math.floor(hero.y / 1600);
+    // 👇 NEW: Location Banner Tracker (Centers on Spectated Hobbit if active)
+    const focus = getFocusCoordinates();
+    const currentCX = Math.floor(focus.x / 1600);
+    const currentCY = Math.floor(focus.y / 1600);
 
     // If we just spawned in, or crossed the border into a new chunk
     if (!gameState.lastLoggedCell || gameState.lastLoggedCell.cx !== currentCX || gameState.lastLoggedCell.cy !== currentCY) {
@@ -185,12 +186,6 @@ var update = function (modifier) {
     // ==========================================
     // 🐢 SLOW-TICK LOOP (Runs once per second)
     // ==========================================
-    // 🐢 SLOW-TICK LOOP (Runs once per second)
-    // Inside update() in src/game.js:
-
-    // ==========================================
-    // 🐢 SLOW-TICK LOOP (Runs once per second)
-    // ==========================================
     slowTickTimer += modifier;
     if (slowTickTimer >= 1.0) { 
 
@@ -205,9 +200,6 @@ var update = function (modifier) {
         }
         worldTime.isNight = (worldTime.hour >= 20 || worldTime.hour < 6); // Night is 8:00 PM to 6:00 AM
 
-        // ... (rest of your slow-tick loop remains the same) ...
-
-        // Locate the world-sim block inside update() in src/game.js (around line 170) and change:
         if (logicTick % 3 === 0) {
             if (DEBUG_FLAGS.ENABLE_WORLD_SIM) {
                 // 🎯 THE FIX: Pass modifier * 3 (actual elapsed seconds) instead of 1.0
@@ -251,7 +243,8 @@ async function syncTVL() {
 
 var render = function () {
     clearAll(); 
-    viewport.update(hero.x + 8, hero.y + 8);
+    const focus = getFocusCoordinates();
+    viewport.update(focus.x + 8, focus.y + 8);
 
     drawMap(worldMatrix, roomMatrix); 
 
@@ -321,83 +314,6 @@ var render = function () {
     
     // Reset text alignment so we don't mess up other UI elements
     ctx3.textAlign = "left";
-
-
-
-    /*
-    // ==========================================
-    // 🚨 FERTILITY X-RAY DEBUGGER 🚨
-    // ==========================================
-    const left = 3, right = 12, top = 10, bottom = 15;
-    const centerX = Math.floor(canvas.width / 2);
-    const centerY = Math.floor(canvas.height / 2);
-    
-    // The screen coordinate of your hero's top-left pixel
-    const sX = centerX - 8; 
-    const sY = centerY - 8;
-
-    // 1. Draw Hero Hitboxes
-    ctx3.strokeStyle = "rgba(255, 255, 0, 0.8)";
-    ctx3.lineWidth = 1;
-    ctx3.strokeRect(sX, sY, 16, 16);
-    ctx3.strokeStyle = "rgba(0, 255, 255, 0.8)";
-    ctx3.strokeRect(sX + left, sY + top, right - left, bottom - top);
-
-    // 2. Highlight surrounding Tile Grid and print FERTILITY
-    const hTX = Math.floor(hero.x / 16);
-    const hTY = Math.floor(hero.y / 16);
-    ctx3.font = "8px Arial";
-    ctx3.textAlign = "center";
-    
-    // 7x7 Grid to see the ecosystem around you
-    for(let i = -3; i <= 3; i++) {
-        for(let j = -3; j <= 3; j++) {
-            const tilePX = (hTX + i) * 16;
-            const tilePY = (hTY + j) * 16;
-            
-            // Translate world coordinates to screen coordinates
-            const tileScreenX = centerX + (tilePX - hero.x) - 8;
-            const tileScreenY = centerY + (tilePY - hero.y) - 8;
-            
-            // Draw Magenta Tile Boundaries
-            ctx3.strokeStyle = "rgba(255, 0, 255, 0.1)"; 
-            ctx3.strokeRect(tileScreenX, tileScreenY, 16, 16);
-            
-            // Fetch Fertility Data
-            const cx = Math.floor(tilePX / 1600);
-            const cy = Math.floor(tilePY / 1600);
-            const lx = ((Math.floor(tilePX / 16) % 100) + 100) % 100;
-            const ly = ((Math.floor(tilePY / 16) % 100) + 100) % 100;
-            const idx = (ly * 100) + lx;
-            
-            let fVal = 0;
-            if (fertilityMatrix[cx] && fertilityMatrix[cx][cy]) {
-                fVal = fertilityMatrix[cx][cy][idx];
-            }
-            
-            // Tint the ground based on fertility!
-            if (fVal > 0) {
-                // F:12 will be mildly green. F:150 (poop/compost) will be bright neon green!
-                const greenAlpha = Math.min(0.6, fVal / 50);
-                ctx3.fillStyle = `rgba(0, 255, 0, ${greenAlpha})`; 
-                ctx3.fillRect(tileScreenX, tileScreenY, 16, 16);
-            } else {
-                // Dead soil = slight red tint
-                ctx3.fillStyle = "rgba(255, 0, 0, 0.2)";
-                ctx3.fillRect(tileScreenX, tileScreenY, 16, 16);
-            }
-
-            // Print Exact Fertility Value
-            // Adding a black stroke makes the text pop over any background
-            ctx3.strokeStyle = "black";
-            ctx3.lineWidth = 2;
-            ctx3.strokeText(Math.floor(fVal), tileScreenX + 8, tileScreenY + 11);
-            
-            ctx3.fillStyle = "white";
-            ctx3.fillText(Math.floor(fVal), tileScreenX + 8, tileScreenY + 11);
-        }
-    }
-        */
 };
 
 // 🚨 Reverted mainInit to async/await for PC build
@@ -430,25 +346,6 @@ async function mainInit() {
             m.setWorldMatrix(worldMatrix);
         });
 
-        // ==========================================
-        // 🏗️ THE PERFECT 8-STEP GENERATION PIPELINE
-        // ==========================================
-
-        // ==========================================
-        // 🏗️ THE PERFECT 9-STEP GENERATION PIPELINE
-        // ==========================================
-
-        // ==========================================
-        // 👑 THE ULTIMATE GENERATION PIPELINE
-        // ==========================================
-
-        // ==========================================
-        // 👑 THE ULTIMATE GENERATION PIPELINE
-        // ==========================================
-
-        // ==========================================
-        // ⏱️ PROFILING HELPER
-        // ==========================================
         // ==========================================
         // ⏱️ PROFILING HELPER (With DOM Yielding)
         // ==========================================
@@ -495,17 +392,6 @@ async function mainInit() {
         await measureStep("Step 9: Cleaning up Blueprints", () => {
             clearBlueprints(roomMatrix);
         });
-        /*
-        */
-        // ==========================================
-
-        // ==========================================
-
-        // ==========================================
-
-        // ==========================================
-
-        // ==========================================
 
         logStep("8. Pre-rendering...");
         preRenderMinimap(worldMap); 
@@ -522,8 +408,6 @@ async function mainInit() {
         hero.y = (gridY + 10) * 16; // Start slightly south of the center
         // 👆 ------------------------------------------- 👆
 
-
-
         logStep("9. Init UI...");
         initUI(); 
         
@@ -538,9 +422,6 @@ async function mainInit() {
         logStep("CRASH: " + err.message);
     }
 }
-
-// Inside src/game.js
-// At the bottom of src/game.js (Inside the window.addEventListener('resize'...) block)
 
 window.addEventListener('resize', () => {
     const w = window.innerWidth;

@@ -1,7 +1,8 @@
 // src/plants.js
 import { seedBacteria } from './bacteria.js';
 import { ITEM_TYPES } from './items.js';
-import { hero } from './entities.js'; 
+// src/plants.js
+import { hero, getFocusCoordinates } from './entities.js';
 import { viewport } from './viewport.js'; // 👈 IMPORTED: Allows viewport boundary checks
 import { socket } from './multiplayer.js'; // 👈 ADD THIS IMPORT
 
@@ -141,6 +142,7 @@ export function createPlant(gx, gy, fertilityMatrix = null, startingGrowth = 0, 
 }
 
 export function updatePlants(modifier, fertilityMatrix, worldMatrix, roomMatrix) {
+    const focus = getFocusCoordinates();
     const heroCX = Math.floor(hero.x / 1600);
     const heroCY = Math.floor(hero.y / 1600);
     const now = Date.now();

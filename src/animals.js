@@ -3,7 +3,7 @@ import { seedBacteria } from './bacteria.js';
 import { plants } from './plants.js';
 import { ITEM_TYPES } from './items.js';
 import { moveEntity, getTileData } from './physics.js'; 
-import { hero } from './entities.js'; 
+import { hero, getFocusCoordinates } from './entities.js';
 import { viewport } from './viewport.js'; 
 import { findPath } from './pathfinding.js'; // 👈 Loaded from pathfinding.js
 
@@ -82,6 +82,7 @@ function macroWander(startX, startY, steps, worldMatrix, roomMatrix) {
 }
 
 export function updateAnimals(modifier, worldMatrix, roomMatrix) {
+    const focus = getFocusCoordinates();
     const heroCX = Math.floor(hero.x / 1600);
     const heroCY = Math.floor(hero.y / 1600);
     const now = Date.now();

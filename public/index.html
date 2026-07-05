@@ -113,6 +113,12 @@
                 <!-- Timings will be injected here by JavaScript -->
             </div>
 
+            <!-- SPECTATE BANNER -->
+            <div id="spectate-banner" class="hidden" style="position: fixed; top: 80px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.85); padding: 8px 16px; border: 4px solid var(--bg-dark); color: #FFD700; font-size: 10px; text-align: center; text-shadow: 2px 2px 0 var(--bg-dark); z-index: 1000; display: flex; align-items: center; gap: 15px; pointer-events: auto;">
+                <span>SPECTATING: <span id="spectate-target-name" style="color: white; font-weight: bold;">Frodo Baggins</span></span>
+                <button id="stop-spectate-btn" class="pixel-btn cancel" style="padding: 4px 8px; font-size: 8px;">STOP</button>
+            </div>
+
             <!-- 💬 CHAT BOX -->
             <div id="chat-container" style="position: fixed; left: 20px; bottom: 20px; width: 300px; display: flex; flex-direction: column; pointer-events: none; z-index: 1000;">
                 <!-- Message History -->

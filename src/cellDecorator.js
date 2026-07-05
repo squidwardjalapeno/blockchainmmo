@@ -7,6 +7,8 @@ import { seededRandom, setWorldSeed } from "./mapGenerator.js";
 import { registerObject, getObjectAt } from './staticObjects.js';
 import { getTileData } from './physics.js';
 import { socket } from './multiplayer.js'; 
+import { getFocusCoordinates } from './entities.js';
+
 
 export const roomMetadata = {}; 
 let nextHouseId = 1;
@@ -1377,6 +1379,7 @@ function promotePath(startNode, endNode, adj, tileID, thickness, maxRangeSq, wor
 const decoratedCells = new Set();
 
 export function ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
+    const focus = getFocusCoordinates();
     const heroCX = Math.floor(hero.x / 1600);
     const heroCY = Math.floor(hero.y / 1600);
 
