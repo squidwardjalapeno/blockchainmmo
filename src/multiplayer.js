@@ -81,6 +81,136 @@ export function initMultiplayer() {
             ui.setupMultiplayerListeners(socket);
         });
 
+        // ==========================================
+        // 🌍 CORE SIMULATION & COMBAT HARNESS LISTENERS
+        // ==========================================
+        socket.on('forcedMovement', (data) => {
+            const p = (data.id === myID) ? hero : remotePlayers.get(data.id);
+            if (p) {
+                p.x = data.x;
+                p.y = data.y;
+                if (data.id === myID) {
+                    hero.isAttacking = false;
+                    hero.isWindingUp = false;
+                }
+            }
+        });
+
+        socket.on('playerHit', (data) => {
+            const victim = (data.victimId === myID) ? hero : remotePlayers.get(data.victimId);
+            if (victim) {
+                victim.hp = data.newHp;
+                if (data.newShield !== undefined) victim.shield = data.newShield;
+                
+                if (data.bubblePopped) {
+                    if (victim === hero) hero.buffs.divineBubble = false;
+                    else victim.hasDivineBubble = false;
+                }
+
+                if (data.bubblePopped === undefined) { 
+                    if (!victim.cc) victim.cc = {}; 
+                    if (victim === hero) hero.cc.hasResonance = false;
+                    else victim.cc.hasResonance = false;
+                }
+                
+                if (hero.target && data.victimId === hero.target.id && data.newHp <= 0) {
+                    hero.isAttacking = false; hero.target = null; hero.isWindingUp = false; hero.attackTimer = 0;
+                }
+            }
+        });
+
+        socket.on('syncTile', (data) => {
+            handleRemoteTileUpdate(data, activeWorldMatrix);
+        });
+
+        socket.on('playerHealed', (data) => {
+            const p = (data.targetId === myID) ? hero : remotePlayers.get(data.targetId);
+            if (p) {
+                p.hp = data.newHp;
+            }
+        });
+
+        socket.on('receiveAllyBuff', (data) => {
+            if (data.buffType === 'fleetingBulwark') {
+                console.log("🛡️ Received Fleeting Bulwark from an ally!");
+                
+                hero.bulwarkTimer = data.duration;
+                hero.bulwarkArmorBonus = data.armor;
+                hero.bulwarkMrBonus = data.mr;
+                hero.bulwarkSpeedBonus = data.speed;
+
+                hero.armor += data.armor;
+                hero.mr += data.mr;
+
+                import('./interactionManager.js').then(m => m.recalculateStats());
+                socket.emit('updateStats', { armor: hero.armor, mr: hero.mr });
+            }
+        });
+
+        socket.on('playerCC', (data) => {
+            const victim = (data.victimId === myID) ? hero : remotePlayers.get(data.victimId);
+            if (victim) {
+                if (!victim.cc) victim.cc = {};
+                if (data.ccType === 'slow') {
+                    victim.cc.isSlowed = true;
+                    victim.cc.slowTimer = data.duration;
+                    if (data.victimId === myID) {
+                        import('./interactionManager.js').then(m => m.recalculateStats());
+                    }
+                }
+                if (data.ccType === 'resonanceApply') victim.cc.hasResonance = true;
+                if (data.ccType === 'resonanceFade') victim.cc.hasResonance = false;
+            }
+        });
+
+        socket.on('refundCooldown', (data) => {
+            if (hero.cooldowns[data.index] !== undefined) {
+                hero.cooldowns[data.index] = Math.max(0, hero.cooldowns[data.index] - data.amount);
+            }
+        });
+
+        socket.on('playerKilled', (data) => {
+            if (data.killerId === myID) hero.xp = data.newAttackerXp; 
+            if (hero.target && data.victimId === hero.target.id) {
+                hero.isAttacking = false; hero.target = null; hero.isWindingUp = false; hero.attackTimer = 0;
+            }
+        });
+
+        socket.on('playerRespawn', (data) => {
+            const p = (data.id === myID) ? hero : remotePlayers.get(data.id);
+            if (p) p.hp = data.hp;
+        });
+
+        socket.on('plantReset', (data) => {
+            import('./plants.js').then(m => {
+                const plant = m.plants.get(`${data.gx}_${data.gy}`);
+                if (plant) {
+                    plant.growth = data.growth;
+                    plant.hasFlowered = false; 
+                }
+            });
+        });
+
+        socket.on('chunkPlantsData', (data) => {
+            Promise.all([
+                import('./plants.js'),
+                import('./physics.js'),
+                import('./game.js')
+            ]).then(([plantsMod, physMod, gameMod]) => {
+                data.plants.forEach(p => {
+                    const tx = p.gx;
+                    const ty = p.gy;
+                    const tileData = physMod.getTileData(tx * 16 + 8, ty * 16 + 8, gameMod.worldMatrix, gameMod.roomMatrix);
+                    if (tileData && tileData.tileID === 63 && (tileData.roomID === 0 || tileData.roomID === 9999)) {
+                        plantsMod.createPlant(tx, ty, null, p.growth, p.type, 0, true);
+                    }
+                });
+            });
+        });
+
+        // ==========================================
+        // 🌍 CORE OVERWORLD POSITIONING & ENTITY SYNC
+        // ==========================================
         socket.on('position', (data) => {
             const { playerbase, projectiles, animals: serverAnimals } = data; 
 
