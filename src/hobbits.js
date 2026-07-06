@@ -727,17 +727,19 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             const py = (hero.y + 8) - (hobbit.y + 8);
             const distToHero = Math.hypot(px, py);
 
-            if (criminals.has(myID) && hero.hp > 0 && distToHero < 200) {
+            // local player criminal check (range expanded to 2400 pixels for full village response)
+            if (criminals.has(myID) && hero.hp > 0 && distToHero < 2400) {
                 enemyTarget = hero;
                 enemyDist = distToHero;
             }
 
+            // remote player criminal check (range expanded to 2400 pixels for full village response)
             if (!enemyTarget && remotePlayers) {
                 remotePlayers.forEach((p, id) => {
                     if (p.hp <= 0) return;
                     if (criminals.has(id)) {
                         const dist = Math.hypot((p.x + 8) - (hobbit.x + 8), (p.y + 8) - (hobbit.y + 8));
-                        if (dist < 200 && dist < enemyDist) {
+                        if (dist < 2400 && dist < enemyDist) {
                             enemyDist = dist;
                             enemyTarget = p;
                         }
@@ -765,6 +767,16 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     if (path) {
                         hobbit.path = path;
                         hobbit.state = 'walking';
+                    } else {
+                        // Relentless direct step fallback for long-distance swarms
+                        const dx = tTX - currTX;
+                        const dy = tTY - currTY;
+                        const stepX = dx !== 0 ? Math.sign(dx) : 0;
+                        const stepY = dy !== 0 ? Math.sign(dy) : 0;
+                        if (isWalkableForHobbit(currTX + stepX, currTY + stepY, worldMatrix, roomMatrix, hobbit)) {
+                            hobbit.path = [{ x: currTX + stepX, y: currTY + stepY }];
+                            hobbit.state = 'walking';
+                        }
                     }
                 }
                 
