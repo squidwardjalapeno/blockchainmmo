@@ -3,7 +3,7 @@ import { viewport } from './viewport.js';
 import { moveEntity, getTileData } from './physics.js'; 
 import { hero, getFocusCoordinates } from './entities.js'; 
 import { getObjectAt, staticObjects, solidTiles } from './staticObjects.js';
-import { socket, doorStates, storeDbCache, hayStorageCache, chestCache, playerWallet, remotePlayers } from './multiplayer.js';
+import { socket, doorStates, storeDbCache, hayStorageCache, chestCache, playerWallet, remotePlayers, myID } from './multiplayer.js';
 import { worldTime } from './clock.js'; 
 import { plants, PLANT_DEFS, createPlant } from './plants.js';
 import { ITEM_TYPES, createItem } from './items.js';
@@ -99,212 +99,6 @@ function findNearestStoreCounter(hobbit, range = 3200) {
     return nearest;
 }
 
-function findHomeHayStorage(hobbit) {
-    if (!hobbit.houseId) return null;
-    for (let [key, obj] of staticObjects) {
-        if (obj.type === 'HAY_STORAGE' && obj.houseId === hobbit.houseId) {
-            const tx = Math.floor(key / 10000);
-            const ty = key % 10000;
-            return { x: tx, y: ty };
-        }
-    }
-    return null;
-}
-
-function findNearestEgg(hobbit, range = 400) {
-    const currTX = Math.floor((hobbit.x + 8) / 16);
-    const currTY = Math.floor((hobbit.y + 8) / 16);
-    let nearest = null;
-    let minDist = Infinity;
-
-    for (let ox = -25; ox <= 25; ox++) {
-        for (let oy = -25; oy <= 25; oy++) {
-            const tx = currTX + ox;
-            const ty = currTY + oy;
-            const bac = getBacteriaData(tx, ty);
-            if (bac && bac.data) {
-                const traits = bac.data[bac.idx];
-                if (traits > 0) {
-                    const typeID = (traits >> 20) & 0xFF;
-                    if (typeID === 16) { 
-                        const dist = Math.hypot((tx * 16 + 8) - (hobbit.x + 8), (ty * 16 + 8) - (hobbit.y + 8));
-                        if (dist < range && dist < minDist) {
-                            minDist = dist;
-                            nearest = { gx: tx, gy: ty };
-                        }
-                    }
-                }
-            }
-        }
-    }
-    return nearest;
-}
-
-function giveItemToHobbit(hobbit, newItem) {
-    if (!newItem) return false;
-
-    if (newItem.maxStack > 1) {
-        const existing = hobbit.inventory.find(i => i.seedType === newItem.seedType && i.count < (i.maxStack || 8));
-        if (existing) {
-            const space = (existing.maxStack || 8) - existing.count;
-            if (newItem.count <= space) {
-                existing.count += newItem.count;
-                return true;
-            } else {
-                existing.count = existing.maxStack || 8;
-                newItem.count -= space;
-            }
-        }
-    }
-
-    hobbit.inventory.push(newItem);
-    return true;
-}
-
-function tryHobbitTrade(hobbit, counterX, counterY) {
-    const storeId = `store_${counterX}_${counterY}`;
-    const storeData = storeDbCache.get(storeId);
-    
-    console.log(`[TRADE DEBUG] 🏪 ${hobbit.name} checking store counter at ${storeId}...`);
-    
-    if (!storeData) {
-        console.warn(`[TRADE DEBUG] ❌ No store database found in client cache for ${storeId}.`);
-        return false;
-    }
-    if (!storeData.listings) {
-        console.warn(`[TRADE DEBUG] ❌ Store listings array is uninitialized.`);
-        return false;
-    }
-
-    console.log(`[TRADE DEBUG] 📜 Store has ${storeData.listings.length} active listings on the market.`);
-    
-    const keys = hobbit.inventory.filter(i => i.isKey);
-    const pmItem = hobbit.inventory.find(i => i.seedType === 'plant_matter');
-
-    if (hobbit.job === 'Forager' && pmItem) {
-        console.log(`[TRADE DEBUG] 🌿 Forager has Plant Matter to trade.`);
-        const match = storeData.listings.find(l => {
-            return l.wantedType === 'plant_matter' && 
-                   ['egg', 'tomato_item', 'turnip_item', 'strawberry_item', 'corn_item', 'potato_item', 'watermelon_item', 'pumpkin_item', 'eggplant_item', 'pineapple_item', 'wheat_item'].includes(l.offeredItem.seedType);
-        });
-
-        if (match) {
-            console.log(`[TRADE DEBUG] 🎯 Match found! Purchasing Listing ID: ${match.id}`);
-            pmItem.count--;
-            if (pmItem.count <= 0) {
-                hobbit.inventory = hobbit.inventory.filter(i => i !== pmItem);
-            }
-
-            const foodItem = createItem(ITEM_TYPES[match.offeredItem.seedType.toUpperCase()]);
-            giveItemToHobbit(hobbit, foodItem); 
-
-            if (socket && socket.connected) {
-                socket.emit('buyListing', {
-                    storeId,
-                    listingId: match.id,
-                    buyerWallet: playerWallet,
-                    paymentItem: createItem(ITEM_TYPES.PLANT_MATTER),
-                    isHobbit: true
-                });
-            }
-            return true;
-        } else {
-            console.log(`[TRADE DEBUG] ❌ No matching player listings found for: Plant Matter -> Food.`);
-            
-            const alreadyListed = storeData.listings.some(l => 
-                l.seller === playerWallet && 
-                l.offeredItem.seedType === 'plant_matter'
-            );
-
-            if (!alreadyListed) {
-                console.log(`[TRADE DEBUG] ✍️ Forager is posting an active market listing: Plant Matter -> Egg.`);
-                
-                pmItem.count--;
-                if (pmItem.count <= 0) {
-                    hobbit.inventory = hobbit.inventory.filter(i => i !== pmItem);
-                }
-
-                if (socket && socket.connected) {
-                    socket.emit('createListing', {
-                        storeId,
-                        wallet: playerWallet,
-                        offeredItem: createItem(ITEM_TYPES.PLANT_MATTER),
-                        wantedType: 'egg'
-                    });
-                }
-                return true;
-            } else {
-                console.log(`[TRADE DEBUG] 📋 A Plant Matter listing is already active. Waiting...`);
-            }
-        }
-    } 
-    else if (hobbit.job === 'Farmer' && foodItem) {
-        const foodItem = hobbit.inventory.find(i => !i.isKey && i.seedType !== 'plant_matter');
-        if (!foodItem) {
-            console.warn(`[TRADE DEBUG] ❌ Farmer has no agricultural yields in inventory to trade.`);
-            return false;
-        }
-        
-        console.log(`[TRADE DEBUG] 🥚 Farmer is holding: ${foodItem.seedType} (x${foodItem.count})`);
-
-        const match = storeData.listings.find(l => {
-            return l.wantedType === foodItem.seedType && 
-                   l.offeredItem.seedType === 'plant_matter';
-        });
-
-        if (match) {
-            console.log(`[TRADE DEBUG] 🎯 Match found! Purchasing Listing ID: ${match.id}`);
-            foodItem.count--;
-            if (foodItem.count <= 0) {
-                hobbit.inventory = hobbit.inventory.filter(i => i !== foodItem);
-            }
-
-            const pmItem = createItem(ITEM_TYPES.PLANT_MATTER);
-            giveItemToHobbit(hobbit, pmItem); 
-
-            if (socket && socket.connected) {
-                socket.emit('buyListing', {
-                    storeId,
-                    listingId: match.id,
-                    buyerWallet: playerWallet,
-                    paymentItem: createItem(ITEM_TYPES[foodItem.seedType.toUpperCase()]),
-                    isHobbit: true
-                });
-            }
-            return true;
-        } else {
-            console.log(`[TRADE DEBUG] ❌ No matching player listings found for: ${foodItem.seedType} -> Plant Matter.`);
-            
-            const alreadyListed = storeData.listings.some(l => 
-                l.seller === playerWallet && 
-                l.offeredItem.seedType === foodItem.seedType
-            );
-
-            if (!alreadyListed) {
-                console.log(`[TRADE DEBUG] ✍️ Farmer is posting an active market listing: ${foodItem.seedType} -> Plant Matter.`);
-                
-                foodItem.count--;
-                if (foodItem.count <= 0) {
-                    hobbit.inventory = hobbit.inventory.filter(i => i !== foodItem);
-                }
-
-                if (socket && socket.connected) {
-                    socket.emit('createListing', {
-                        storeId,
-                        wallet: playerWallet,
-                        offeredItem: createItem(ITEM_TYPES[foodItem.seedType.toUpperCase()]),
-                        wantedType: 'plant_matter'
-                    });
-                }
-                return true;
-            } else {
-                console.log(`[TRADE DEBUG] 📋 A ${foodItem.seedType} listing is already active. Waiting...`);
-            }
-        }
-    }
-    return false;
-}
-
 // ==========================================
 // 🚶 PATHFINDING & WALKING UTILITIES
 // ==========================================
@@ -394,6 +188,68 @@ export function getHobbitVillage(hobbit) {
         return window.getVillageAt(hx, hy);
     }
     return null;
+}
+
+function findHomeHayStorage(hobbit) {
+    if (!hobbit.houseId) return null;
+    for (let [key, obj] of staticObjects) {
+        if (obj.type === 'HAY_STORAGE' && obj.houseId === hobbit.houseId) {
+            const tx = Math.floor(key / 10000);
+            const ty = key % 10000;
+            return { x: tx, y: ty };
+        }
+    }
+    return null;
+}
+
+function findNearestEgg(hobbit, range = 400) {
+    const currTX = Math.floor((hobbit.x + 8) / 16);
+    const currTY = Math.floor((hobbit.y + 8) / 16);
+    let nearest = null;
+    let minDist = Infinity;
+
+    for (let ox = -25; ox <= 25; ox++) {
+        for (let oy = -25; oy <= 25; oy++) {
+            const tx = currTX + ox;
+            const ty = currTY + oy;
+            const bac = getBacteriaData(tx, ty);
+            if (bac && bac.data) {
+                const traits = bac.data[bac.idx];
+                if (traits > 0) {
+                    const typeID = (traits >> 20) & 0xFF;
+                    if (typeID === 16) { 
+                        const dist = Math.hypot((tx * 16 + 8) - (hobbit.x + 8), (ty * 16 + 8) - (hobbit.y + 8));
+                        if (dist < range && dist < minDist) {
+                            minDist = dist;
+                            nearest = { gx: tx, gy: ty };
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return nearest;
+}
+
+function giveItemToHobbit(hobbit, newItem) {
+    if (!newItem) return false;
+
+    if (newItem.maxStack > 1) {
+        const existing = hobbit.inventory.find(i => i.seedType === newItem.seedType && i.count < (i.maxStack || 8));
+        if (existing) {
+            const space = (existing.maxStack || 8) - existing.count;
+            if (newItem.count <= space) {
+                existing.count += newItem.count;
+                return true;
+            } else {
+                existing.count = existing.maxStack || 8;
+                newItem.count -= space;
+            }
+        }
+    }
+
+    hobbit.inventory.push(newItem);
+    return true;
 }
 
 // ==========================================
@@ -858,7 +714,12 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         // ==========================================
         // ⚔️ CONTESTED DEFENDER AI STATE MACHINES
         // ==========================================
-        if (isVillageContested && villageOwner) {
+        let criminals = null;
+        if (village && typeof window !== 'undefined' && window.villageCriminals) {
+            criminals = window.villageCriminals.get(`${village.x}_${village.y}`);
+        }
+
+        if (criminals && criminals.size > 0 && villageOwner) {
             let enemyTarget = null;
             let enemyDist = Infinity;
 
@@ -866,7 +727,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             const py = (hero.y + 8) - (hobbit.y + 8);
             const distToHero = Math.hypot(px, py);
 
-            if (playerWallet !== villageOwner && hero.hp > 0 && distToHero < 200) {
+            if (criminals.has(myID) && hero.hp > 0 && distToHero < 200) {
                 enemyTarget = hero;
                 enemyDist = distToHero;
             }
@@ -874,8 +735,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             if (!enemyTarget && remotePlayers) {
                 remotePlayers.forEach((p, id) => {
                     if (p.hp <= 0) return;
-                    const pName = p.wallet || id;
-                    if (pName !== villageOwner) {
+                    if (criminals.has(id)) {
                         const dist = Math.hypot((p.x + 8) - (hobbit.x + 8), (p.y + 8) - (hobbit.y + 8));
                         if (dist < 200 && dist < enemyDist) {
                             enemyDist = dist;

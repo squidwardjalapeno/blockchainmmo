@@ -1,7 +1,7 @@
 // src/uiManager.js
 
 import { hero, getLevelInfo, gameState } from './entities.js';
-import { socket, playerWallet, setPlayerWallet, syncInventoryWithServer, playerRequestedChestId, setPlayerRequestedChestId } from './multiplayer.js';
+import { socket, playerWallet, setPlayerWallet, syncInventoryWithServer, chestCache, hayStorageCache, storeDbCache, playerRequestedChestId, setPlayerRequestedChestId, doorStates } from './multiplayer.js';
 import { CONFIG } from './config.js';
 import { ITEM_TYPES, createItem } from './items.js';
 import { getWaitModifier, getRandomFish, globalFishCount } from './fish.js';
@@ -130,8 +130,11 @@ export const uiState = {
 
 // 🏰 CLIENT-SIDE VILLAGE OWNERSHIP CACHE
 export const villageOwners = new Map();
+export const villageCriminals = new Map();
+
 if (typeof window !== 'undefined') {
     window.villageOwners = villageOwners;
+    window.villageCriminals = villageCriminals;
 }
 
 // ==========================================
@@ -2054,6 +2057,33 @@ export function setupMultiplayerListeners(s) {
     });
 
     // 🏰 CORE VILLAGE CAPTURE SYNC LISTENERS
+    s.on('wellStateResponse', (data) => {
+        villageOwners.set(`${data.wellX}_${data.wellY}`, {
+            owner: data.owner,
+            progress: data.progress,
+            contested: false,
+            capturer: null
+        });
+        openVillageMenu(data.wellX, data.wellY, data);
+    });
+
+    s.on('villageIntruderAggro', (data) => {
+        const key = `${data.wellX}_${data.wellY}`;
+        if (window.villageCriminals) {
+            if (!window.villageCriminals.has(key)) {
+                window.villageCriminals.set(key, new Set());
+            }
+            window.villageCriminals.get(key).add(data.intruderId);
+            
+            // Expire criminal status automatically after 30 seconds
+            setTimeout(() => {
+                if (window.villageCriminals && window.villageCriminals.has(key)) {
+                    window.villageCriminals.get(key).delete(data.intruderId);
+                }
+            }, 30000);
+        }
+    });
+
     s.on('villageOwnerUpdated', (data) => {
         villageOwners.set(`${data.wellX}_${data.wellY}`, {
             owner: data.owner,

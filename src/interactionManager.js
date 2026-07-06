@@ -61,6 +61,8 @@ export function giveItemToHero(newItem) {
 
 // inside src/interactionManager.js
 
+// inside src/interactionManager.js
+
 export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityMatrix) {
     // 1. FORGIVING HITBOX LOGIC (For Interactions)
     let bx = 0, by = 0;
@@ -126,18 +128,12 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
                 return; // Block interaction!
             }
 
-            // 🎯 WELL INTERACTION LOGIC (Ownership & Capture UI)
+            // 🎯 WELL INTERACTION LOGIC (Ownership & Capture UI via requestWellState)
             if (obj.type === 'WELL_OBJECT') {
                 import('./cellDecorator.js').then(m => {
                     const well = m.getVillageAt(tx, ty);
-                    if (well) {
-                        if (window.villageOwners) {
-                            const key = `${well.x}_${well.y}`;
-                            const vData = window.villageOwners.get(key) || { owner: null, progress: 0 };
-                            import('./uiManager.js').then(ui => {
-                                ui.openVillageMenu(well.x, well.y, vData);
-                            });
-                        }
+                    if (well && socket) {
+                        socket.emit('requestWellState', { wellX: well.x, wellY: well.y });
                     }
                 });
                 inputState.interact = false;
@@ -305,7 +301,7 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
             }
         }
 
-        if (target.tileID === 29) {
+        if (target && target.tileID === 29) {
             if (socket) socket.emit('requestOre', `ore_${tx}_${ty}`);
             inputState.interact = false;
             inputState.action = false;
@@ -409,7 +405,8 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
     }
 
     if (inputState.action) {
-        processCasting(tx, ty, worldMatrix, roomMatrix); 
+        // Pass standard feet coordinates to align water casting-lines
+        processCasting(feetTX, feetTY, worldMatrix, roomMatrix); 
     }
 }
 

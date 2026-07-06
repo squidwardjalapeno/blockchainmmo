@@ -398,6 +398,16 @@ function applyMagicSpellDamage(attacker, victim, baseDamage) {
     }
 
     victim.hp -= finalDamage;
+
+    // ⚖️ CRIME DETECTOR (Spells / AoE): If victim is a village owner, flag the attacker as a criminal
+    const victimName = victim.wallet || `Guest_${victim.id.substring(0, 4)}`;
+    for (let [key, village] of serverVillages) {
+        if (village.owner === victimName) {
+            io.emit('villageIntruderAggro', { wellX: village.x, wellY: village.y, intruderId: attacker.id });
+            console.log(`⚖️ SPELL CRIME DETECTED: Attacker ${attacker.id} struck owner ${victimName} of village [${village.x}, ${village.y}]!`);
+        }
+    }
+
     io.emit('playerHit', { 
         victimId: victim.id, newHp: victim.hp, newShield: victim.shield, attackerId: attacker.id 
     });
@@ -496,6 +506,29 @@ io.on('connection', (socket) => {
     // ==========================================
     // 🎛️ MULTIPLAYER VILLAGE CORE CONTROL LISTENERS
     // ==========================================
+    socket.on('requestWellState', (data) => {
+        const { wellX, wellY } = data;
+        const key = `${wellX}_${wellY}`;
+        
+        if (!serverVillages.has(key)) {
+            serverVillages.set(key, {
+                x: wellX,
+                y: wellY,
+                owner: null,
+                captureProgress: 0,
+                capturer: null,
+                contested: false
+            });
+        }
+        const village = serverVillages.get(key);
+        socket.emit('wellStateResponse', {
+            wellX,
+            wellY,
+            owner: village.owner,
+            progress: village.captureProgress
+        });
+    });
+
     socket.on('requestWellInteraction', (data) => {
         const { wellX, wellY } = data;
         const key = `${wellX}_${wellY}`;
@@ -1482,7 +1515,7 @@ io.on('connection', (socket) => {
 
         const requestedCount = Math.min(64, Math.max(1, data.count || 1)); 
 
-        const effectiveTGV = Math.max(0.00000001, currentTVL - globalDebt);
+        const effectiveTGV = Math.max(0, currentTVL - globalDebt);
         const pointsPerSeed = effectiveTGV / 640000;
         const totalPoints = pointsPerSeed * requestedCount; 
 
@@ -1537,6 +1570,15 @@ io.on('connection', (socket) => {
             }
 
             victim.hp -= finalDamage;
+
+            // ⚖️ CRIME DETECTOR (Melee / Basic Attacks): If victim is a village owner, flag the attacker as a criminal
+            const victimName = victim.wallet || `Guest_${victim.id.substring(0, 4)}`;
+            for (let [key, village] of serverVillages) {
+                if (village.owner === victimName) {
+                    io.emit('villageIntruderAggro', { wellX: village.x, wellY: village.y, intruderId: attacker.id });
+                    console.log(`⚖️ MELEE CRIME DETECTED: Attacker ${attacker.id} struck owner ${victimName} of village [${village.x}, ${village.y}]!`);
+                }
+            }
             
             io.emit('playerHit', {
                 victimId: victim.id,

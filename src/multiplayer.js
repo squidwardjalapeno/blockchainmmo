@@ -18,8 +18,14 @@ export const storeDbCache = new Map();
 export const hayStorageCache = new Map(); 
 export const chestCache = new Map(); 
 
-// Bind the caches to the window to ensure they are accessible globally without circular imports
+// src/multiplayer.js
+
+export const villageOwners = new Map();
+export const villageCriminals = new Map();
+
 if (typeof window !== 'undefined') {
+    window.villageOwners = villageOwners;
+    window.villageCriminals = villageCriminals;
     window.doorStates = doorStates;
     window.storeDbCache = storeDbCache;
     window.hayStorageCache = hayStorageCache;
