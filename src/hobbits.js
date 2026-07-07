@@ -253,6 +253,54 @@ function giveItemToHobbit(hobbit, newItem) {
 }
 
 // ==========================================
+// 🤝 HOBBIT AUTONOMOUS TRADING LOGIC
+// ==========================================
+function tryHobbitTrade(hobbit, cx, cy) {
+    const storeDataId = `store_${cx}_${cy}`;
+    const storeData = storeDbCache.get(storeDataId);
+    if (!storeData || !storeData.listings || storeData.listings.length === 0) return;
+
+    for (let l of storeData.listings) {
+        if (l.counterOffer) continue; // Skip active negotiations
+
+        const itemIdx = hobbit.inventory.findIndex(i => i.seedType === l.wantedType);
+        if (itemIdx !== -1) {
+            const paymentItem = hobbit.inventory[itemIdx];
+            
+            // Create a payload containing exactly one count of the item
+            const singlePaymentItem = { ...paymentItem, count: 1 };
+
+            // Decrement or remove item from hobbit's inventory
+            paymentItem.count--;
+            if (paymentItem.count <= 0) {
+                hobbit.inventory.splice(itemIdx, 1);
+            }
+
+            console.log(`🤝 Hobbit ${hobbit.name} is fulfilling listing ${l.id}: trading 1x ${l.wantedType} for ${l.offeredItem.name}`);
+
+            if (socket && socket.connected) {
+                socket.emit('buyListing', {
+                    storeId: storeDataId,
+                    listingId: l.id,
+                    buyerWallet: null,
+                    paymentItem: singlePaymentItem,
+                    isHobbit: true
+                });
+            }
+
+            // Grant the offered item directly to the hobbit's inventory
+            giveItemToHobbit(hobbit, l.offeredItem);
+
+            // Set hobbit state back to wandering
+            hobbit.goal = 'wander';
+            hobbit.path = [];
+            hobbit.state = 'idle';
+            break; 
+        }
+    }
+}
+
+// ==========================================
 // 🤝 HOBBIT SPAWNING
 // ==========================================
 
@@ -455,8 +503,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         const path = findPathToCoords(simX, simY, hobbit.homeX, hobbit.homeY, worldMatrix, roomMatrix, hobbit);
                         if (path && path.length > 0) {
                             const next = path[Math.min(path.length - 1, 3)];
-                            simX = next.x;
-                            simY = next.y;
+                            simX = next.x; simY = next.y;
                         }
                     }
                 } else {
@@ -643,6 +690,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     }
                 }
 
+                // Simplified path execution: Teleport to the next tile instantly
                 if (hobbit.path && hobbit.path.length > 0) {
                     const nextNode = hobbit.path.shift();
                     hobbit.x = nextNode.x * 16;
