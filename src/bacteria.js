@@ -1,10 +1,8 @@
 // src/bacteria.js
 import { CONFIG } from './config.js';
-// src/bacteria.js
 import { hero, getFocusCoordinates } from './entities.js';
 import { plants } from './plants.js';
 import { ITEM_TYPES } from './items.js';
-import { socket } from './multiplayer.js'; 
 
 export const bacteriaCells = new Map();
 export const chunkLastUpdated = new Map(); 
@@ -80,8 +78,8 @@ export function getBacteriaData(gx, gy) {
 
 export function updateBacteria(worldMatrix, fertilityMatrix) {
     const focus = getFocusCoordinates();
-    const heroGTX = Math.floor(hero.x / CONFIG.TILE_SIZE);
-    const heroGTY = Math.floor(hero.y / CONFIG.TILE_SIZE);
+    const heroGTX = Math.floor(focus.x / CONFIG.TILE_SIZE);
+    const heroGTY = Math.floor(focus.y / CONFIG.TILE_SIZE);
     const heroCX = Math.floor(heroGTX / CONFIG.CELL_SIZE);
     const heroCY = Math.floor(heroGTY / CONFIG.CELL_SIZE);
     const now = Date.now();
@@ -120,7 +118,6 @@ export function catchUpChunkBacteria(cx, cy, deltaSeconds, fertilityMatrix) {
         if (traits === 0) continue;
 
         let typeID = (traits >> 20) & 0xFF;
-        // 🎯 THE FIX: Exempt Keys, Weapons, Eggs, and Hay from catch-up decay
         if (typeID === 60 || typeID === 61 || typeID === 16 || typeID === 17) continue; 
 
         let h = traits & 0xFF;
@@ -237,13 +234,6 @@ function processCellSpread(cx, cy, worldMatrix, fertilityMatrix) {
             if (h === 0 && v === 0) {
                 if (data[idx] !== 0) {
                     data[idx] = 0; 
-                    if (typeof socket !== 'undefined' && socket) {
-                        socket.emit('syncTile', {
-                            gx: (cx * 100) + (idx % 100),
-                            gy: (cy * 100) + Math.floor(idx / 100),
-                            traits: 0
-                        });
-                    }
                 }
             } else {
                 const newTraits = ((Math.floor(h) & 0xFF) | 
@@ -251,19 +241,8 @@ function processCellSpread(cx, cy, worldMatrix, fertilityMatrix) {
                                   ((r & 0x0F) << 16) | 
                                   ((typeID & 0xFF) << 20) | 
                                   (hasPeaked ? 0x80000000 : 0)) >>> 0;
-
-                const oldTraits = data[idx];
-                const oldHasPeaked = (oldTraits >>> 31);
                 
                 data[idx] = newTraits; 
-
-                if ((hasPeaked !== oldHasPeaked) && typeof socket !== 'undefined' && socket) {
-                    socket.emit('syncTile', {
-                        gx: (cx * 100) + (idx % 100),
-                        gy: (cy * 100) + Math.floor(idx / 100),
-                        traits: newTraits
-                    });
-                }
 
                 if (h === 0 && v > 0) {
                     let bFert = 0;
@@ -315,19 +294,17 @@ function processCellSpread(cx, cy, worldMatrix, fertilityMatrix) {
             const tempV = (data[j] >> 8) & 0xFF;
             const tempType = (data[j] >> 20) & 0xFF; 
 
-            // 🎯 THE FIX: Exempt Keys, Weapons, Eggs, and Hay from deep-clean wipes
             if (tempType === 60 || tempType === 61 || tempType === 16 || tempType === 17) {
                 activeCount++;
                 continue;
             }
-            
+
             if (tempH === 0 && tempV === 0) {
-                data[j] = 0; 
+                data[j] = 0;
             } else {
                 activeCount++;
             }
         }
-
         if (activeCount === 0) {
             bacteriaCells.delete(cellKey);
             chunkLastUpdated.delete(cellKey); 
@@ -434,8 +411,4 @@ export function seedBacteria(gx, gy, typeName, health, virulence, isRemote = fal
     }
 
     data[idx] = packed;
-
-    if (!isRemote && typeof socket !== 'undefined' && socket) {
-        socket.emit('syncTile', { gx, gy, traits: packed });
-    }
 }

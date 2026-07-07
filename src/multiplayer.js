@@ -13,16 +13,13 @@ export let serverProjectiles = [];
 export let globalUnlockedSystems = ["4_4"];
 
 export const doorStates = new Map(); // key: "gx_gy", value: { locked: boolean }
-
 export const storeDbCache = new Map(); 
 export const hayStorageCache = new Map(); 
 export const chestCache = new Map(); 
-
-// src/multiplayer.js
-
 export const villageOwners = new Map();
 export const villageCriminals = new Map();
 
+// Bind the caches to the window to ensure they are accessible globally without circular imports
 if (typeof window !== 'undefined') {
     window.villageOwners = villageOwners;
     window.villageCriminals = villageCriminals;
@@ -91,6 +88,21 @@ export function initMultiplayer() {
                 speed: hero.speed
             });
             resolve();
+        });
+
+        // 🎯 THE FIX: Register Chat listener directly on the active socket to guarantee messages are received
+        socket.on('chatMessage', (data) => {
+            const chatBox = document.getElementById('chat-messages');
+            if (!chatBox) return;
+
+            const msgDiv = document.createElement('div');
+            msgDiv.innerHTML = `<span style="color: var(--banana);">${data.sender}:</span> <span style="color: white;">${data.message}</span>`;
+            chatBox.appendChild(msgDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            if (chatBox.children.length > 15) {
+                chatBox.removeChild(chatBox.firstChild);
+            }
         });
 
         // 🎯 THE FIX: Register UI listeners dynamically to break the circular import cycle entirely
@@ -326,21 +338,7 @@ export function sendChatMessage(msg) {
 }
 
 export function initChatListener() {
-    if (socket) {
-        socket.on('chatMessage', (data) => {
-            const chatBox = document.getElementById('chat-messages');
-            if (!chatBox) return;
-
-            const msgDiv = document.createElement('div');
-            msgDiv.innerHTML = `<span style="color: var(--banana);">${data.sender}:</span> ${data.message}`;
-            chatBox.appendChild(msgDiv);
-            chatBox.scrollTop = chatBox.scrollHeight;
-
-            if (chatBox.children.length > 10) {
-                chatBox.removeChild(chatBox.firstChild);
-            }
-        });
-    }
+    // Left for backward compatibility if called elsewhere
 }
 
 export function syncInventoryWithServer() {

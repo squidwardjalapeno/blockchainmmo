@@ -500,7 +500,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 hobbit.energy = Math.max(0, hobbit.energy - 0.75);
 
                 const currTX = Math.floor((hobbit.x + 8) / 16);
-                const currTY = Math.floor((hobbit.y + 8) / 16);
+                const currTY = Math.floor((hobbit.y + 15) / 16); 
 
                 let target = null;
                 let targetDist = Infinity;
@@ -553,21 +553,16 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         const distToDoor = Math.max(Math.abs(currTX - hobbit.doorX), Math.abs(currTY - hobbit.doorY));
 
                         if (!worldTime.isNight) {
-                            if (isLocked) {
-                                if (distToDoor <= 1) {
-                                    if (socket && socket.connected) {
-                                        socket.emit('setDoorLock', { gx: hobbit.doorX, gy: hobbit.doorY, locked: false });
-                                    }
-                                } else {
-                                    const path = findPathToCoords(currTX, currTY, hobbit.doorX, hobbit.doorY, worldMatrix, roomMatrix, hobbit);
-                                    if (path) {
-                                        hobbit.path = path;
-                                        hobbit.goal = 'unlock_door';
-                                    }
+                            if (distToDoor <= 1) {
+                                if (socket && socket.connected) {
+                                    socket.emit('setDoorLock', { gx: hobbit.doorX, gy: hobbit.doorY, locked: false });
                                 }
                             } else {
-                                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                                hobbit.goal = 'wander';
+                                const path = findPathToCoords(currTX, currTY, hobbit.doorX, hobbit.doorY, worldMatrix, roomMatrix, hobbit);
+                                if (path) {
+                                    hobbit.path = path;
+                                    hobbit.goal = 'unlock_door';
+                                }
                             }
                         } else {
                             if (!isLocked) {
@@ -690,8 +685,12 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
 
         const currTX = Math.floor((hobbit.x + 8) / 16);
         const currTY = Math.floor((hobbit.y + 15) / 16); 
-        const pCol = roomMatrix[Math.floor(currTX / 100)]?.[Math.floor(hobbitCX / 100)];
-        const roomID = pCol ? pCol[((currTY % 100 + 100) % 100 * 100) + ((currTX % 100 + 100) % 100)] : 0;
+        
+        // 🎯 THE FIX: Robust indices lookup utilizing clean local scopes
+        const lx = ((currTX % 100) + 100) % 100;
+        const ly = ((currTY % 100) + 100) % 100;
+        const pCol = roomMatrix[Math.floor(currTX / 100)]?.[Math.floor(currTY / 100)];
+        const roomID = pCol ? pCol[ly * 100 + lx] : 0;
 
         // 🎯 OPTIMIZATION: Lazy-cache the home village reference once to avoid heavy trig calculations every frame
         if (hobbit.cachedWell === undefined) {
@@ -728,13 +727,11 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             const py = (hero.y + 8) - (hobbit.y + 8);
             const distToHero = Math.hypot(px, py);
 
-            // local player criminal check (range expanded to 2400 pixels for full village response)
             if (criminals.has(myID) && hero.hp > 0 && distToHero < 2400) {
                 enemyTarget = hero;
                 enemyDist = distToHero;
             }
 
-            // remote player criminal check (range expanded to 2400 pixels for full village response)
             if (!enemyTarget && remotePlayers) {
                 remotePlayers.forEach((p, id) => {
                     if (p.hp <= 0) return;
@@ -967,6 +964,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             }
                         }
                     } else {
+                        // 🎯 THE FIX: Immediately clear target references if the crop has withered or been harvested
                         hobbit.targetPlant = null;
                         hobbit.goal = 'wander';
                     }
@@ -1210,6 +1208,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                     hobbit.state = 'walking';
                                 } else {
                                     assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                                    hobbit.goal = 'wander';
                                     hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
                                 }
                             }
@@ -1578,6 +1577,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                             hobbit.state = 'walking';
                                         } else {
                                             assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                                            hobbit.goal = 'wander';
                                             hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
                                         }
                                     }
@@ -1685,17 +1685,18 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             }
         }
 
-        // State progression (Runs unconditionally for all states!)
+        // ==========================================
+        // 🏃 MOTOR & MOVEMENT EXECUTION LOOP (Runs unconditionally for all states)
+        // ==========================================
         if (hobbit.state === 'attacking') {
             const oldTimer = hobbit.attackTimer;
             hobbit.attackTimer -= modifier;
             
             if (oldTimer > 0.25 && hobbit.attackTimer <= 0.25) {
-                // Resolve who we are currently attacking
                 let currentEnemy = (hobbit.goal === 'defend_home' && enemyTarget) ? enemyTarget : hero;
                 const hx = currentEnemy.x + 8;
-                const hy = currentEnemy.y + 8;
-                const hdist = Math.hypot(hx - (hobbit.x + 8), hy - (hobbit.y + 8));
+                const pyVal = currentEnemy.y + 8;
+                const hdist = Math.hypot(hx - (hobbit.x + 8), pyVal - (hobbit.y + 8));
 
                 if (hdist <= 24 && currentEnemy.hp > 0) {
                     currentEnemy.hp = Math.max(0, currentEnemy.hp - hobbit.ad);

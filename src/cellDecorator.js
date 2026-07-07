@@ -9,7 +9,6 @@ import { getTileData } from './physics.js';
 import { socket } from './multiplayer.js'; 
 import { getFocusCoordinates } from './entities.js';
 
-
 export const roomMetadata = {}; 
 let nextHouseId = 1;
 
@@ -17,6 +16,7 @@ export const ecoGenerated = new Set();
 export const zoneLookup = new Map();     
 export const zoneWellLookup = new Map(); 
 export const initializedZones = new Set(); 
+export const shorelinesGenerated = new Set();
 
 if (typeof window !== 'undefined') {
     logStep("cellDecorator.js loaded");
@@ -30,10 +30,6 @@ export let plannedWells = [];
 // 🏗️ BUILDING FOUNDATION & WALL HELPERS
 // ==========================================
 
-/**
- * Lays down wooden flooring (Tile 42), clears all overlapping plants,
- * and registers room metadata in a single standardized loop.
- */
 function stampBuildingFoundation(gx, gy, width, depth, worldMatrix, roomMatrix, fertilityMatrix, worldMap, typeLabel = 'STANDARD') {
     const currentId = nextHouseId++;
 
@@ -55,9 +51,6 @@ function stampBuildingFoundation(gx, gy, width, depth, worldMatrix, roomMatrix, 
     return currentId;
 }
 
-/**
- * Automatically stamps a standard building shell (Roof Top -> Roof Mid -> Front Walls & Door)
- */
 function stampExteriorWalls(gx, gy, width, height, wallTile, doorTile, doorOffsetX, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     // 1. Draw Roof Top (Tile 40) on the back-most row
     for (let i = 0; i < width; i++) {
@@ -211,7 +204,7 @@ function getInbound(i, j) {
         inWest: top.outW ?? 16, inEast: top.outE ?? 16,
         inNorth: left.outN ?? 16, inSouth: left.outS ?? 16,
         lWest: top.lW ?? 4, lEast: top.lE ?? 4,
-        lNorth: left.lN ?? 4, lSouth: left.lS ?? 4
+        lNorth: left.lN ?? 4, lSouth: top.lS ?? 4
     };
 }
 
@@ -838,9 +831,9 @@ export function planTown(gtx, gty, worldMatrix, roomMatrix, fertilityMatrix, wor
                 const side = Math.floor(seededRandom() * 4);
                 const offset = 2;
                 if (side === 0) { tx = road.x; ty = road.y - offset - bp.h; }
-                else if (side === 1) { tx = road.x; ty = road.y + offset; }
-                else if (side === 2) { tx = road.x + offset; ty = road.y; }
-                else { tx = road.x - offset - bp.w; ty = road.y; }
+                else if (side === 1) { tx = road.x; ty = road.y + offset; } 
+                else if (side === 2) { tx = road.x + offset; ty = road.y; } 
+                else { tx = road.x - offset - 4; ty = road.y; }            
             }
 
             if (isAreaClear(tx, ty, bp.w, bp.h, worldMatrix, roomMatrix, worldMap)) {
@@ -851,9 +844,20 @@ export function planTown(gtx, gty, worldMatrix, roomMatrix, fertilityMatrix, wor
         }
     };
 
-    uniqueBuildings.forEach(bp => placeBuildings(bp, 300, false));
-    residential.forEach(bp => placeBuildings(bp, 1500, true));
-    utilities.forEach(bp => placeBuildings(bp, 500, false));
+    placeBuildings(uniqueBuildings[0], 50, false);
+    placeBuildings(uniqueBuildings[1], 50, false);
+    placeBuildings(uniqueBuildings[2], 50, false);
+    placeBuildings(uniqueBuildings[3], 50, false);
+    placeBuildings(uniqueBuildings[4], 50, false);
+    placeBuildings(uniqueBuildings[5], 50, false);
+    placeBuildings(uniqueBuildings[6], 50, false);
+    placeBuildings(uniqueBuildings[7], 150, false);
+
+    placeBuildings(residential[0], 300, true);
+    placeBuildings(residential[1], 1500, true);
+
+    placeBuildings(utilities[0], 500, false);
+    placeBuildings(utilities[1], 500, false);
 
     let ranchesPlaced = 0, ranchAttempts = 0;
     const ranchGoal = Math.floor(seededRandom() * 17) + 16; 
@@ -1000,108 +1004,215 @@ export function drawInterCellRoad(startX, startY, endX, endY, worldMatrix, roomM
     }
 }
 
-function paintSide(cellData, startVal, side) {
-    let beachLength = startVal;
+// ==========================================
+// 🌊 PERFECT DETERMINISTIC SHORELINE SYSTEM
+// ==========================================
 
-    for (let i = 0; i < 100; i++) {
-        let outOf2 = Math.floor(seededRandom() * 2) + 1;
-        if (outOf2 == 1 && beachLength < CONFIG.WOBBLE_MAX) beachLength++;
-        if (outOf2 == 2 && beachLength > 2) beachLength--;
-
-        for (let j = 0; j < beachLength; j++) {
-            let lx, ly;
-            if (side === "NORTH") { lx = i; ly = j; }
-            if (side === "SOUTH") { lx = i; ly = 99 - j; }
-            if (side === "WEST")  { lx = j; ly = i; }
-            if (side === "EAST")  { lx = 99 - j; ly = i; }
-            
-            const idx = (ly * 100) + lx;
-            
-            const t = cellData[idx];
-            if (t === 12 || t === 13 || (t >= 300 && t < 400)) continue;
-            
-            cellData[idx] = 0; 
-        }
-    }
-    return beachLength;
+function getDeterministicBeachWidth(gx, gy) {
+    const scale = 0.08;
+    const wave = Math.sin(gx * scale) * Math.cos(gy * scale);
+    const width = 14 + Math.floor(wave * 8); 
+    return Math.max(3, Math.min(28, width));
 }
 
-function paintCorner(cellData, hWidth, vWidth, type) {
+function getDeterministicLandWidth(gx, gy) {
+    const scale = 0.12;
+    const wave = Math.cos(gx * scale) * Math.sin(gy * scale);
+    const width = 8 + Math.floor(wave * 4); 
+    return Math.max(2, Math.min(14, width));
+}
+
+function paintSide(cellData, startVal, side, cx, cy) {
+    for (let i = 0; i < 100; i++) {
+        let gx = cx * 100 + i;
+        let gy = cy * 100;
+        if (side === "SOUTH") gy = cy * 100 + 99;
+        if (side === "WEST") { gx = cx * 100; gy = cy * 100 + i; }
+        if (side === "EAST") { gx = cx * 100 + 99; gy = cy * 100 + i; }
+
+        const beachLength = getDeterministicBeachWidth(gx, gy);
+
+        if (cellData) {
+            for (let j = 0; j < beachLength; j++) {
+                let lx = i, ly = j;
+                if (side === "SOUTH") { lx = i; ly = 99 - j; }
+                if (side === "WEST")  { lx = j; ly = i; }
+                if (side === "EAST")  { lx = 99 - j; ly = i; }
+                
+                const idx = (ly * 100) + lx;
+                const t = cellData[idx];
+                if (t === 12 || t === 13 || (t >= 300 && t < 400)) continue;
+                
+                cellData[idx] = 0; 
+            }
+        }
+    }
+    return getDeterministicBeachWidth(cx * 100 + 99, cy * 100 + 99);
+}
+
+function paintCorner(cellData, hWidth, vWidth, type, cx, cy) {
     const size = Math.max(hWidth, vWidth, 25); 
 
-    for (let ly = 0; ly < size; ly++) {
-        for (let lx = 0; lx < size; lx++) {
-            const dist = (lx / vWidth) ** 2 + (ly / hWidth) ** 2;
+    if (cellData) {
+        for (let ly = 0; ly < size; ly++) {
+            for (let lx = 0; lx < size; lx++) {
+                const dist = (lx / vWidth) ** 2 + (ly / hWidth) ** 2;
 
-            if (dist <= 1.0) {
-                let fx = lx, fy = ly;
-                if (type === "NE") fx = 99 - lx;
-                if (type === "SW") fy = 99 - ly;
-                if (type === "SE") { fx = 99 - lx; fy = 99 - ly; }
+                if (dist <= 1.0) {
+                    let fx = lx, fy = ly;
+                    if (type === "NE") fx = 99 - lx;
+                    if (type === "SW") fy = 99 - ly;
+                    if (type === "SE") { fx = 99 - lx; fy = 99 - ly; }
 
-                if (fx >= 0 && fx < 100 && fy >= 0 && fy < 100) {
-                    const idx = (fy * 100) + fx;
-                    
-                    const t = cellData[idx];
-                    if (t === 12 || t === 13 || (t >= 300 && t < 400)) continue;
+                    if (fx >= 0 && fx < 100 && fy >= 0 && fy < 100) {
+                        const idx = (fy * 100) + fx;
+                        const t = cellData[idx];
+                        if (t === 12 || t === 13 || (t >= 300 && t < 400)) continue;
 
-                    cellData[idx] = 0; 
+                        cellData[idx] = 0; 
+                    }
                 }
             }
         }
     }
 }
 
-function paintLandSide(cellData, fertilityData, startVal, side) {
-    let lLen = startVal;
+function paintLandSide(cellData, fertilityData, startVal, side, cx, cy) {
     for (let i = 0; i < 100; i++) {
-        let outOf2 = Math.floor(seededRandom() * 2) + 1;
-        if (outOf2 == 1 && lLen < 15) lLen++;
-        if (outOf2 == 2 && lLen > 1) lLen--;
+        let gx = cx * 100 + i;
+        let gy = cy * 100;
+        if (side === "SOUTH") gy = cy * 100 + 99;
+        if (side === "WEST") { gx = cx * 100; gy = cy * 100 + i; }
+        if (side === "EAST") { gx = cx * 100 + 99; gy = cy * 100 + i; }
 
-        for (let j = 0; j < lLen; j++) {
-            let lx, ly;
-            if (side === "NORTH") { lx = i; ly = j; }
-            if (side === "SOUTH") { lx = i; ly = 99 - j; }
-            if (side === "WEST")  { lx = j; ly = i; }
-            if (side === "EAST")  { lx = 99 - j; ly = i; }
-            
-            const idx = (ly * 100) + lx;
-            
-            const t = cellData[idx];
-            if (t === 12 || t === 13 || (t >= 300 && t < 400)) continue;
+        const lLen = getDeterministicLandWidth(gx, gy);
 
-            cellData[idx] = 63; 
-            fertilityData[idx] = 12; 
+        if (cellData && fertilityData) {
+            for (let j = 0; j < lLen; j++) {
+                let lx = i, ly = j;
+                if (side === "SOUTH") { lx = i; ly = 99 - j; }
+                if (side === "WEST")  { lx = j; ly = i; }
+                if (side === "EAST")  { lx = 99 - j; ly = i; }
+                
+                const idx = (ly * 100) + lx;
+                const t = cellData[idx];
+                if (t === 12 || t === 13 || (t >= 300 && t < 400)) continue;
+
+                cellData[idx] = 63; 
+                fertilityData[idx] = 12; 
+            }
         }
     }
-    return lLen;
+    return getDeterministicLandWidth(cx * 100, cy * 100);
 }
 
 function paintLandCorner(cellData, fertilityData, hWidth, vWidth, type) {
     const size = Math.max(hWidth, vWidth, 15);
 
-    for (let ly = 0; ly < size; ly++) {
-        for (let lx = 0; lx < size; lx++) {
-            const dist = (lx / vWidth) ** 2 + (ly / hWidth) ** 2;
+    if (cellData && fertilityData) {
+        for (let ly = 0; ly < size; ly++) {
+            for (let lx = 0; lx < size; lx++) {
+                const dist = (lx / vWidth) ** 2 + (ly / hWidth) ** 2;
 
-            if (dist <= 1.0) {
-                let fx = lx, fy = ly;
-                if (type === "NE") fx = 99 - lx;
-                if (type === "SW") fy = 99 - ly;
-                if (type === "SE") { fx = 99 - lx; fy = 99 - ly; }
+                if (dist <= 1.0) {
+                    let fx = lx, fy = ly;
+                    if (type === "NE") fx = 99 - lx;
+                    if (type === "SW") fy = 99 - ly;
+                    if (type === "SE") { fx = 99 - lx; fy = 99 - ly; }
 
-                if (fx >= 0 && fx < 100 && fy >= 0 && fy < 100) {
-                    const idx = (fy * 100) + fx;
-                    
-                    const t = cellData[idx];
-                    if (t === 12 || t === 13 || (t >= 300 && t < 400)) continue;
+                    if (fx >= 0 && fx < 100 && fy >= 0 && fy < 100) {
+                        const idx = (fy * 100) + fx;
+                        const t = cellData[idx];
+                        if (t === 12 || t === 13 || (t >= 300 && t < 400)) continue;
 
-                    cellData[idx] = 63; 
-                    fertilityData[idx] = 12; 
+                        cellData[idx] = 63; 
+                        fertilityData[idx] = 12; 
+                    }
                 }
             }
         }
+    }
+}
+
+// 🎯 THE FIX: Statically pre-calculates the randomized collapse values sequentially to align borders with absolute 0ms lag
+export function precalculateShorelineBorders(worldMap) {
+    console.log("🌊 Precalculating Shoreline Border Metadata...");
+    
+    for (let cx = 0; cx < CONFIG.MAP_SIZE; cx++) {
+        for (let cy = 0; cy < CONFIG.MAP_SIZE; cy++) {
+            const blueprintIdx = (cy * CONFIG.MAP_SIZE) + cx;
+            const cellType = worldMap[blueprintIdx];
+            const isLand = cellType >= CONFIG.LAND_THRESHOLD || cellType >= 100;
+
+            if (!isLand) {
+                setWorldSeed((window.worldSeed || 1) + (cx * 1000) + cy);
+                const { score } = applyShorelineRules(cx, cy, worldMap);
+                const inb = getInbound(cx, cy);
+
+                let out = { 
+                    outW: inb.inWest, outE: inb.inEast, outN: inb.inNorth, outS: inb.inSouth,
+                    lW: inb.lWest, lE: inb.lEast, lN: inb.lNorth, lS: inb.lSouth 
+                };
+
+                // Sequential planning runs over Dry run modes (Null matrices)
+                if (score & 1) out.outN = paintSide(null, inb.inNorth, "NORTH", cx, cy);
+                if (score & 2) out.outW = paintSide(null, inb.inWest,  "WEST", cx, cy);
+                if (score & 4) out.outE = paintSide(null, inb.inEast,  "EAST", cx, cy);
+                if (score & 8) out.outS = paintSide(null, inb.inSouth, "SOUTH", cx, cy);
+
+                if (score & 1) out.lN = paintLandSide(null, null, inb.lNorth, "NORTH", cx, cy);
+                if (score & 2) out.lW = paintLandSide(null, null, inb.lWest, "WEST", cx, cy);
+                if (score & 4) out.lE = paintLandSide(null, null, inb.lEast, "EAST", cx, cy);
+                if (score & 8) out.lS = paintLandSide(null, null, inb.lSouth, "SOUTH", cx, cy);
+
+                cellMemory.set(`${cx}_${cy}`, out);
+            }
+        }
+    }
+}
+
+export function generateShorelinesForCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
+    if (cx < 0 || cx >= CONFIG.MAP_SIZE || cy < 0 || cy >= CONFIG.MAP_SIZE) return;
+    const cellKey = `${cx}_${cy}`;
+    if (shorelinesGenerated.has(cellKey)) return;
+    shorelinesGenerated.add(cellKey);
+
+    const blueprintIdx = (cy * CONFIG.MAP_SIZE) + cx;
+    const cellType = worldMap[blueprintIdx];
+    const isLand = cellType >= CONFIG.LAND_THRESHOLD || cellType >= 100;
+
+    if (!isLand && worldMatrix[cx]?.[cy] && fertilityMatrix[cx]?.[cy]) {
+        setWorldSeed((window.worldSeed || 1) + (cx * 1000) + cy);
+        const { score } = applyShorelineRules(cx, cy, worldMap);
+        const inb = getInbound(cx, cy);
+        const data = worldMatrix[cx][cy];
+        const fData = fertilityMatrix[cx][cy];
+
+        const out = cellMemory.get(cellKey) || {
+            outW: inb.inWest, outE: inb.inEast, outN: inb.inNorth, outS: inb.inSouth,
+            lW: inb.lWest, lE: inb.lEast, lN: inb.lNorth, lS: inb.lSouth
+        };
+
+        // Render actual tiles dynamically utilizing precalculated widths
+        if (score & 1) paintSide(data, inb.inNorth, "NORTH", cx, cy);
+        if (score & 2) paintSide(data, inb.inWest,  "WEST", cx, cy);
+        if (score & 4) paintSide(data, inb.inEast,  "EAST", cx, cy);
+        if (score & 8) paintSide(data, inb.inSouth, "SOUTH", cx, cy);
+
+        if (score & 16)  paintCorner(data, inb.inNorth, inb.inWest, "NW", cx, cy);
+        if (score & 32)  paintCorner(data, out.outN, inb.inEast, "NE", cx, cy);
+        if (score & 64)  paintCorner(data, inb.inSouth, out.outW, "SW", cx, cy);
+        if (score & 128) paintCorner(data, out.outS, out.outE, "SE", cx, cy);
+
+        if (score & 1) paintLandSide(data, fData, inb.lNorth, "NORTH", cx, cy);
+        if (score & 2) paintLandSide(data, fData, inb.lWest, "WEST", cx, cy);
+        if (score & 4) paintLandSide(data, fData, inb.lEast, "EAST", cx, cy);
+        if (score & 8) paintLandSide(data, fData, inb.lSouth, "SOUTH", cx, cy);
+
+        if (score & 16)  paintLandCorner(data, fData, inb.lNorth, inb.lWest, "NW");
+        if (score & 32)  paintLandCorner(data, fData, out.lN, inb.lEast, "NE");
+        if (score & 64)  paintLandCorner(data, fData, inb.lSouth, out.lW, "SW");
+        if (score & 128) paintLandCorner(data, fData, out.lS, out.lE, "SE");
     }
 }
 
@@ -1376,33 +1487,12 @@ function promotePath(startNode, endNode, adj, tileID, thickness, maxRangeSq, wor
     }
 }
 
-// src/cellDecorator.js
-
-export function getVillageAt(gx, gy) {
-    for (let i = 0; i < plannedWells.length; i++) {
-        const well = plannedWells[i];
-        if (well.spokes && well.spokes.length > 0) {
-            const dx = gx - well.x;
-            const dy = gy - well.y;
-            const dist = Math.hypot(dx, dy);
-            if (dist > 600) continue;
-            let angle = Math.atan2(dy, dx);
-            if (angle < 0) angle += Math.PI * 2;
-            const numSpokes = well.spokes.length;
-            const index = Math.round((angle / (Math.PI * 2)) * numSpokes) % numSpokes;
-            const spoke = well.spokes[index];
-            if (dist < spoke.r + 2.0) return well;
-        }
-    }
-    return null;
-}
-
 const decoratedCells = new Set();
 
 export function ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     const focus = getFocusCoordinates();
-    const heroCX = Math.floor(hero.x / 1600);
-    const heroCY = Math.floor(hero.y / 1600);
+    const heroCX = Math.floor(focus.x / 1600);
+    const heroCY = Math.floor(focus.y / 1600);
 
     for (let ox = -1; ox <= 1; ox++) {
         for (let oy = -1; oy <= 1; oy++) {
@@ -1410,6 +1500,9 @@ export function ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix,
             const cy = heroCY + oy;
 
             if (cx < 0 || cx >= CONFIG.MAP_SIZE || cy < 0 || cy >= CONFIG.MAP_SIZE) continue;
+
+            // Paint shorelines safely on-demand utilizing precalculated borders!
+            generateShorelinesForCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
 
             const cellKey = `${cx}_${cy}`;
             const zone = zoneLookup.get(cellKey);
@@ -1468,11 +1561,7 @@ export function linkLakes(worldMap, worldMatrix, roomMatrix, fertilityMatrix) {
         const cx = Math.floor(sumX / lakes[i].length);
         const cy = Math.floor(sumY / lakes[i].length);
 
-        lakeCenters.push({
-            id: i,
-            tx: cx * 100 + 50, 
-            ty: cy * 100 + 50
-        });
+        lakeCenters.push({ x: cx * 100 + 50, y: cy * 100 + 50 });
     }
 
     for (let i = 0; i < lakeCenters.length; i++) {
@@ -1483,7 +1572,7 @@ export function linkLakes(worldMap, worldMatrix, roomMatrix, fertilityMatrix) {
         for (let j = 0; j < lakeCenters.length; j++) {
             if (i === j) continue;
             
-            const dist = Math.abs(lakeA.tx - lakeCenters[j].tx) + Math.abs(lakeA.ty - lakeCenters[j].ty);
+            const dist = Math.abs(lakeA.x - lakeCenters[j].x) + Math.abs(lakeA.y - lakeCenters[j].y);
             if (dist < shortestDist) {
                 shortestDist = dist;
                 closestLake = lakeCenters[j];
@@ -1491,7 +1580,7 @@ export function linkLakes(worldMap, worldMatrix, roomMatrix, fertilityMatrix) {
         }
 
         if (closestLake) {
-            drawRiverPath(lakeA.tx, lakeA.ty, closestLake.tx, closestLake.ty, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            drawRiverPath(lakeA.x, lakeA.y, closestLake.x, closestLake.y, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
         }
     }
     console.log("🌊 Lakes connected with physical rivers.");
@@ -2044,51 +2133,4 @@ export function drawTownWalls(worldMatrix, roomMatrix, fertilityMatrix, worldMap
             }
         }
     });
-}
-
-export function generateGlobalShorelines(worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
-    console.log("🌊 Generating Global Shorelines...");
-    
-    for (let cx = 0; cx < CONFIG.MAP_SIZE; cx++) {
-        for (let cy = 0; cy < CONFIG.MAP_SIZE; cy++) {
-            const blueprintIdx = (cy * CONFIG.MAP_SIZE) + cx;
-            const cellType = worldMap[blueprintIdx];
-            const isLand = cellType >= CONFIG.LAND_THRESHOLD || cellType >= 100;
-
-            if (!isLand) {
-                setWorldSeed((window.worldSeed || 1) + (cx * 1000) + cy);
-                const { score } = applyShorelineRules(cx, cy, worldMap);
-                const inb = getInbound(cx, cy);
-                const data = worldMatrix[cx][cy];
-                const fData = fertilityMatrix[cx][cy];
-
-                let out = { 
-                    outW: inb.inWest, outE: inb.inEast, outN: inb.inNorth, outS: inb.inSouth,
-                    lW: inb.lWest, lE: inb.lEast, lN: inb.lNorth, lS: inb.lSouth 
-                };
-
-                if (score & 1) out.outN = paintSide(data, inb.inNorth, "NORTH");
-                if (score & 2) out.outW = paintSide(data, inb.inWest,  "WEST");
-                if (score & 4) out.outE = paintSide(data, inb.inEast,  "EAST");
-                if (score & 8) out.outS = paintSide(data, inb.inSouth, "SOUTH");
-
-                if (score & 16)  paintCorner(data, inb.inNorth, inb.inWest, "NW");
-                if (score & 32)  paintCorner(data, out.outN, inb.inEast, "NE");
-                if (score & 64)  paintCorner(data, inb.inSouth, out.outW, "SW");
-                if (score & 128) paintCorner(data, out.outS, out.outE, "SE");
-
-                if (score & 1) out.lN = paintLandSide(data, fData, inb.lNorth, "NORTH");
-                if (score & 2) out.lW = paintLandSide(data, fData, inb.lWest, "WEST");
-                if (score & 4) out.lE = paintLandSide(data, fData, inb.lEast, "EAST");
-                if (score & 8) out.lS = paintLandSide(data, fData, inb.lSouth, "SOUTH");
-
-                if (score & 16)  paintLandCorner(data, fData, inb.lNorth, inb.lWest, "NW");
-                if (score & 32)  paintLandCorner(data, fData, out.lN, inb.lEast, "NE");
-                if (score & 64)  paintLandCorner(data, fData, inb.lSouth, out.lW, "SW");
-                if (score & 128) paintLandCorner(data, fData, out.lS, out.lE, "SE");
-
-                cellMemory.set(`${cx}_${cy}`, out);
-            }
-        }
-    }
 }
