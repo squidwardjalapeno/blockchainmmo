@@ -1634,7 +1634,11 @@ export function updateHUD() {
                         'sleep': 'RESTING',
                         'unlock_door': 'OPENING PREMISES',
                         'lock_door': 'SECURING PREMISES',
-                        'wait_at_barn': 'GUARDING BARN'
+                        'wait_at_barn': 'GUARDING BARN',
+                        
+                        // 🪖 Military States:
+                        'attack_enemy': '⚔️ ENGAGING FOE',
+                        'march': '🪖 MARCHING THE ROAD'
                     };
 
                     specGoal.innerText = goalMap[hob.goal] || hob.goal.toUpperCase().replace('_', ' ');
