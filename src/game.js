@@ -155,7 +155,6 @@ var update = function (modifier) {
 
         if (DEBUG_FLAGS.ENABLE_MULTIPLAYER_EMIT) {
             const tileInfo = getTileData(hero.x + 8, hero.y + 8, worldMatrix, roomMatrix);
-            // Inside update() in src/game.js (inside the socket.emit('movement'...) block):
 
             if (socket && socket.connected) {
                 socket.emit('movement', {
@@ -178,7 +177,7 @@ var update = function (modifier) {
         // 👇 THE FIX: Let chickens and hobbits run smoothly here (Removed the 'false' arg)
         if (DEBUG_FLAGS.ENABLE_WORLD_SIM) {
             updateAnimals(modifier * 3, worldMatrix, roomMatrix); 
-            updateHobbits(modifier * 3, worldMatrix, roomMatrix); // 👈 ADDED HERE
+            updateHobbits(modifier * 3, worldMatrix, roomMatrix); 
         }
     }
 
@@ -189,7 +188,7 @@ var update = function (modifier) {
     if (slowTickTimer >= 1.0) { 
 
         // 🕰️ Central clock: 1 real second = 8 in-game minutes (180s per day)
-        worldTime.minute += 8; // 👈 UPDATED HERE
+        worldTime.minute += 8; 
         if (worldTime.minute >= 60) {
             worldTime.minute = 0;
             worldTime.hour++;
@@ -234,7 +233,7 @@ async function syncTVL() {
     } finally {
         isSyncingTVL = false;
     }
-        */
+    */
 }
 
 
@@ -331,7 +330,7 @@ async function mainInit() {
         logStep("5. Generating World...");
         const rawShape = generateWorld(CONFIG.MAP_SIZE, CONFIG.MAP_SIZE, 800);
         worldMap = rawShape;
-        window.worldMap = worldMap; // 👈 Add this line here!
+        window.worldMap = worldMap; 
 
         const worldData = populateWorld(worldMap); 
         worldMatrix = worldData.worldMatrix;
@@ -372,12 +371,10 @@ async function mainInit() {
 
         logStep("Step 1: Continents & Biomes (Handled in populateWorld)");
 
-        // ❌ REMOVED: Global shorelines are now generated dynamically per chunk in ensureLocalCells to reduce load times
-        /*
+        // 🌊 Restored Step 2: Draw Global Shorelines to resolve missing beach textures
         await measureStep("Step 2: Drawing Global Shorelines", () => {
             generateGlobalShorelines(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
         });
-        */
 
         await measureStep("Step 3: Drawing Rivers & Main Village Roads", () => {
             linkLakes(worldMap, worldMatrix, roomMatrix, fertilityMatrix);
