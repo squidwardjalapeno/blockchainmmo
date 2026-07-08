@@ -180,7 +180,6 @@ function findNearestMaturePlant(hobbit, range = 80) {
     return nearest;
 }
 
-// 🧠 HELPER: Straight line approach for catch-up steps (Replaces BFS offscreen)
 function estimateCatchUpStep(startX, startY, targetX, targetY) {
     const dx = targetX - startX;
     const dy = targetY - startY;
@@ -194,12 +193,17 @@ function estimateCatchUpStep(startX, startY, targetX, targetY) {
 
 /**
  * ⚡ HIGH-PERFORMANCE ROAD-MARCHING HEURISTIC
- * Checks adjacent cells and guides the military hobbit along dirt/stone roads to save CPU cycles
+ * Evaluates directions around the unit. Stay on roads is heavily encouraged, while
+ * recently visited tiles are massively penalized to guarantee loop breaks.
  */
 function findNextRoadStep(currX, currY, targetX, targetY, worldMatrix, roomMatrix, hobbit) {
     const dirs = [[0,-1], [0,1], [-1,0], [1,0], [-1,-1], [1,-1], [-1,1], [1,1]];
     let bestStep = null;
-    let minDistance = Math.hypot(targetX - currX, targetY - currY);
+    let minDistance = Infinity;
+
+    if (!hobbit.visitedHistory) {
+        hobbit.visitedHistory = [];
+    }
 
     for (let d of dirs) {
         const nx = currX + d[0];
@@ -211,22 +215,27 @@ function findNextRoadStep(currX, currY, targetX, targetY, worldMatrix, roomMatri
 
         const dist = Math.hypot(targetX - nx, targetY - ny);
         
-        // Road tiles are heavily prioritized (treated as being 12 tiles closer than they are)
-        const perceivedDist = dist - (isRoad ? 12 : 0);
-        const currentBestPerceived = bestStep ? (Math.hypot(targetX - bestStep.x, targetY - bestStep.y) - (bestStep.isRoad ? 12 : 0)) : minDistance;
+        let perceivedDist = dist;
+        
+        if (isRoad) {
+            perceivedDist -= 15; 
+        }
 
-        if (perceivedDist < currentBestPerceived) {
+        // Apply Tabu Penalty based on how recently they visited this step coordinate
+        const historyIdx = hobbit.visitedHistory.indexOf(`${nx}_${ny}`);
+        if (historyIdx !== -1) {
+            const recencyFactor = historyIdx + 1; 
+            perceivedDist += recencyFactor * 12; 
+        }
+
+        if (perceivedDist < minDistance) {
+            minDistance = perceivedDist;
             bestStep = { x: nx, y: ny, isRoad: isRoad };
         }
     }
     return bestStep;
 }
 
-/**
- * ⚡ HIGH-PERFORMANCE OFF-SCREEN MANHATTAN PATHFINDER
- * Since off-screen hobbits are out of view, we bypass BFS graph-searches entirely.
- * We generate straight line coordinate steps to their target instantly.
- */
 function findOffScreenPath(startTX, startTY, targetTX, targetTY) {
     const path = [];
     let curX = startTX;
@@ -254,7 +263,6 @@ export function getHobbitVillage(hobbit) {
     const hx = hobbit.homeX || Math.floor(hobbit.x / 16);
     const hy = hobbit.homeY || Math.floor(hobbit.y / 16);
     
-    // Dynamically query coordinates from cellDecorator to obtain the active well context
     if (typeof window !== 'undefined' && window.getVillageAt) {
         return window.getVillageAt(hx, hy);
     }
@@ -332,7 +340,7 @@ function tryHobbitTrade(hobbit, cx, cy) {
     if (!storeData || !storeData.listings || storeData.listings.length === 0) return;
 
     for (let l of storeData.listings) {
-        if (l.counterOffer) continue; // Skip active negotiations
+        if (l.counterOffer) continue; 
 
         const itemIdx = hobbit.inventory.findIndex(i => i.seedType === l.wantedType);
         if (itemIdx !== -1) {
@@ -372,9 +380,8 @@ function tryHobbitTrade(hobbit, cx, cy) {
 // ==========================================
 function findMilitaryTarget(hobbit, myWell, myWellOwner) {
     let nearestEnemy = null;
-    let nearestEnemyDist = 120; // 120px aggro search radius (approx. 7.5 tiles)
+    let nearestEnemyDist = 120; 
 
-    // 1. Scan opposing Hobbits from rival settlements
     hobbits.forEach(other => {
         if (other.id === hobbit.id || other.hp <= 0) return;
         const otherWell = other.cachedWell || getHobbitVillage(other);
@@ -387,7 +394,6 @@ function findMilitaryTarget(hobbit, myWell, myWellOwner) {
         }
     });
 
-    // 2. Scan Local Hero (if they are not aligned to this hobbit's home village)
     if (hero && hero.hp > 0) {
         const heroName = playerWallet || "Guest";
         const isEnemy = myWellOwner && (myWellOwner !== heroName);
@@ -400,7 +406,6 @@ function findMilitaryTarget(hobbit, myWell, myWellOwner) {
         }
     }
 
-    // 3. Scan Remote Players
     if (remotePlayers) {
         remotePlayers.forEach((p, id) => {
             if (p.hp <= 0) return;
@@ -487,13 +492,14 @@ export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null, 
         attackTimer: 0,    
         path: [],
         targetPlant: null, 
+        visitedHistory: [], 
         lastUpdated: Date.now(),
         slowTickTimer: Math.random() * 1.5
     });
 }
 
 // ==========================================
-// ⚙️ MAIN AI BEHAVIOR HEARTBEAT LOOP
+// ⚙️ MAIN AI BEHAVIOR LOOP
 // ==========================================
 
 export function updateHobbits(modifier, worldMatrix, roomMatrix) {
@@ -502,9 +508,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
     const heroCY = Math.floor(focus.y / 1600);
     const now = Date.now();
 
-    // ==========================================
-    // 💀 CLEANUP DEAD HOBBITS & DROP LOOT
-    // ==========================================
     for (let i = hobbits.length - 1; i >= 0; i--) {
         const hob = hobbits[i];
         if (hob.hp <= 0) {
@@ -530,21 +533,15 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         const hobbitCX = Math.floor(hobbit.x / 1600);
         const hobbitCY = Math.floor(hobbit.y / 1600);
 
-        // ==========================================
-        // ❄️ TIER 3: FROZEN ZONE (Outside 3x3 Chunks)
-        // ==========================================
         const isInsideActiveChunks = Math.abs(hobbitCX - heroCX) <= 1 && Math.abs(hobbitCY - heroCY) <= 1;
         if (!isInsideActiveChunks) return;
 
-        // Initialize elapsed time
         if (!hobbit.lastUpdated) hobbit.lastUpdated = now;
         let deltaSeconds = (now - hobbit.lastUpdated) / 1000;
         if (deltaSeconds < 0) deltaSeconds = 0;
         hobbit.lastUpdated = now;
 
-        // ==========================================
-        // 🕰️ TIER 3: CATCH-UP (Step-In Fast Forward)
-        // ==========================================
+        // Catch-up simulation loops
         if (deltaSeconds > 2.0) {
             let timeRemaining = Math.min(deltaSeconds, 86400); 
             let simX = Math.floor(hobbit.x / 16);
@@ -629,7 +626,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             return;
         }
 
-        // Viewport presence calculation
         const pad = 32; 
         const screenX = hobbit.x + viewport.offset[0];
         const screenY = hobbit.y + viewport.offset[1];
@@ -848,6 +844,16 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     hobbit.x = nextNode.x * 16;
                     hobbit.y = nextNode.y * 16;
 
+                    // Tabu tracking off-screen
+                    if (!hobbit.visitedHistory) hobbit.visitedHistory = [];
+                    const tileKey = `${nextNode.x}_${nextNode.y}`;
+                    if (hobbit.visitedHistory[hobbit.visitedHistory.length - 1] !== tileKey) {
+                        hobbit.visitedHistory.push(tileKey);
+                        if (hobbit.visitedHistory.length > 32) {
+                            hobbit.visitedHistory.shift();
+                        }
+                    }
+
                     const currentDistToHero = Math.hypot((hero.x + 8) - (hobbit.x + 8), (hero.y + 8) - (hobbit.y + 8));
                     if (hobbit.goal === 'engage' && currentDistToHero <= 24) {
                         if (hero.hp > 0) {
@@ -913,7 +919,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         // ⚔️ MILITARY JOB STATE MACHINE (MINION LANE-MARCH)
         // ==========================================
         if (hobbit.job === 'Military') {
-            // Military units ignore hunger, sleep, and storing needs. They act as persistent minions.
             const homeWell = hobbit.cachedWell || getHobbitVillage(hobbit);
             let myWellOwner = null;
 
@@ -924,14 +929,13 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 }
             }
 
-            // 1. Scan for nearby hostile targets (rival hobbits, opposing players)
             const aggroResult = findMilitaryTarget(hobbit, homeWell, myWellOwner);
             const nearestEnemy = aggroResult.target;
             const nearestEnemyDist = aggroResult.dist;
 
             if (nearestEnemy) {
                 hobbit.goal = 'attack_enemy';
-                hobbit.attackTarget = nearestEnemy; // Store custom melee focus reference
+                hobbit.attackTarget = nearestEnemy; 
                 
                 if (nearestEnemyDist <= 24) {
                     hobbit.state = 'idle';
@@ -945,7 +949,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         hobbit.dir = Math.abs(tdx) > Math.abs(tdy) ? (tdx > 0 ? 'East' : 'West') : (tdy > 0 ? 'South' : 'North');
                     }
                 } else if (hobbit.pathTimer <= 0) {
-                    // responsive chasing updates for ongoing skirmishes
                     hobbit.pathTimer = 0.4 + Math.random() * 0.4;
                     const enemyTX = Math.floor((nearestEnemy.x + 8) / 16);
                     const enemyTY = Math.floor((nearestEnemy.y + 8) / 16);
@@ -956,7 +959,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     }
                 }
             } else {
-                // No enemies nearby: March along the roads toward the target village well
                 hobbit.goal = 'march';
                 hobbit.attackTarget = null;
                 
@@ -974,11 +976,9 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
 
                 if (targetWell) {
                     if (Math.abs(currTX - targetWell.x) <= 2 && Math.abs(currTY - targetWell.y) <= 2) {
-                        // Reached target well base! Siege and stand guard
                         hobbit.state = 'idle';
                         hobbit.path = [];
                     } else if (!hobbit.path || hobbit.path.length === 0) {
-                        // Navigate along the road network
                         const nextStep = findNextRoadStep(currTX, currTY, targetWell.x, targetWell.y, worldMatrix, roomMatrix, hobbit);
                         if (nextStep) {
                             hobbit.path = [{ x: nextStep.x, y: nextStep.y }];
@@ -1070,7 +1070,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             }
 
             // ==========================================
-            // 🌾 PEACEFUL UTILITIES & FULFILMENTS (Bypassed if defending)
+            // 🌾 PEACEFUL UTILITIES & FULFILMENTS
             // ==========================================
             if (!isDefending) {
                 let target = null;
@@ -2047,6 +2047,17 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             } else {
                 hobbit.x = targetX;
                 hobbit.y = targetY;
+
+                // Loop breaker tracking: record tile completion
+                if (!hobbit.visitedHistory) hobbit.visitedHistory = [];
+                const tileKey = `${nextNode.x}_${nextNode.y}`;
+                if (hobbit.visitedHistory[hobbit.visitedHistory.length - 1] !== tileKey) {
+                    hobbit.visitedHistory.push(tileKey);
+                    if (hobbit.visitedHistory.length > 32) {
+                        hobbit.visitedHistory.shift();
+                    }
+                }
+
                 hobbit.path.shift(); 
             }
 
