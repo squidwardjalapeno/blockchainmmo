@@ -1035,16 +1035,46 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
 export function populateWorld(worldMap) {
     const size = CONFIG.MAP_SIZE;
 
+    // ==========================================
+    // 🛠️ DEBUG SETUP: MANUAL VILLAGE INJECTION
+    // ==========================================
+    
+    // 1. Force a 5x5 land mass around both village targets so they never spawn in the water
+    const forceLand = (cx, cy) => {
+        for (let dy = -2; dy <= 2; dy++) {
+            for (let dx = -2; dx <= 2; dx++) {
+                const tx = cx + dx;
+                const ty = cy + dy;
+                if (tx >= 0 && tx < size && ty >= 0 && ty < size) {
+                    worldMap[ty * size + tx] = 60; // 60 is solid land (above LAND_THRESHOLD of 55)
+                }
+            }
+        }
+    };
+
+    forceLand(50, 50);
+    forceLand(53, 50);
+
+    // 2. Clear out all other natural settlement rolls and hard-code our debug villages
     for (let i = 0; i < worldMap.length; i++) {
+        // Commented out to disable natural procedural spawns
+        /*
         const isLand = worldMap[i] >= CONFIG.LAND_THRESHOLD;
         if (isLand) {
             const roll = seededRandom(); 
             if (roll > 1.99995177469) worldMap[i] = 103; 
             else if (roll > 1.99942129629) worldMap[i] = 102; 
             else if (roll > 0.9978) worldMap[i] = 107; 
-            else if (roll > 0.98305555555) worldMap[i] = 101; 
+            else if (roll > 0.99305555555) worldMap[i] = 101; 
         }
+        */
     }
+
+    // 3. Mark the exact cells as Villages (101)
+    worldMap[50 * size + 50] = 101;
+    worldMap[50 * size + 53] = 101;
+
+    // ==========================================
 
     let worldMatrix = Array.from({ length: size }, () => new Array(size));
     let roomMatrix = Array.from({ length: size }, () => new Array(size));
@@ -1059,7 +1089,7 @@ export function populateWorld(worldMap) {
         }
     }
 
-    console.log("🗺️ World Blueprint and Chunks Initialized!");
+    console.log("🗺️ Debug World Blueprint and Chunks Initialized!");
     return { worldMatrix, roomMatrix, fertilityMatrix, worldMap };
 }
 
