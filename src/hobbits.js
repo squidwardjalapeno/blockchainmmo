@@ -555,7 +555,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 }
 
                 const hx = hero.x + 8;
-                const py = hero.y + 8;
+                const hy = hero.y + 8; 
                 const distToHero = Math.hypot(hx - (simX * 16 + 8), hy - (simY * 16 + 8));
 
                 if (distToHero < 80 && hero.hp > 0) {
@@ -566,7 +566,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
                     } else {
                         const hTX = Math.floor(hx / 16);
-                        const hTY = Math.floor(hy / 16);
+                        const hTY = Math.floor(hy / 16); 
                         const next = estimateCatchUpStep(simX, simY, hTX, hTY);
                         simX = next.x;
                         simY = next.y;
@@ -1461,7 +1461,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                                     hayItems.push(pmItem);
                                                     hobbit.inventory = hobbit.inventory.filter(i => i !== pmItem);
                                                 } else {
-                                                    console.log("🔒 Barn Hay Storage is full! Leftovers kept in backpack.");
+                                                    console.log("🔒 Barn Hay Storage is full! Remaining items kept in backpack.");
                                                 }
                                             }
                                         }
@@ -1983,7 +1983,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         // 🏃 MOTOR & MOVEMENT EXECUTION LOOP
         // ==========================================
         if (hobbit.state === 'attacking') {
-            // 🎯 ROBUST swing frame completion resolver (uses binary strike flag)
             if (hobbit.attackTimer <= 0.25 && !hobbit.hasStruck) {
                 hobbit.hasStruck = true;
                 
@@ -2001,7 +2000,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     const pyVal = currentEnemy.y + 8;
                     const hdist = Math.hypot(hx - (hobbit.x + 8), pyVal - (hobbit.y + 8));
 
-                    if (hdist <= 32) { // Robust connect range check
+                    if (hdist <= 32) { 
                         currentEnemy.hp = Math.max(0, currentEnemy.hp - hobbit.ad);
                         console.log(`💥 ${hobbit.name} dealt ${hobbit.ad} damage to ${currentEnemy.name || 'target'}!`);
                         
@@ -2065,7 +2064,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             hobbit.state = 'idle';
         }
 
-        // Unconditional cooldown updates to ensure timers tick down in every state
         if (hobbit.pathTimer > 0) {
             hobbit.pathTimer -= modifier;
         }
