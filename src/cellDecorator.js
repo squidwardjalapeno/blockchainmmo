@@ -7,30 +7,128 @@ import { seededRandom, setWorldSeed } from "./mapGenerator.js";
 import { registerObject, getObjectAt } from './staticObjects.js';
 import { getTileData } from './physics.js';
 import { socket } from './multiplayer.js'; 
-import { getFocusCoordinates } from './entities.js';
 
-export const roomMetadata = {}; 
-let nextHouseId = 1;
-
+export const roomMetadata = {};
 export const ecoGenerated = new Set();
 export const zoneLookup = new Map();     
 export const zoneWellLookup = new Map(); 
 export const initializedZones = new Set(); 
+export const activeFloraChunks = new Set(); // 👈 🎯 Tracks loaded flora inside the active 3x3 cells centered on the player
 
-if (typeof window !== 'undefined') {
-    logStep("cellDecorator.js loaded");
+export let plannedBuildings = [];
+export let plannedRanches = [];
+export let plannedWells = [];
+
+let nextHouseId = 1;
+
+// ==========================================
+// 🏠 INDOOR BUILDING & WORKSTATION DRAWERS
+// ==========================================
+
+function paintSide(cellData, startVal, side) {
+    let beachLength = startVal;
+
+    for (let i = 0; i < 100; i++) {
+        let outOf2 = Math.floor(seededRandom() * 2) + 1;
+        if (outOf2 == 1 && beachLength < CONFIG.WOBBLE_MAX) beachLength++;
+        if (outOf2 == 2 && beachLength > 2) beachLength--;
+
+        for (let j = 0; j < beachLength; j++) {
+            let lx, ly;
+            if (side === "NORTH") { lx = i; ly = j; }
+            if (side === "SOUTH") { lx = i; ly = 99 - j; }
+            if (side === "WEST")  { lx = j; ly = i; }
+            if (side === "EAST")  { lx = 99 - j; ly = i; }
+            
+            const idx = (ly * 100) + lx;
+            
+            const t = cellData[idx];
+            if (t === 12 || t === 13 || (t >= 300 && t < 400)) continue;
+            
+            cellData[idx] = 0; 
+        }
+    }
+    return beachLength;
 }
 
-export let plannedBuildings = []; 
-export let plannedRanches = [];   
-export let plannedWells = [];     
+function paintCorner(cellData, hWidth, vWidth, type) {
+    const size = Math.max(hWidth, vWidth, 25); 
 
-const cellMemory = new Map();
-const decoratedCells = new Set();
+    for (let ly = 0; ly < size; ly++) {
+        for (let lx = 0; lx < size; lx++) {
+            const dist = (lx / vWidth) ** 2 + (ly / hWidth) ** 2;
 
-// ==========================================
-// 🏗️ BUILDING FOUNDATION & WALL HELPERS
-// ==========================================
+            if (dist <= 1.0) {
+                let fx = lx, fy = ly;
+                if (type === "NE") fx = 99 - lx;
+                if (type === "SW") fy = 99 - ly;
+                if (type === "SE") { fx = 99 - lx; fy = 99 - ly; }
+
+                if (fx >= 0 && fx < 100 && fy >= 0 && fy < 100) {
+                    const idx = (fy * 100) + fx;
+                    
+                    const t = cellData[idx];
+                    if (t === 12 || t === 13 || (t >= 300 && t < 400)) continue;
+
+                    cellData[idx] = 0; 
+                }
+            }
+        }
+    }
+}
+
+function paintLandSide(cellData, fertilityData, startVal, side) {
+    let lLen = startVal;
+    for (let i = 0; i < 100; i++) {
+        let outOf2 = Math.floor(seededRandom() * 2) + 1;
+        if (outOf2 == 1 && lLen < 15) lLen++;
+        if (outOf2 == 2 && lLen > 1) lLen--;
+
+        for (let j = 0; j < lLen; j++) {
+            let lx, ly;
+            if (side === "NORTH") { lx = i; ly = j; }
+            if (side === "SOUTH") { lx = i; ly = 99 - j; }
+            if (side === "WEST")  { lx = j; ly = i; }
+            if (side === "EAST")  { lx = 99 - j; ly = i; }
+            
+            const idx = (ly * 100) + lx;
+            
+            const t = cellData[idx];
+            if (t === 12 || t === 13 || (t >= 300 && t < 400)) continue;
+
+            cellData[idx] = 63; 
+            fertilityData[idx] = 12; 
+        }
+    }
+    return lLen;
+}
+
+function paintLandCorner(cellData, fertilityData, hWidth, vWidth, type) {
+    const size = Math.max(hWidth, vWidth, 15);
+
+    for (let ly = 0; ly < size; ly++) {
+        for (let lx = 0; lx < size; lx++) {
+            const dist = (lx / vWidth) ** 2 + (ly / hWidth) ** 2;
+
+            if (dist <= 1.0) {
+                let fx = lx, fy = ly;
+                if (type === "NE") fx = 99 - lx;
+                if (type === "SW") fy = 99 - ly;
+                if (type === "SE") { fx = 99 - lx; fy = 99 - ly; }
+
+                if (fx >= 0 && fx < 100 && fy >= 0 && fy < 100) {
+                    const idx = (fy * 100) + fx;
+                    
+                    const t = cellData[idx];
+                    if (t === 12 || t === 13 || (t >= 300 && t < 400)) continue;
+
+                    cellData[idx] = 63; 
+                    fertilityData[idx] = 12; 
+                }
+            }
+        }
+    }
+}
 
 function stampBuildingFoundation(gx, gy, width, depth, worldMatrix, roomMatrix, fertilityMatrix, worldMap, typeLabel = 'STANDARD') {
     const currentId = nextHouseId++;
@@ -42,7 +140,6 @@ function stampBuildingFoundation(gx, gy, width, depth, worldMatrix, roomMatrix, 
         maxOffset: -depth + 1 
     };
 
-    // Lay wooden flooring (42) & clear any foliage on top of the footprint
     for (let i = 0; i < width; i++) {
         for (let j = -(depth - 1); j <= 0; j++) {
             setGlobalTile(gx + i, gy + j, 42, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
@@ -54,19 +151,16 @@ function stampBuildingFoundation(gx, gy, width, depth, worldMatrix, roomMatrix, 
 }
 
 function stampExteriorWalls(gx, gy, width, height, wallTile, doorTile, doorOffsetX, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
-    // 1. Draw Roof Top (Tile 40) on the back-most row
     for (let i = 0; i < width; i++) {
         setGlobalTile(gx + i, gy - (height - 1), 40, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     }
 
-    // 2. Draw Roof Mid (Tile 48) on intermediate roof rows
     for (let j = -(height - 2); j <= -2; j++) {
         for (let i = 0; i < width; i++) {
             setGlobalTile(gx + i, gy + j, 48, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
         }
     }
 
-    // 3. Draw Front Walls & Door on the front bottom rows (j = -1 and 0)
     for (let i = 0; i < width; i++) {
         for (let j = -1; j <= 0; j++) {
             let tile = wallTile;
@@ -77,224 +171,6 @@ function stampExteriorWalls(gx, gy, width, height, wallTile, doorTile, doorOffse
         }
     }
 }
-
-// ==========================================
-// 🏗️ BLUEPRINT PLANNING SYSTEM
-// ==========================================
-
-export function reserveFootprint(gx, gy, w, h, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
-    const DUMMY_ID = 9998; 
-    for (let i = 0; i < w; i++) {
-        for (let j = -(h - 1); j <= 0; j++) {
-            const tx = gx + i, ty = gy + j;
-            const cx = Math.floor(tx / 100), cy = Math.floor(ty / 100);
-            
-            if (cx >= 0 && cx < CONFIG.MAP_SIZE && cy >= 0 && cy < CONFIG.MAP_SIZE) {
-                if (!worldMatrix[cx][cy]) {
-                    const blueprintIdx = (cy * CONFIG.MAP_SIZE) + cx;
-                    const isLand = worldMap[blueprintIdx] >= CONFIG.LAND_THRESHOLD || worldMap[blueprintIdx] >= 100;
-                    worldMatrix[cx][cy] = new Uint16Array(10000).fill(isLand ? 63 : 17);
-                    roomMatrix[cx][cy] = new Uint16Array(10000).fill(0);
-                    fertilityMatrix[cx][cy] = new Uint8Array(10000).fill(isLand ? 12 : 0);
-                }
-
-                const lx = ((tx % 100) + 100) % 100, ly = ((ty % 100) + 100) % 100;
-                roomMatrix[cx][cy][ly * 100 + lx] = DUMMY_ID; 
-            }
-        }
-    }
-}
-
-export function setGlobalTile(gx, gy, tileID, roomID, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
-    const cx = Math.floor(gx / 100);
-    const cy = Math.floor(gy / 100);
-
-    if (cx < 0 || cx >= CONFIG.MAP_SIZE || cy < 0 || cy >= CONFIG.MAP_SIZE) return;
-
-    if (worldMatrix[cx][cy] === null || worldMatrix[cx][cy] === undefined) {
-        const blueprintIdx = (cy * CONFIG.MAP_SIZE) + cx;
-        const isLand = worldMap[blueprintIdx] >= CONFIG.LAND_THRESHOLD || worldMap[blueprintIdx] >= 100;
-
-        worldMatrix[cx][cy] = new Uint16Array(10000).fill(isLand ? 63 : 17);
-        roomMatrix[cx][cy] = new Uint16Array(10000).fill(0);
-        fertilityMatrix[cx][cy] = new Uint8Array(10000).fill(isLand ? 12 : 0);
-    }
-
-    const lx = ((gx % 100) + 100) % 100;
-    const ly = ((gy % 100) + 100) % 100;
-    const idx = (ly * 100) + lx;
-
-    worldMatrix[cx][cy][idx] = tileID;
-    roomMatrix[cx][cy][idx] = roomID;
-}
-
-function isAreaClear(gx, gy, w, h, worldMatrix, roomMatrix, worldMap) {
-    const buffer = 1; 
-    
-    for (let i = -buffer; i < w + buffer; i++) {
-        for (let j = -h - buffer; j < buffer; j++) {
-            const tx = gx + i;
-            const ty = gy + j;
-
-            const cx = Math.floor(tx / 100);
-            const cy = Math.floor(ty / 100);
-            
-            if (cx < 0 || cx >= CONFIG.MAP_SIZE || cy < 0 || cy >= CONFIG.MAP_SIZE) return false;
-
-            if (!worldMatrix[cx] || !worldMatrix[cx][cy]) {
-                const blueprintIdx = (cy * CONFIG.MAP_SIZE) + cx;
-                const isLand = worldMap[blueprintIdx] >= CONFIG.LAND_THRESHOLD || worldMap[blueprintIdx] >= 100;
-                if (!isLand) return false; 
-                continue; 
-            }
-
-            const lx = ((tx % 100) + 100) % 100;
-            const ly = ((ty % 100) + 100) % 100;
-            const idx = (ly * 100) + lx;
-
-            const tID = worldMatrix[cx][cy][idx];
-            const rID = roomMatrix[cx][cy][idx];
-
-            if (tID === 17) return false; 
-            if (tID === 337) return false; 
-            if (rID !== 0 && rID !== 9999) return false; 
-        }
-    }
-    return true;
-}
-
-export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
-    const cellKey = `${cx}_${cy}`;
-    const zone = zoneLookup.get(cellKey);
-    if (!zone) return;
-
-    const zoneWell = zoneWellLookup.get(cellKey);
-    if (!zoneWell) return;
-
-    const zoneKey = `${zoneWell.x}_${zoneWell.y}`;
-    if (initializedZones.has(zoneKey)) return; 
-    initializedZones.add(zoneKey);
-
-    generateWellSpokes(zoneWell);
-
-    console.log(`🎪 LAZY INITIALIZING SETTLEMENT at Well [${zoneWell.x}, ${zoneWell.y}]`);
-
-    zone.forEach(c => {
-        const chunkKey = `${c.cx}_${c.cy}`;
-        if (!decoratedCells.has(chunkKey)) {
-            decorateCell(c.cx, c.cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-            decoratedCells.add(chunkKey);
-        }
-    });
-
-    drawRingRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell);
-    drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell.x, zoneWell.y);
-    drawTownWalls(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell);
-
-    zone.forEach(c => {
-        stampStructuresForChunk(c.cx, c.cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-    });
-}
-
-function getInbound(i, j) {
-    const top = cellMemory.get(`${i}_${j-1}`) || { outW: 16, outE: 16, lW: 4, lE: 4 };
-    const left = cellMemory.get(`${i-1}_${j}`) || { outN: 16, outS: 16, lN: 4, lS: 4 };
-
-    return {
-        inWest: top.outW ?? 16, inEast: top.outE ?? 16,
-        inNorth: left.outN ?? 16, inSouth: left.outS ?? 16,
-        lWest: top.lW ?? 4, lEast: top.lE ?? 4,
-        lNorth: left.lN ?? 4, lSouth: left.lS ?? 4
-    };
-}
-
-export function generateWellSpokes(well) {
-    if (well.spokes && well.spokes.length > 0) return; 
-
-    let boxes = [];
-    plannedBuildings.forEach(b => {
-        const tx = b.args[0], ty = b.args[1];
-        if (Math.hypot(tx - well.x, ty - well.y) < 200) {
-            boxes.push({ minX: tx - 2, maxX: tx + 12, minY: ty - 12, maxY: ty + 2 });
-        }
-    });
-    
-    plannedRanches.forEach(r => {
-        if (r.wellX === well.x && r.wellY === well.y) {
-            boxes.push({ minX: r.gx, maxX: r.gx + r.w, minY: r.gy - r.h, maxY: r.gy + 1 });
-        }
-    });
-
-    const numSpokes = 128;
-    let rawRadii = new Array(numSpokes).fill(0);
-    
-    for (let i = 0; i < numSpokes; i++) {
-        let angle = (i / numSpokes) * Math.PI * 2;
-        let dx = Math.cos(angle);
-        let dy = Math.sin(angle);
-        
-        let maxR = 10; 
-        for (let r = 0; r < 350; r += 2) { 
-            let px = well.x + dx * r;
-            let py = well.y + dy * r;
-            
-            for (let b of boxes) {
-                if (px >= b.minX && px <= b.maxX && py >= b.minY && py <= b.maxY) {
-                    maxR = r; 
-                }
-            }
-        }
-        rawRadii[i] = maxR;
-    }
-
-    let smoothedRadii = new Array(numSpokes);
-    for(let passes = 0; passes < 4; passes++) { 
-        for (let i = 0; i < numSpokes; i++) {
-            let prev = rawRadii[(i - 1 + numSpokes) % numSpokes];
-            let curr = rawRadii[i];
-            let next = rawRadii[(i + 1) % numSpokes];
-            smoothedRadii[i] = (prev + curr * 2 + next) / 4; 
-        }
-        for(let i = 0; i < numSpokes; i++) rawRadii[i] = smoothedRadii[i];
-    }
-
-    well.spokes = [];
-    const ROAD_BUFFER = 18; 
-
-    for (let i = 0; i < numSpokes; i++) {
-        let angle = (i / numSpokes) * Math.PI * 2;
-        let dx = Math.cos(angle);
-        let dy = Math.sin(angle);
-        
-        let r = smoothedRadii[i] + 4; 
-        
-        let isSafe = false;
-        while (!isSafe && r < 500) { 
-            isSafe = true;
-            let px = well.x + dx * r;
-            let py = well.y + dy * r;
-            
-            for (let b of boxes) {
-                if (px >= b.minX - ROAD_BUFFER && px <= b.maxX + ROAD_BUFFER && 
-                    py >= b.minY - ROAD_BUFFER && py <= b.maxY + ROAD_BUFFER) {
-                    isSafe = false;
-                    r += 2; 
-                    break;
-                }
-            }
-        }
-        well.spokes.push({ angle, dx, dy, r }); 
-    }
-}
-
-export function drawTree(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
-    setGlobalTile(gx, gy + 2, 406, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-    setGlobalTile(gx + 1, gy + 2, 407, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-}
-
-// ==========================================
-// 🏠 REFACTORED WORKSTATIONS & BUILDINGS
-// ==========================================
 
 export function drawHouse(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     const currentId = stampBuildingFoundation(gx, gy, 4, 3, worldMatrix, roomMatrix, fertilityMatrix, worldMap, 'STANDARD');
@@ -1004,115 +880,6 @@ export function drawInterCellRoad(startX, startY, endX, endY, worldMatrix, roomM
     }
 }
 
-// ==========================================
-// 🌊 PRECISE WAVE CHAIN COLLAPSE SHORELINES
-// ==========================================
-
-function paintSide(cellData, startVal, side) {
-    let beachLength = startVal;
-
-    for (let i = 0; i < 100; i++) {
-        let outOf2 = Math.floor(seededRandom() * 2) + 1;
-        if (outOf2 == 1 && beachLength < CONFIG.WOBBLE_MAX) beachLength++;
-        if (outOf2 == 2 && beachLength > 2) beachLength--;
-
-        for (let j = 0; j < beachLength; j++) {
-            let lx, ly;
-            if (side === "NORTH") { lx = i; ly = j; }
-            if (side === "SOUTH") { lx = i; ly = 99 - j; }
-            if (side === "WEST")  { lx = j; ly = i; }
-            if (side === "EAST")  { lx = 99 - j; ly = i; }
-            
-            const idx = (ly * 100) + lx;
-            
-            const t = cellData[idx];
-            if (t === 12 || t === 13 || (t >= 300 && t < 400)) continue;
-            
-            cellData[idx] = 0; 
-        }
-    }
-    return beachLength;
-}
-
-function paintCorner(cellData, hWidth, vWidth, type) {
-    const size = Math.max(hWidth, vWidth, 25); 
-
-    for (let ly = 0; ly < size; ly++) {
-        for (let lx = 0; lx < size; lx++) {
-            const dist = (lx / vWidth) ** 2 + (ly / hWidth) ** 2;
-
-            if (dist <= 1.0) {
-                let fx = lx, fy = ly;
-                if (type === "NE") fx = 99 - lx;
-                if (type === "SW") fy = 99 - ly;
-                if (type === "SE") { fx = 99 - lx; fy = 99 - ly; }
-
-                if (fx >= 0 && fx < 100 && fy >= 0 && fy < 100) {
-                    const idx = (fy * 100) + fx;
-                    
-                    const t = cellData[idx];
-                    if (t === 12 || t === 13 || (t >= 300 && t < 400)) continue;
-
-                    cellData[idx] = 0; 
-                }
-            }
-        }
-    }
-}
-
-function paintLandSide(cellData, fertilityData, startVal, side) {
-    let lLen = startVal;
-    for (let i = 0; i < 100; i++) {
-        let outOf2 = Math.floor(seededRandom() * 2) + 1;
-        if (outOf2 == 1 && lLen < 15) lLen++;
-        if (outOf2 == 2 && lLen > 1) lLen--;
-
-        for (let j = 0; j < lLen; j++) {
-            let lx, ly;
-            if (side === "NORTH") { lx = i; ly = j; }
-            if (side === "SOUTH") { lx = i; ly = 99 - j; }
-            if (side === "WEST")  { lx = j; ly = i; }
-            if (side === "EAST")  { lx = 99 - j; ly = i; }
-            
-            const idx = (ly * 100) + lx;
-            
-            const t = cellData[idx];
-            if (t === 12 || t === 13 || (t >= 300 && t < 400)) continue;
-
-            cellData[idx] = 63; 
-            fertilityData[idx] = 12; 
-        }
-    }
-    return lLen;
-}
-
-function paintLandCorner(cellData, fertilityData, hWidth, vWidth, type) {
-    const size = Math.max(hWidth, vWidth, 15);
-
-    for (let ly = 0; ly < size; ly++) {
-        for (let lx = 0; lx < size; lx++) {
-            const dist = (lx / vWidth) ** 2 + (ly / hWidth) ** 2;
-
-            if (dist <= 1.0) {
-                let fx = lx, fy = ly;
-                if (type === "NE") fx = 99 - lx;
-                if (type === "SW") fy = 99 - ly;
-                if (type === "SE") { fx = 99 - lx; fy = 99 - ly; }
-
-                if (fx >= 0 && fx < 100 && fy >= 0 && fy < 100) {
-                    const idx = (fy * 100) + fx;
-                    
-                    const t = cellData[idx];
-                    if (t === 12 || t === 13 || (t >= 300 && t < 400)) continue;
-
-                    cellData[idx] = 63; 
-                    fertilityData[idx] = 12; 
-                }
-            }
-        }
-    }
-}
-
 export function generateGlobalShorelines(worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     console.log("🌊 Generating Global Shorelines...");
     
@@ -1160,9 +927,20 @@ export function generateGlobalShorelines(worldMatrix, roomMatrix, fertilityMatri
     }
 }
 
-// ==========================================
-// 🌊 OVERWORLD ELEMENTS & AUTO-TILING
-// ==========================================
+const cellMemory = new Map();
+const decoratedCells = new Set();
+
+function getInbound(i, j) {
+    const top = cellMemory.get(`${i}_${j-1}`) || { outW: 16, outE: 16, lW: 4, lE: 4 };
+    const left = cellMemory.get(`${i-1}_${j}`) || { outN: 16, outS: 16, lN: 4, lS: 4 };
+
+    return {
+        inWest: top.outW ?? 16, inEast: top.outE ?? 16,
+        inNorth: left.outN ?? 16, inSouth: left.outS ?? 16,
+        lWest: top.lW ?? 4, lEast: top.lE ?? 4,
+        lNorth: left.lN ?? 4, lSouth: left.lS ?? 4
+    };
+}
 
 export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     if (!fertilityMatrix) return;
@@ -1250,10 +1028,6 @@ export function decorateCell(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, w
                 }
             }
         }
-
-        if (socket && socket.connected) {
-            socket.emit('requestChunkPlants', { cx, cy });
-        }
     }
 }
 
@@ -1267,7 +1041,7 @@ export function populateWorld(worldMap) {
             if (roll > 1.99995177469) worldMap[i] = 103; 
             else if (roll > 1.99942129629) worldMap[i] = 102; 
             else if (roll > 0.9978) worldMap[i] = 107; 
-            else if (roll > 0.98305555555) worldMap[i] = 101; 
+            else if (roll > 0.99305555555) worldMap[i] = 101; 
         }
     }
 
@@ -1440,6 +1214,9 @@ export function ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix,
     const heroCX = Math.floor(focus.x / 1600);
     const heroCY = Math.floor(focus.y / 1600);
 
+    // Track coordinates currently in the player's centered 3x3 grid
+    const current3x3Keys = new Set();
+
     for (let ox = -1; ox <= 1; ox++) {
         for (let oy = -1; oy <= 1; oy++) {
             const cx = heroCX + ox;
@@ -1448,6 +1225,7 @@ export function ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix,
             if (cx < 0 || cx >= CONFIG.MAP_SIZE || cy < 0 || cy >= CONFIG.MAP_SIZE) continue;
 
             const cellKey = `${cx}_${cy}`;
+            current3x3Keys.add(cellKey);
             const zone = zoneLookup.get(cellKey);
 
             if (zone) {
@@ -1459,9 +1237,25 @@ export function ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix,
                 }
             }
 
+            // ⚡ CENTERED 3x3 STREAMING ENGINE:
+            // If a cell entering the player's centered 3x3 grid has not fetched its plants, request them now
+            if (!activeFloraChunks.has(cellKey)) {
+                activeFloraChunks.add(cellKey);
+                if (socket && socket.connected) {
+                    socket.emit('requestChunkPlants', { cx, cy });
+                }
+            }
+
             autoTileLayerChunk(cx, cy, worldMatrix, [0, 10, 11, 17], 0, 'sand');
             autoTileLayerChunk(cx, cy, worldMatrix, [208], 208, 'stone');
             autoTileLayerChunk(cx, cy, worldMatrix, [337], 337, 'dirt');
+        }
+    }
+
+    // Clear cells that fall out of the player's centered 3x3 grid
+    for (let key of activeFloraChunks) {
+        if (!current3x3Keys.has(key)) {
+            activeFloraChunks.delete(key);
         }
     }
 }
@@ -1530,7 +1324,6 @@ export function linkLakes(worldMap, worldMatrix, roomMatrix, fertilityMatrix) {
             drawRiverPath(lakeA.tx, lakeA.ty, closestLake.tx, closestLake.ty, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
         }
     }
-    console.log("🌊 Lakes connected with physical rivers.");
 }
 
 const autoTileCache = new Map();
@@ -1959,7 +1752,7 @@ export function planMiningCamp(gvx, gvy, worldMatrix, roomMatrix, fertilityMatri
     while (placedFires < numFires && attempts < 50) {
         attempts++;
         const tx = gvx + Math.floor(seededRandom() * 16) - 8;
-        const ty = gvy + Math.floor(seededRandom() * 16) - 8;
+        const ty = gvx + Math.floor(seededRandom() * 16) - 8;
         if (isAreaClear(tx - 1, ty - 1, 3, 3, worldMatrix, roomMatrix, worldMap)) {
             reserveFootprint(tx - 1, ty - 1, 3, 3, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
             plannedBuildings.push({ func: drawCampfireArea, args: [tx, ty] });
@@ -2014,6 +1807,7 @@ export function drawTownWalls(worldMatrix, roomMatrix, fertilityMatrix, worldMap
         });
 
         const WALL_BUFFER = 24; 
+        const ROAD_BUFFER = 18;
         
         const wallWaypoints = well.spokes.map(s => {
             let r = Math.ceil((s.r + 10) / 8) * 8; 
@@ -2099,4 +1893,197 @@ export function getVillageAt(gx, gy) {
         }
     }
     return null;
+}
+
+export function reserveFootprint(gx, gy, w, h, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
+    const DUMMY_ID = 9998; 
+    for (let i = 0; i < w; i++) {
+        for (let j = -(h - 1); j <= 0; j++) {
+            const tx = gx + i, ty = gy + j;
+            const cx = Math.floor(tx / 100), cy = Math.floor(ty / 100);
+            
+            if (cx >= 0 && cx < CONFIG.MAP_SIZE && cy >= 0 && cy < CONFIG.MAP_SIZE) {
+                if (!worldMatrix[cx][cy]) {
+                    const blueprintIdx = (cy * CONFIG.MAP_SIZE) + cx;
+                    const isLand = worldMap[blueprintIdx] >= CONFIG.LAND_THRESHOLD || worldMap[blueprintIdx] >= 100;
+                    worldMatrix[cx][cy] = new Uint16Array(10000).fill(isLand ? 63 : 17);
+                    roomMatrix[cx][cy] = new Uint16Array(10000).fill(0);
+                    fertilityMatrix[cx][cy] = new Uint8Array(10000).fill(isLand ? 12 : 0);
+                }
+
+                const lx = ((tx % 100) + 100) % 100, ly = ((ty % 100) + 100) % 100;
+                roomMatrix[cx][cy][ly * 100 + lx] = DUMMY_ID; 
+            }
+        }
+    }
+}
+
+export function setGlobalTile(gx, gy, tileID, roomID, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
+    const cx = Math.floor(gx / 100);
+    const cy = Math.floor(gy / 100);
+
+    if (cx < 0 || cx >= CONFIG.MAP_SIZE || cy < 0 || cy >= CONFIG.MAP_SIZE) return;
+
+    if (worldMatrix[cx][cy] === null || worldMatrix[cx][cy] === undefined) {
+        const blueprintIdx = (cy * CONFIG.MAP_SIZE) + cx;
+        const isLand = worldMap[blueprintIdx] >= CONFIG.LAND_THRESHOLD || worldMap[blueprintIdx] >= 100;
+
+        worldMatrix[cx][cy] = new Uint16Array(10000).fill(isLand ? 63 : 17);
+        roomMatrix[cx][cy] = new Uint16Array(10000).fill(0);
+        fertilityMatrix[cx][cy] = new Uint8Array(10000).fill(isLand ? 12 : 0);
+    }
+
+    const lx = ((gx % 100) + 100) % 100;
+    const ly = ((gy % 100) + 100) % 100;
+    const idx = (ly * 100) + lx;
+
+    worldMatrix[cx][cy][idx] = tileID;
+    roomMatrix[cx][cy][idx] = roomID;
+}
+
+function isAreaClear(gx, gy, w, h, worldMatrix, roomMatrix, worldMap) {
+    const buffer = 1; 
+    
+    for (let i = -buffer; i < w + buffer; i++) {
+        for (let j = -h - buffer; j < buffer; j++) {
+            const tx = gx + i;
+            const ty = gy + j;
+
+            const cx = Math.floor(tx / 100);
+            const cy = Math.floor(ty / 100);
+            
+            if (cx < 0 || cx >= CONFIG.MAP_SIZE || cy < 0 || cy >= CONFIG.MAP_SIZE) return false;
+
+            if (!worldMatrix[cx] || !worldMatrix[cx][cy]) {
+                const blueprintIdx = (cy * CONFIG.MAP_SIZE) + cx;
+                const isLand = worldMap[blueprintIdx] >= CONFIG.LAND_THRESHOLD || worldMap[blueprintIdx] >= 100;
+                if (!isLand) return false; 
+                continue; 
+            }
+
+            const lx = ((tx % 100) + 100) % 100;
+            const ly = ((ty % 100) + 100) % 100;
+            const idx = (ly * 100) + lx;
+
+            const tID = worldMatrix[cx][cy][idx];
+            const rID = roomMatrix[cx][cy][idx];
+
+            if (tID === 17) return false; 
+            if (tID === 337) return false; 
+            if (rID !== 0 && rID !== 9999) return false; 
+        }
+    }
+    return true;
+}
+
+export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
+    const cellKey = `${cx}_${cy}`;
+    const zone = zoneLookup.get(cellKey);
+    if (!zone) return;
+
+    const zoneWell = zoneWellLookup.get(cellKey);
+    if (!zoneWell) return;
+
+    const zoneKey = `${zoneWell.x}_${zoneWell.y}`;
+    if (initializedZones.has(zoneKey)) return; 
+    initializedZones.add(zoneKey);
+
+    generateWellSpokes(zoneWell);
+
+    console.log(`🎪 LAZY INITIALIZING SETTLEMENT at Well [${zoneWell.x}, ${zoneWell.y}]`);
+
+    zone.forEach(c => {
+        const chunkKey = `${c.cx}_${c.cy}`;
+        if (!decoratedCells.has(chunkKey)) {
+            decorateCell(c.cx, c.cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            decoratedCells.add(chunkKey);
+        }
+    });
+
+    drawRingRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell);
+    drawPlannedRanchRoads(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell.x, zoneWell.y);
+    drawTownWalls(worldMatrix, roomMatrix, fertilityMatrix, worldMap, zoneWell);
+
+    zone.forEach(c => {
+        stampStructuresForChunk(c.cx, c.cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+    });
+}
+
+export function generateWellSpokes(well) {
+    if (well.spokes && well.spokes.length > 0) return; 
+
+    let boxes = [];
+    plannedBuildings.forEach(b => {
+        const tx = b.args[0], ty = b.args[1];
+        if (Math.hypot(tx - well.x, ty - well.y) < 200) {
+            boxes.push({ minX: tx - 2, maxX: tx + 12, minY: ty - 12, maxY: ty + 2 });
+        }
+    });
+    
+    plannedRanches.forEach(r => {
+        if (r.wellX === well.x && r.wellY === well.y) {
+            boxes.push({ minX: r.gx, maxX: r.gx + r.w, minY: r.gy - r.h, maxY: r.gy + 1 });
+        }
+    });
+
+    const numSpokes = 128;
+    let rawRadii = new Array(numSpokes).fill(0);
+    
+    for (let i = 0; i < numSpokes; i++) {
+        let angle = (i / numSpokes) * Math.PI * 2;
+        let dx = Math.cos(angle);
+        let dy = Math.sin(angle);
+        
+        let r = 10; 
+        for (let rDist = 0; rDist < 350; rDist += 2) { 
+            let px = well.x + dx * rDist;
+            let py = well.y + dy * rDist;
+            
+            for (let b of boxes) {
+                if (px >= b.minX && px <= b.maxX && py >= b.minY && py <= b.maxY) {
+                    r = rDist; 
+                }
+            }
+        }
+        rawRadii[i] = r;
+    }
+
+    let smoothedRadii = new Array(numSpokes);
+    for(let passes = 0; passes < 4; passes++) { 
+        for (let i = 0; i < numSpokes; i++) {
+            let prev = rawRadii[(i - 1 + numSpokes) % numSpokes];
+            let curr = rawRadii[i];
+            let next = rawRadii[(i + 1) % numSpokes];
+            smoothedRadii[i] = (prev + curr * 2 + next) / 4; 
+        }
+        for(let i = 0; i < numSpokes; i++) rawRadii[i] = smoothedRadii[i];
+    }
+
+    well.spokes = [];
+    const ROAD_BUFFER = 18; 
+
+    for (let i = 0; i < numSpokes; i++) {
+        let angle = (i / numSpokes) * Math.PI * 2;
+        let dx = Math.cos(angle);
+        let dy = Math.sin(angle);
+        
+        let r = smoothedRadii[i] + 4; 
+        
+        let isSafe = false;
+        while (!isSafe && r < 500) { 
+            isSafe = true;
+            let px = well.x + dx * r;
+            let py = well.y + dy * r;
+            
+            for (let b of boxes) {
+                if (px >= b.minX - ROAD_BUFFER && px <= b.maxX + ROAD_BUFFER && 
+                    py >= b.minY - ROAD_BUFFER && py <= b.maxY + ROAD_BUFFER) {
+                    isSafe = false;
+                    r += 2; 
+                    break;
+                }
+            }
+        }
+        well.spokes.push({ angle, dx, dy, r }); 
+    }
 }
