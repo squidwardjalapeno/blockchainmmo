@@ -912,7 +912,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             }
         }
 
-        let enemyTarget = null; // 🎯 DECLARED AT PARENT LEVEL
+        let enemyTarget = null; 
         let enemyDist = Infinity;
 
         // ==========================================
@@ -938,12 +938,13 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 hobbit.attackTarget = nearestEnemy; 
                 
                 if (nearestEnemyDist <= 24) {
+                    // 🎯 THE FIX: Do not overwrite state to idle if currently attacking
                     if (hobbit.state !== 'attacking') {
                         hobbit.state = 'idle';
+                        hobbit.path = [];
                     }
-                    hobbit.path = [];
                     
-                    if (hobbit.attackTimer <= 0) {
+                    if (hobbit.attackTimer <= 0 && hobbit.state !== 'attacking') {
                         hobbit.state = 'attacking';
                         hobbit.attackTimer = 0.5;
                         hobbit.hasStruck = false; 
@@ -1038,11 +1039,12 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     hobbit.goal = 'defend_home';
                     
                     if (enemyDist <= 24) {
+                        // 🎯 THE FIX: Do not overwrite state to idle if currently attacking
                         if (hobbit.state !== 'attacking') {
                             hobbit.state = 'idle';
+                            hobbit.path = [];
                         }
-                        hobbit.path = [];
-                        if (hobbit.attackTimer <= 0) {
+                        if (hobbit.attackTimer <= 0 && hobbit.state !== 'attacking') {
                             hobbit.state = 'attacking';
                             hobbit.attackTimer = 0.5;
                             hobbit.hasStruck = false; 
