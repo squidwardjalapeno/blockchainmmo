@@ -50,7 +50,7 @@ function findPathToTarget(startTX, startTY, worldMatrix, roomMatrix, targetTileI
         }
     };
 
-    return findPath(startTX, startTY, isWalkableFn, isTargetFn, 20); // Chickens use maxDepth of 20
+    return findPath(startTX, startTY, isWalkableFn, isTargetFn, 8); // 🎯 Reduced maxDepth to 8 tiles for on-screen search
 }
 
 // 🧠 HELPER: Pick a random nearby walkable tile for wandering
@@ -81,10 +81,73 @@ function macroWander(startX, startY, steps, worldMatrix, roomMatrix) {
     return { x: curX, y: curY };
 }
 
+/**
+ * ⚡ HIGH-PERFORMANCE OFF-SCREEN CHICKEN GRID RADIAL SCAN
+ * Directly checks map keys in a expanding coordinate spiral. Runs in O(1) time.
+ */
+function findNearestPlantOffScreen(startTX, startTY, maxRange = 8) {
+    for (let r = 1; r <= maxRange; r++) {
+        for (let ox = -r; ox <= r; ox++) {
+            for (let oy = -r; oy <= r; oy++) {
+                if (Math.abs(ox) !== r && Math.abs(oy) !== r) continue;
+                const tx = startTX + ox;
+                const ty = startTY + oy;
+                if (plants.has(`${tx}_${ty}`)) {
+                    return { x: tx, y: ty };
+                }
+            }
+        }
+    }
+    return null;
+}
+
+/**
+ * ⚡ HIGH-PERFORMANCE STATIC TILE SCAN FOR NEST BOXES OFF-SCREEN
+ */
+function findNearestTileIDOffScreen(startTX, startTY, worldMatrix, roomMatrix, targetTileID, maxRange = 8) {
+    for (let ox = -maxRange; ox <= maxRange; ox++) {
+        for (let oy = -maxRange; oy <= maxRange; oy++) {
+            const tx = startTX + ox;
+            const ty = startTY + oy;
+            const data = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix);
+            if (data && data.tileID === targetTileID) {
+                return { x: tx, y: ty };
+            }
+        }
+    }
+    return null;
+}
+
+/**
+ * ⚡ HIGH-PERFORMANCE ANIMAL CATCH-UP / OFF-SCREEN VECTOR STEP GENERATOR
+ */
+function findOffScreenAnimalPath(startTX, startTY, targetTX, targetTY) {
+    const path = [];
+    let curX = startTX;
+    let curY = startTY;
+    const maxSteps = 20; 
+
+    for (let i = 0; i < maxSteps; i++) {
+        if (curX === targetTX && curY === targetTY) break;
+
+        const dx = targetTX - curX;
+        const dy = targetTY - curY;
+
+        if (Math.abs(dx) >= Math.abs(dy)) {
+            curX += Math.sign(dx);
+        } else {
+            curY += Math.sign(dy);
+        }
+
+        path.push({ x: curX, y: curY });
+    }
+    return path.length > 0 ? path : null;
+}
+
 export function updateAnimals(modifier, worldMatrix, roomMatrix) {
     const focus = getFocusCoordinates();
-    const heroCX = Math.floor(hero.x / 1600);
-    const heroCY = Math.floor(hero.y / 1600);
+    const heroCX = Math.floor(focus.x / 1600);
+    const heroCY = Math.floor(focus.y / 1600);
     const now = Date.now();
 
     // 1. CLEANUP DEAD ANIMALS AT THE VERY TOP
@@ -147,22 +210,21 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                 if (chicken.energy < 50) {
                     let foundFood = false;
                     let bestPlantKey = null;
-                    let bestDistSq = Infinity;
                     let foodX, foodY;
 
-                    for (let [key, p] of plants) {
-                        const dX = p.gx - simX;
-                        const dY = p.gy - simY;
-                        const distSq = dX*dX + dY*dY;
-                        
-                        if (distSq <= 64) { 
-                            if (distSq < bestDistSq) {
-                                bestDistSq = distSq;
-                                bestPlantKey = key;
+                    // ⚡ O(1) OPTIMIZATION: Coordinate checks instead of iterating the global plants Map
+                    for (let ox = -5; ox <= 5; ox++) {
+                        for (let oy = -5; oy <= 5; oy++) {
+                            const checkKey = `${simX + ox}_${simY + oy}`;
+                            if (plants.has(checkKey)) {
+                                bestPlantKey = checkKey;
+                                const p = plants.get(checkKey);
                                 foodX = p.gx;
                                 foodY = p.gy;
+                                break;
                             }
                         }
+                        if (bestPlantKey) break;
                     }
 
                     if (bestPlantKey) {
@@ -238,14 +300,27 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
 
                 if (!chicken.path || chicken.path.length === 0) {
                     if (chicken.energy < 50) {
-                        const pathToFood = findPathToTarget(currTX, currTY, worldMatrix, roomMatrix, null);
-                        if (pathToFood) { chicken.path = pathToFood; chicken.goal = 'food'; }
-                        else { assignRandomWalk(chicken, currTX, currTY, worldMatrix, roomMatrix); chicken.goal = 'wander'; }
+                        // ⚡ Bypasses BFS off-screen: Direct index lookup
+                        const foodPos = findNearestPlantOffScreen(currTX, currTY, 8);
+                        const pathToFood = foodPos ? findOffScreenAnimalPath(currTX, currTY, foodPos.x, foodPos.y) : null;
+                        
+                        if (pathToFood) { 
+                            chicken.path = pathToFood; 
+                            chicken.goal = 'food'; 
+                        } else { 
+                            assignRandomWalk(chicken, currTX, currTY, worldMatrix, roomMatrix); 
+                            chicken.goal = 'wander'; 
+                        }
                     } 
                     else if (chicken.eggTimer <= 0 && chicken.energy >= 40) {
-                        const pathToBox = findPathToTarget(currTX, currTY, worldMatrix, roomMatrix, 44);
-                        if (pathToBox) { chicken.path = pathToBox; chicken.goal = 'egg'; }
-                        else {
+                        // ⚡ Bypasses BFS off-screen: Direct index lookup
+                        const boxPos = findNearestTileIDOffScreen(currTX, currTY, worldMatrix, roomMatrix, 44, 8);
+                        const pathToBox = boxPos ? findOffScreenAnimalPath(currTX, currTY, boxPos.x, boxPos.y) : null;
+                        
+                        if (pathToBox) { 
+                            chicken.path = pathToBox; 
+                            chicken.goal = 'egg'; 
+                        } else {
                             chicken.energy -= 40;
                             import('./bacteria.js').then(m => m.seedBacteria(currTX, currTY, "egg", 1, 0));
                             chicken.eggTimer = 10.0;
