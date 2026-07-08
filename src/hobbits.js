@@ -938,7 +938,9 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 hobbit.attackTarget = nearestEnemy; 
                 
                 if (nearestEnemyDist <= 24) {
-                    hobbit.state = 'idle';
+                    if (hobbit.state !== 'attacking') {
+                        hobbit.state = 'idle';
+                    }
                     hobbit.path = [];
                     
                     if (hobbit.attackTimer <= 0) {
@@ -1036,7 +1038,9 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     hobbit.goal = 'defend_home';
                     
                     if (enemyDist <= 24) {
-                        hobbit.state = 'idle';
+                        if (hobbit.state !== 'attacking') {
+                            hobbit.state = 'idle';
+                        }
                         hobbit.path = [];
                         if (hobbit.attackTimer <= 0) {
                             hobbit.state = 'attacking';
