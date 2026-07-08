@@ -192,9 +192,9 @@ function estimateCatchUpStep(startX, startY, targetX, targetY) {
 }
 
 /**
- * ⚡ HIGH-PERFORMANCE ROAD-MARCHING HEURISTIC
- * Evaluates directions around the unit. Stay on roads is heavily encouraged, while
- * recently visited tiles are massively penalized to guarantee loop breaks.
+ * ⚡ HIGH-PERFORMANCE ROAD-MARCHING HEURISTIC (LOOP RESISTANT)
+ * Encourages tracking designated pathways while heavily penalizing recently
+ * visited steps in short-term memory to instantly resolve local loop trap states.
  */
 function findNextRoadStep(currX, currY, targetX, targetY, worldMatrix, roomMatrix, hobbit) {
     const dirs = [[0,-1], [0,1], [-1,0], [1,0], [-1,-1], [1,-1], [-1,1], [1,1]];
@@ -214,14 +214,12 @@ function findNextRoadStep(currX, currY, targetX, targetY, worldMatrix, roomMatri
         const isRoad = tileData && (tileData.tileID === 337 || tileData.tileID === 208);
 
         const dist = Math.hypot(targetX - nx, targetY - ny);
-        
         let perceivedDist = dist;
         
         if (isRoad) {
             perceivedDist -= 15; 
         }
 
-        // Apply Tabu Penalty based on how recently they visited this step coordinate
         const historyIdx = hobbit.visitedHistory.indexOf(`${nx}_${ny}`);
         if (historyIdx !== -1) {
             const recencyFactor = historyIdx + 1; 
@@ -345,7 +343,6 @@ function tryHobbitTrade(hobbit, cx, cy) {
         const itemIdx = hobbit.inventory.findIndex(i => i.seedType === l.wantedType);
         if (itemIdx !== -1) {
             const paymentItem = hobbit.inventory[itemIdx];
-            
             const singlePaymentItem = { ...paymentItem, count: 1 };
 
             paymentItem.count--;
@@ -558,7 +555,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 }
 
                 const hx = hero.x + 8;
-                const hy = hero.y + 8;
+                const py = hero.y + 8;
                 const distToHero = Math.hypot(hx - (simX * 16 + 8), hy - (simY * 16 + 8));
 
                 if (distToHero < 80 && hero.hp > 0) {
@@ -844,7 +841,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     hobbit.x = nextNode.x * 16;
                     hobbit.y = nextNode.y * 16;
 
-                    // Tabu tracking off-screen
+                    // Tabu Memory system
                     if (!hobbit.visitedHistory) hobbit.visitedHistory = [];
                     const tileKey = `${nextNode.x}_${nextNode.y}`;
                     if (hobbit.visitedHistory[hobbit.visitedHistory.length - 1] !== tileKey) {
@@ -915,6 +912,9 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             }
         }
 
+        let enemyTarget = null; // 🎯 DECLARED AT PARENT LEVEL
+        let enemyDist = Infinity;
+
         // ==========================================
         // ⚔️ MILITARY JOB STATE MACHINE (MINION LANE-MARCH)
         // ==========================================
@@ -944,6 +944,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     if (hobbit.attackTimer <= 0) {
                         hobbit.state = 'attacking';
                         hobbit.attackTimer = 0.5;
+                        hobbit.hasStruck = false; 
                         const tdx = nearestEnemy.x - hobbit.x;
                         const tdy = nearestEnemy.y - hobbit.y;
                         hobbit.dir = Math.abs(tdx) > Math.abs(tdy) ? (tdx > 0 ? 'East' : 'West') : (tdy > 0 ? 'South' : 'North');
@@ -1002,9 +1003,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         // ==========================================
         else {
             let isDefending = false;
-            let enemyTarget = null;
-            let enemyDist = Infinity;
-
             let criminals = null;
             if (village && typeof window !== 'undefined' && window.villageCriminals) {
                 criminals = window.villageCriminals.get(`${village.x}_${village.y}`);
@@ -1043,6 +1041,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         if (hobbit.attackTimer <= 0) {
                             hobbit.state = 'attacking';
                             hobbit.attackTimer = 0.5;
+                            hobbit.hasStruck = false; 
                             const tdx = enemyTarget.x - hobbit.x;
                             const tdy = enemyTarget.y - hobbit.y;
                             hobbit.dir = Math.abs(tdx) > Math.abs(tdy) ? (tdx > 0 ? 'East' : 'West') : (tdy > 0 ? 'South' : 'North');
@@ -1094,6 +1093,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         hobbit.frame = 0;
                         hobbit.animTimer = 0;
                         hobbit.attackTimer = 0.5; 
+                        hobbit.hasStruck = false; 
                         hobbit.path = []; 
                         
                         const tdx = target.x - hobbit.x;
@@ -1980,15 +1980,14 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         }
 
         // ==========================================
-        // 🏃 MOTOR & MOVEMENT EXECUTION LOOP (Runs unconditionally for all states)
+        // 🏃 MOTOR & MOVEMENT EXECUTION LOOP
         // ==========================================
         if (hobbit.state === 'attacking') {
-            const oldTimer = hobbit.attackTimer;
-            hobbit.attackTimer -= modifier;
-            
-            if (oldTimer > 0.25 && hobbit.attackTimer <= 0.25) {
-                let currentEnemy = null;
+            // 🎯 ROBUST swing frame completion resolver (uses binary strike flag)
+            if (hobbit.attackTimer <= 0.25 && !hobbit.hasStruck) {
+                hobbit.hasStruck = true;
                 
+                let currentEnemy = null;
                 if (hobbit.job === 'Military' && hobbit.attackTarget) {
                     currentEnemy = hobbit.attackTarget;
                 } else if (hobbit.goal === 'defend_home' && enemyTarget) {
@@ -1997,12 +1996,12 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     currentEnemy = hero;
                 }
 
-                if (currentEnemy) {
+                if (currentEnemy && currentEnemy.hp > 0) {
                     const hx = currentEnemy.x + 8;
                     const pyVal = currentEnemy.y + 8;
                     const hdist = Math.hypot(hx - (hobbit.x + 8), pyVal - (hobbit.y + 8));
 
-                    if (hdist <= 24 && currentEnemy.hp > 0) {
+                    if (hdist <= 32) { // Robust connect range check
                         currentEnemy.hp = Math.max(0, currentEnemy.hp - hobbit.ad);
                         console.log(`💥 ${hobbit.name} dealt ${hobbit.ad} damage to ${currentEnemy.name || 'target'}!`);
                         
@@ -2048,7 +2047,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 hobbit.x = targetX;
                 hobbit.y = targetY;
 
-                // Loop breaker tracking: record tile completion
                 if (!hobbit.visitedHistory) hobbit.visitedHistory = [];
                 const tileKey = `${nextNode.x}_${nextNode.y}`;
                 if (hobbit.visitedHistory[hobbit.visitedHistory.length - 1] !== tileKey) {
@@ -2067,8 +2065,12 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             hobbit.state = 'idle';
         }
 
+        // Unconditional cooldown updates to ensure timers tick down in every state
         if (hobbit.pathTimer > 0) {
             hobbit.pathTimer -= modifier;
+        }
+        if (hobbit.attackTimer > 0) {
+            hobbit.attackTimer -= modifier;
         }
     });
 }
