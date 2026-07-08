@@ -1768,37 +1768,69 @@ function renderHobbitManagerUI() {
             return;
         }
 
-        listEl.innerHTML = activeHobbits.map(hob => {
-            const isSelected = (hob.id === selectedHobbitId);
-            const style = isSelected ? 'background: var(--highlight); color: white; border: 4px solid var(--bg-dark);' : 'background: white; border: 4px solid var(--bg-dark);';
-            return `
-                <div class="workforce-row" onclick="window.selectHobbit('${hob.id}')" style="${style} padding: 8px; font-size: 8px; cursor: pointer; display: flex; justify-content: space-between;">
-                    <strong>${hob.name}</strong>
-                    <span style="color: ${hob.job === 'Idle' ? '#888' : 'var(--banana-dark)'};">${hob.job.toUpperCase()}</span>
-                </div>
-            `;
-        }).join('');
+        // ⚡ OPTIMIZATION: Filter roster to show only hobbits belonging to the player's local village
+        import('./cellDecorator.js').then(decorator => {
+            const playerX = Math.floor(hero.x / 16);
+            const playerY = Math.floor(hero.y / 16);
+            
+            let closestWell = null;
+            let minWellDist = Infinity;
+            
+            decorator.plannedWells.forEach(well => {
+                const dist = Math.hypot(well.x - playerX, well.y - playerY);
+                if (dist < minWellDist) {
+                    minWellDist = dist;
+                    closestWell = well;
+                }
+            });
 
-        const selected = activeHobbits.find(h => h.id === selectedHobbitId);
-        if (selected) {
-            detailsEl.innerHTML = `
-                <strong style="font-size: 10px; color: var(--text-dark);">${selected.name}</strong><br>
-                <span style="font-size:8px; color: #555;">CURRENT ROLE: <strong style="color:var(--highlight);">${selected.job.toUpperCase()}</strong></span>
-            `;
+            let filteredHobbits = activeHobbits;
+            if (closestWell) {
+                filteredHobbits = activeHobbits.filter(hob => {
+                    const hobWell = decorator.getVillageAt(hob.homeX || Math.floor(hob.x / 16), hob.homeY || Math.floor(hob.y / 16));
+                    return hobWell && hobWell.x === closestWell.x && hobWell.y === closestWell.y;
+                });
+            }
 
-            const isSpectating = (gameState.spectatedHobbitId === selected.id);
+            if (filteredHobbits.length === 0) {
+                listEl.innerHTML = `<div style="text-align:center; font-size:8px; color:#555; margin-top:80px;">NO WORKERS IN THIS SETTLEMENT</div>`;
+                detailsEl.innerText = "Workforce empty.";
+                buttonContainer.innerHTML = "";
+                return;
+            }
 
-            buttonContainer.innerHTML = `
-                <button onclick="window.assignHobbitJob('Forager')" class="pixel-btn ${selected.job === 'Forager' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">FORAGER</button>
-                <button onclick="window.assignHobbitJob('Farmer')" class="pixel-btn ${selected.job === 'Farmer' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">FARMER</button>
-                <button onclick="window.assignHobbitJob('Trader')" class="pixel-btn ${selected.job === 'Trader' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">TRADER</button>
-                <button onclick="window.assignHobbitJob('Idle')" class="pixel-btn ${selected.job === 'Idle' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">IDLE</button>
-                <button id="spectate-btn" onclick="window.toggleSpectateHobbit('${selected.id}')" class="pixel-btn ${isSpectating ? 'safe' : 'cancel'}" style="padding: 8px; font-size: 8px; margin-top: 10px; width: 100%;">${isSpectating ? '🛑 STOP SPECTATING' : '👁️ SPECTATE'}</button>
-            `;
-        } else {
-            detailsEl.innerText = "Select a hobbit to modify their duties.";
-            buttonContainer.innerHTML = "";
-        }
+            listEl.innerHTML = filteredHobbits.map(hob => {
+                const isSelected = (hob.id === selectedHobbitId);
+                const style = isSelected ? 'background: var(--highlight); color: white; border: 4px solid var(--bg-dark);' : 'background: white; border: 4px solid var(--bg-dark);';
+                return `
+                    <div class="workforce-row" onclick="window.selectHobbit('${hob.id}')" style="${style} padding: 8px; font-size: 8px; cursor: pointer; display: flex; justify-content: space-between;">
+                        <strong>${hob.name}</strong>
+                        <span style="color: ${hob.job === 'Idle' ? '#888' : 'var(--banana-dark)'};">${hob.job.toUpperCase()}</span>
+                    </div>
+                `;
+            }).join('');
+
+            const selected = filteredHobbits.find(h => h.id === selectedHobbitId);
+            if (selected) {
+                detailsEl.innerHTML = `
+                    <strong style="font-size: 10px; color: var(--text-dark);">${selected.name}</strong><br>
+                    <span style="font-size:8px; color: #555;">CURRENT ROLE: <strong style="color:var(--highlight);">${selected.job.toUpperCase()}</strong></span>
+                `;
+
+                const isSpectating = (gameState.spectatedHobbitId === selected.id);
+
+                buttonContainer.innerHTML = `
+                    <button onclick="window.assignHobbitJob('Forager')" class="pixel-btn ${selected.job === 'Forager' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">FORAGER</button>
+                    <button onclick="window.assignHobbitJob('Farmer')" class="pixel-btn ${selected.job === 'Farmer' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">FARMER</button>
+                    <button onclick="window.assignHobbitJob('Trader')" class="pixel-btn ${selected.job === 'Trader' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">TRADER</button>
+                    <button onclick="window.assignHobbitJob('Idle')" class="pixel-btn ${selected.job === 'Idle' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">IDLE</button>
+                    <button id="spectate-btn" onclick="window.toggleSpectateHobbit('${selected.id}')" class="pixel-btn ${isSpectating ? 'safe' : 'cancel'}" style="padding: 8px; font-size: 8px; margin-top: 10px; width: 100%;">${isSpectating ? '🛑 STOP SPECTATING' : '👁️ SPECTATE'}</button>
+                `;
+            } else {
+                detailsEl.innerText = "Select a hobbit to modify their duties.";
+                buttonContainer.innerHTML = "";
+            }
+        });
     });
 }
 

@@ -866,7 +866,7 @@ io.on('connection', (socket) => {
 
             serverAnimals.push({
                 id: 'animal_' + Math.random().toString(36).substr(2, 9),
-                x: rx,
+                x: rx, 
                 y: ry,
                 speed: 35,
                 hp: 30,
@@ -1496,7 +1496,7 @@ io.on('connection', (socket) => {
         syncPlayerAndSave(socket.id);
 
         socket.emit('updateInventory', player.inventory);
-        io.emit('hayStorageUpdated', { hayStorageId, items: hayItems });
+        io.emit('hayStorageUpdated', { hayStorageId: items, items: hayItems });
     });
 
     socket.on('sacrificeItem', (data) => {
@@ -1992,19 +1992,19 @@ setInterval(() => {
                 let nearestPlant = null;
                 let nearestDist = Infinity;
 
-                for (let [key, plant] of serverPlants) {
-                    const pCX = Math.floor(plant.gx / 100);
-                    const pCY = Math.floor(plant.gy / 100);
-                    if (pCX !== cx || pCY !== cy) continue;
-
-                    const dx = Math.abs(plant.gx - tx);
-                    const dy = Math.abs(plant.gy - ty);
-                    if (dx > 8 || dy > 8) continue;
-
-                    const dist = Math.hypot((plant.gx * 16 + 8) - a.x, (plant.gy * 16 + 8) - a.y);
-                    if (dist < 120 && dist < nearestDist) {
-                        nearestDist = dist;
-                        nearestPlant = plant;
+                // ⚡ O(1) OPTIMIZATION: Scan localized coordinates in a 8-tile radius instead of iterating the entire server plants map
+                for (let ox = -8; ox <= 8; ox++) {
+                    for (let oy = -8; oy <= 8; oy++) {
+                        const checkKey = `${tx + ox}_${ty + oy}`;
+                        if (serverPlants.has(checkKey)) {
+                            const plant = serverPlants.get(checkKey);
+                            const dist = Math.hypot((plant.gx * 16 + 8) - a.x, (plant.gy * 16 + 8) - a.y);
+                            
+                            if (dist < 120 && dist < nearestDist) {
+                                nearestDist = dist;
+                                nearestPlant = plant;
+                            }
+                        }
                     }
                 }
 
