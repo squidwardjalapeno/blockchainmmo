@@ -1210,7 +1210,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         else {
                             if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
                                 hobbit.pathTimer = 1.5 + Math.random() * 1.5;
-                                const path = findPathToCoords(currTX, currTY, storeDoorX, doorInY, worldMatrix, roomMatrix, hobbit, 60);
+                                const path = findPathToCoords(currTX, currTY, storeDoorX, storeDoorY, worldMatrix, roomMatrix, hobbit, 60); // 🎯 Fixed doorInY to storeDoorY
                                 if (path) {
                                     hobbit.path = path;
                                     hobbit.state = 'walking';
@@ -1486,7 +1486,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             else {
                                 if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
                                     hobbit.pathTimer = 1.5 + Math.random() * 1.5;
-                                    const path = findPathToCoords(currTX, currTY, storeDoorX, storeDoorY, worldMatrix, roomMatrix, hobbit);
+                                    const path = findPathToCoords(currTX, currTY, storeDoorX, storeDoorY, worldMatrix, roomMatrix, hobbit, 60);
                                     if (path) {
                                         hobbit.path = path;
                                         hobbit.state = 'walking';
@@ -1542,7 +1542,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         } else {
                             if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
                                 hobbit.pathTimer = 1.5 + Math.random() * 1.5;
-                                const path = findPathToCoords(currTX, currTY, depositTX, depositTY, worldMatrix, roomMatrix, hobbit);
+                                const path = findPathToCoords(currTX, currTY, depositTX, depositTY, worldMatrix, roomMatrix, hobbit, 40);
                                 if (path) {
                                     hobbit.path = path;
                                     hobbit.state = 'walking';
@@ -1824,10 +1824,10 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             const dist = Math.sqrt(dx * dx + dy * dy);
 
             const angle = Math.atan2(dy, dx);
-            const octant = Math.round(8 * angle / (2 * Math.PI) + 8) % 8;
+            const octant = Math.round(8 * angle / (2 * Math.PI)) % 8;
             const directions = ['East', 'SouthEast', 'South', 'SouthWest', 'West', 'NorthWest', 'North', 'NorthEast'];
             
-            hobbit.dir = directions[octant];
+            hobbit.dir = directions[octant] || 'South';
 
             if (dist > 2) {
                 const moveX = (dx / dist) * hobbit.speed * modifier;
