@@ -8,8 +8,8 @@ import { worldTime } from './clock.js';
 import { plants, PLANT_DEFS } from './plants.js';
 import { ITEM_TYPES, createItem } from './items.js';
 import { getBacteriaData } from './bacteria.js';
-import { findPath } from './pathfinding.js'; // 👈 Loaded from pathfinding.js
-import { plannedWells, getVillageAt } from './cellDecorator.js'; // 👈 Imported statically for synchronous lookups
+import { findPath } from './pathfinding.js'; 
+import { plannedWells, getVillageAt } from './cellDecorator.js'; 
 
 export const hobbits = [];
 if (typeof window !== 'undefined') {
@@ -26,7 +26,7 @@ const yieldMap = {
     'corn': 'CORN_ITEM', 'pineapple': 'PINEAPPLE_ITEM',
     'potato': 'POTATO_ITEM', 'wheat': 'WHEAT_ITEM',
     'grass': 'PLANT_MATTER', 'rose': 'PLANT_MATTER',
-    'violet': 'PLANT_MATTER', 'sunflower': 'PLANT_MATTER'
+    'violet': 'VIOLET_ITEM', 'sunflower': 'SUNFLOWER_ITEM'
 };
 
 const HOBBIT_FOOD_VALUES = { 
@@ -158,7 +158,7 @@ function findPathToCoords(startTX, startTY, targetTX, targetTY, worldMatrix, roo
     return findPath(startTX, startTY, isWalkableFn, isTargetFn, maxDepth); 
 }
 
-function findNearestMaturePlant(hobbit, range = 80) { // 🎯 Reduced harvest range to 5 tiles (80px)
+function findNearestMaturePlant(hobbit, range = 80) { 
     let nearest = null;
     let minDist = range;
     
@@ -338,10 +338,8 @@ function tryHobbitTrade(hobbit, cx, cy) {
         if (itemIdx !== -1) {
             const paymentItem = hobbit.inventory[itemIdx];
             
-            // Create a payload containing exactly one count of the item
             const singlePaymentItem = { ...paymentItem, count: 1 };
 
-            // Decrement or remove item from hobbit's inventory
             paymentItem.count--;
             if (paymentItem.count <= 0) {
                 hobbit.inventory.splice(itemIdx, 1);
@@ -359,16 +357,66 @@ function tryHobbitTrade(hobbit, cx, cy) {
                 });
             }
 
-            // Grant the offered item directly to the hobbit's inventory
             giveItemToHobbit(hobbit, l.offeredItem);
 
-            // Set hobbit state back to wandering
             hobbit.goal = 'wander';
             hobbit.path = [];
             hobbit.state = 'idle';
             break; 
         }
     }
+}
+
+// ==========================================
+// 🪖 MILITARY HOSTILE RESOLVER
+// ==========================================
+function findMilitaryTarget(hobbit, myWell, myWellOwner) {
+    let nearestEnemy = null;
+    let nearestEnemyDist = 120; // 120px aggro search radius (approx. 7.5 tiles)
+
+    // 1. Scan opposing Hobbits from rival settlements
+    hobbits.forEach(other => {
+        if (other.id === hobbit.id || other.hp <= 0) return;
+        const otherWell = other.cachedWell || getHobbitVillage(other);
+        if (myWell && otherWell && (myWell.x !== otherWell.x || myWell.y !== otherWell.y)) {
+            const dist = Math.hypot((other.x + 8) - (hobbit.x + 8), (other.y + 8) - (hobbit.y + 8));
+            if (dist < nearestEnemyDist) {
+                nearestEnemyDist = dist;
+                nearestEnemy = other;
+            }
+        }
+    });
+
+    // 2. Scan Local Hero (if they are not aligned to this hobbit's home village)
+    if (hero && hero.hp > 0) {
+        const heroName = playerWallet || "Guest";
+        const isEnemy = myWellOwner && (myWellOwner !== heroName);
+        if (isEnemy) {
+            const dist = Math.hypot((hero.x + 8) - (hobbit.x + 8), (hero.y + 8) - (hobbit.y + 8));
+            if (dist < nearestEnemyDist) {
+                nearestEnemyDist = dist;
+                nearestEnemy = hero;
+            }
+        }
+    }
+
+    // 3. Scan Remote Players
+    if (remotePlayers) {
+        remotePlayers.forEach((p, id) => {
+            if (p.hp <= 0) return;
+            const pName = p.wallet || `Guest_${id.substring(0, 4)}`;
+            const isEnemy = myWellOwner && (myWellOwner !== pName);
+            if (isEnemy) {
+                const dist = Math.hypot((p.x + 8) - (hobbit.x + 8), (p.y + 8) - (hobbit.y + 8));
+                if (dist < nearestEnemyDist) {
+                    nearestEnemyDist = dist;
+                    nearestEnemy = p;
+                }
+            }
+        });
+    }
+
+    return { target: nearestEnemy, dist: nearestEnemyDist };
 }
 
 // ==========================================
@@ -506,7 +554,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 const stepTime = Math.min(30.0, timeRemaining);
                 timeRemaining -= stepTime;
 
-                // Deplete energy during catch-up fast-forward simulation
                 hobbit.energy = Math.max(0, hobbit.energy - (stepTime * 0.5));
 
                 if (hobbit.energy < 30) {
@@ -514,8 +561,8 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 }
 
                 const hx = hero.x + 8;
-                const py = hero.y + 8;
-                const distToHero = Math.hypot(px, py);
+                const hy = hero.y + 8;
+                const distToHero = Math.hypot(hx - (simX * 16 + 8), hy - (simY * 16 + 8));
 
                 if (distToHero < 80 && hero.hp > 0) {
                     if (distToHero <= 24) {
@@ -526,8 +573,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     } else {
                         const hTX = Math.floor(hx / 16);
                         const hTY = Math.floor(hy / 16);
-                        
-                        // ⚡ HIGH-PERFORMANCE REPLACEMENT: Step estimation instead of heavy BFS pathing
                         const next = estimateCatchUpStep(simX, simY, hTX, hTY);
                         simX = next.x;
                         simY = next.y;
@@ -603,7 +648,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             if (hobbit.slowTickTimer <= 0) {
                 hobbit.slowTickTimer = 1.5; 
 
-                // Deplete energy off-screen
                 hobbit.energy = Math.max(0, hobbit.energy - 0.75);
 
                 const currTX = Math.floor((hobbit.x + 8) / 16);
@@ -620,7 +664,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     targetDist = distToHero;
                 }
 
-                // Off-screen Hunger Processing
                 if (hobbit.energy < 30) {
                     const ate = eatFoodIfAvailable(hobbit);
                     if (!ate && hobbit.houseId && hobbit.chestX !== null) {
@@ -646,7 +689,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
 
                 if (!hobbit.path || hobbit.path.length === 0) {
                     if (hobbit.job === 'Military') {
-                        // 🪖 OFF-SCREEN MARCH: Steps directly toward targeted enemy village
                         const homeWell = hobbit.cachedWell || getHobbitVillage(hobbit);
                         let targetWell = null;
                         let minWellDist = Infinity;
@@ -671,7 +713,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     else if (target && targetDist > 20) {
                         const tTX = Math.floor((target.x + 8) / 16);
                         const tTY = Math.floor((target.y + 8) / 16);
-                        // Combat uses low-depth (15) BFS off-screen
                         const path = findPathToCoords(currTX, currTY, tTX, tTY, worldMatrix, roomMatrix, hobbit, 15);
                         if (path) {
                             hobbit.path = path;
@@ -689,7 +730,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                     socket.emit('setDoorLock', { gx: hobbit.doorX, gy: hobbit.doorY, locked: false });
                                 }
                             } else {
-                                // ⚡ OPTIMIZATION: Bypasses BFS for off-screen line steps
                                 const path = findOffScreenPath(currTX, currTY, hobbit.doorX, hobbit.doorY);
                                 if (path) {
                                     hobbit.path = path;
@@ -703,7 +743,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                         socket.emit('setDoorLock', { gx: hobbit.doorX, gy: hobbit.doorY, locked: true });
                                     }
                                 } else {
-                                    // ⚡ OPTIMIZATION: Bypasses BFS for off-screen line steps
                                     const path = findOffScreenPath(currTX, currTY, hobbit.doorX, hobbit.doorY);
                                     if (path) {
                                         hobbit.path = path;
@@ -714,7 +753,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 if (currTX === hobbit.homeX && currTY === hobbit.homeY) {
                                     hobbit.goal = 'sleep';
                                 } else {
-                                    // ⚡ OPTIMIZATION: Bypasses BFS for off-screen line steps
                                     const path = findOffScreenPath(currTX, currTY, hobbit.homeX, hobbit.homeY);
                                     if (path) {
                                         hobbit.path = path;
@@ -732,7 +770,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 ];
                                 hobbit.goal = 'gohome';
                             } else {
-                                // ⚡ OPTIMIZATION: Bypasses BFS for off-screen line steps
                                 const path = findOffScreenPath(currTX, currTY, hobbit.doorX, hobbit.doorY);
                                 if (path) {
                                     hobbit.path = path;
@@ -741,28 +778,54 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             }
                         }
                     } else if (hobbit.job === 'Forager') {
-                        const hasLoot = hobbit.inventory.some(item => !item.isKey);
-                        if (hasLoot) {
-                            if (currTX !== hobbit.homeX || currTY !== hobbit.homeY) {
-                                if (currTX === hobbit.doorX && currTY === hobbit.doorY) {
-                                    hobbit.path = [
-                                        { x: hobbit.doorX, y: hobbit.doorY - 1 },
-                                        { x: hobbit.homeX, y: hobbit.homeY }
-                                    ];
-                                    hobbit.goal = 'deposit';
-                                } else {
-                                    // ⚡ OPTIMIZATION: Bypasses BFS for off-screen line steps
-                                    const path = findOffScreenPath(currTX, currTY, hobbit.doorX, hobbit.doorY);
-                                    if (path) {
-                                        hobbit.path = path;
-                                        hobbit.goal = 'deposit';
-                                    }
+                        const nonKeyItems = hobbit.inventory.filter(item => !item.isKey);
+                        const isInventoryFull = (nonKeyItems.length >= 6); 
+                        
+                        const hasPM = hobbit.inventory.some(i => i.seedType === 'plant_matter');
+                        const hasOtherLoot = hobbit.inventory.some(i => !i.isKey && i.seedType !== 'plant_matter');
+                        
+                        const chestId = `chest_${hobbit.chestX}_${hobbit.chestY}`;
+                        const chestItems = chestCache.get(chestId) || [];
+                        const isChestFull = (chestItems.length >= 8);
+
+                        const nearestPlant = findNearestMaturePlant(hobbit);
+                        const hasNearbyCrops = nearestPlant || hobbit.targetPlant;
+
+                        const shouldDeposit = isInventoryFull || ((hasOtherLoot || hasPM) && !hasNearbyCrops);
+
+                        if (isInventoryFull && hasPM && isChestFull) {
+                            const counter = findNearestStoreCounter(hobbit);
+                            if (counter) {
+                                const standX = counter.x;
+                                const standY = counter.y + 1;
+                                const path = findOffScreenPath(currTX, currTY, standX, standY);
+                                if (path) {
+                                    hobbit.path = path;
+                                    hobbit.goal = 'sell_pm';
                                 }
                             }
-                        } else {
+                        }
+                        else if (isChestFull && nonKeyItems.length === 0) {
+                            const depositTX = hobbit.chestX + 1;
+                            const depositTY = hobbit.chestY;
+                            const path = findOffScreenPath(currTX, currTY, depositTX, depositTY);
+                            if (path) {
+                                hobbit.path = path;
+                                hobbit.goal = 'withdraw_pm';
+                            }
+                        }
+                        else if (shouldDeposit) {
+                            const depositTX = hobbit.chestX + 1;
+                            const depositTY = hobbit.chestY;
+                            const path = findOffScreenPath(currTX, currTY, depositTX, depositTY);
+                            if (path) {
+                                hobbit.path = path;
+                                hobbit.goal = 'deposit';
+                            }
+                        }
+                        else {
                             const nearest = findNearestMaturePlant(hobbit);
                             if (nearest) {
-                                // Harvesting uses low-depth BFS
                                 const path = findPathToCoords(currTX, currTY, nearest.gx, nearest.gy, worldMatrix, roomMatrix, hobbit, 12);
                                 if (path) {
                                     hobbit.path = path;
@@ -780,7 +843,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     }
                 }
 
-                // Simplified path execution: Teleport to the next tile instantly
                 if (hobbit.path && hobbit.path.length > 0) {
                     const nextNode = hobbit.path.shift();
                     hobbit.x = nextNode.x * 16;
@@ -811,6 +873,10 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         hobbit.path = [];
                     }
                 }
+
+                if (Math.random() > 0.8) {
+                    import('./bacteria.js').then(m => m.seedBacteria(currTX, currTY, "chicken_poop", 3, 12));
+                }
             }
             return; 
         }
@@ -824,13 +890,11 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         const currTX = Math.floor((hobbit.x + 8) / 16);
         const currTY = Math.floor((hobbit.y + 15) / 16); 
         
-        // 🎯 THE FIX: Robust indices lookup utilizing clean local scopes
         const lx = ((currTX % 100) + 100) % 100;
         const ly = ((currTY % 100) + 100) % 100;
         const pCol = roomMatrix[Math.floor(currTX / 100)]?.[Math.floor(currTY / 100)];
         const roomID = pCol ? pCol[ly * 100 + lx] : 0;
 
-        // 🎯 OPTIMIZATION: Lazy-cache the home village reference once to avoid heavy trig calculations every frame
         if (hobbit.cachedWell === undefined) {
             hobbit.cachedWell = getHobbitVillage(hobbit);
         }
@@ -842,9 +906,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             const data = window.villageOwners.get(`${village.x}_${village.y}`);
             if (data) {
                 villageOwner = data.owner;
-                if (data.progress > 0) {
-                    isVillageContested = true;
-                }
             }
         }
 
@@ -853,25 +914,20 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         // ==========================================
         if (hobbit.job === 'Military') {
             // Military units ignore hunger, sleep, and storing needs. They act as persistent minions.
-            
-            // 1. Scan for nearby enemy hobbits (Within a 120px aggro range)
-            let nearestEnemy = null;
-            let nearestEnemyDist = Infinity;
+            const homeWell = hobbit.cachedWell || getHobbitVillage(hobbit);
+            let myWellOwner = null;
 
-            hobbits.forEach(other => {
-                if (other.id === hobbit.id || other.hp <= 0) return;
-                
-                const myWell = hobbit.cachedWell || getHobbitVillage(hobbit);
-                const otherWell = other.cachedWell || getHobbitVillage(other);
-
-                if (myWell && otherWell && (myWell.x !== otherWell.x || myWell.y !== otherWell.y)) {
-                    const dist = Math.hypot((other.x + 8) - (hobbit.x + 8), (other.y + 8) - (hobbit.y + 8));
-                    if (dist < 120 && dist < nearestEnemyDist) {
-                        nearestEnemyDist = dist;
-                        nearestEnemy = other;
-                    }
+            if (homeWell && window.villageOwners) {
+                const data = window.villageOwners.get(`${homeWell.x}_${homeWell.y}`);
+                if (data) {
+                    myWellOwner = data.owner;
                 }
-            });
+            }
+
+            // 1. Scan for nearby hostile targets (rival hobbits, opposing players)
+            const aggroResult = findMilitaryTarget(hobbit, homeWell, myWellOwner);
+            const nearestEnemy = aggroResult.target;
+            const nearestEnemyDist = aggroResult.dist;
 
             if (nearestEnemy) {
                 hobbit.goal = 'attack_enemy';
@@ -889,7 +945,8 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         hobbit.dir = Math.abs(tdx) > Math.abs(tdy) ? (tdx > 0 ? 'East' : 'West') : (tdy > 0 ? 'South' : 'North');
                     }
                 } else if (hobbit.pathTimer <= 0) {
-                    hobbit.pathTimer = 0.5 + Math.random() * 0.5;
+                    // responsive chasing updates for ongoing skirmishes
+                    hobbit.pathTimer = 0.4 + Math.random() * 0.4;
                     const enemyTX = Math.floor((nearestEnemy.x + 8) / 16);
                     const enemyTY = Math.floor((nearestEnemy.y + 8) / 16);
                     const path = findPathToCoords(currTX, currTY, enemyTX, enemyTY, worldMatrix, roomMatrix, hobbit, 15);
@@ -903,7 +960,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 hobbit.goal = 'march';
                 hobbit.attackTarget = null;
                 
-                const homeWell = hobbit.cachedWell || getHobbitVillage(hobbit);
                 let targetWell = null;
                 let minWellDist = Infinity;
 
@@ -922,7 +978,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         hobbit.state = 'idle';
                         hobbit.path = [];
                     } else if (!hobbit.path || hobbit.path.length === 0) {
-                        // Calculate next tile node using road heuristic tracking
+                        // Navigate along the road network
                         const nextStep = findNextRoadStep(currTX, currTY, targetWell.x, targetWell.y, worldMatrix, roomMatrix, hobbit);
                         if (nextStep) {
                             hobbit.path = [{ x: nextStep.x, y: nextStep.y }];
@@ -992,16 +1048,14 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             hobbit.dir = Math.abs(tdx) > Math.abs(tdy) ? (tdx > 0 ? 'East' : 'West') : (tdy > 0 ? 'South' : 'North');
                         }
                     } else if (hobbit.pathTimer <= 0) {
-                        // ⚡ HIGH PERFORMANCE: Add random jitter to stagger pathfinding across different frames
                         hobbit.pathTimer = 1.0 + Math.random() * 1.5;
                         const tTX = Math.floor((enemyTarget.x + 8) / 16);
                         const tTY = Math.floor((enemyTarget.y + 8) / 16);
-                        const path = findPathToCoords(currTX, currTY, tTX, tTY, worldMatrix, roomMatrix, hobbit, 15); // Low depth for combat tracking
+                        const path = findPathToCoords(currTX, currTY, tTX, tTY, worldMatrix, roomMatrix, hobbit, 15); 
                         if (path) {
                             hobbit.path = path;
                             hobbit.state = 'walking';
                         } else {
-                            // Relentless direct step fallback for long-distance swarms
                             const dx = tTX - currTX;
                             const dy = tTY - currTY;
                             const stepX = dx !== 0 ? Math.sign(dx) : 0;
@@ -1026,7 +1080,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 const py = (hero.y + 8) - (hobbit.y + 8);
                 const distToHero = Math.hypot(px, py);
 
-                // Allied hobbits never auto-aggro their village owner
                 const isOwner = (villageOwner === playerWallet);
 
                 if (distToHero < 80 && hero.hp > 0 && !isOwner) {
@@ -1055,7 +1108,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 else if (target && targetDist > 20) {
                     hobbit.goal = 'engage';
                     if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
-                        hobbit.pathTimer = 1.5 + Math.random() * 1.5; // Stagger AI recalculation
+                        hobbit.pathTimer = 1.5 + Math.random() * 1.5; 
                         const tTX = Math.floor((target.x + 8) / 16);
                         const tTY = Math.floor((target.y + 8) / 16);
                         const path = findPathToCoords(currTX, currTY, tTX, tTY, worldMatrix, roomMatrix, hobbit, 15);
@@ -1117,7 +1170,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             } else if (roomID === hobbit.houseId) {
                                 if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
                                     hobbit.pathTimer = 1.5 + Math.random() * 1.5; 
-                                    const path = findPathToCoords(currTX, currTY, depositTX, depositTY, worldMatrix, roomMatrix, hobbit, 20); // Restricted depth
+                                    const path = findPathToCoords(currTX, currTY, depositTX, depositTY, worldMatrix, roomMatrix, hobbit, 20); 
                                     if (path) {
                                         hobbit.path = path;
                                         hobbit.state = 'walking';
@@ -1186,7 +1239,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             } else {
                                 if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
                                     hobbit.pathTimer = 1.5 + Math.random() * 1.5;
-                                    const path = findPathToCoords(currTX, currTY, livePlant.gx, livePlant.gy, worldMatrix, roomMatrix, hobbit, 12); // Low depth for harvest
+                                    const path = findPathToCoords(currTX, currTY, livePlant.gx, livePlant.gy, worldMatrix, roomMatrix, hobbit, 12); 
                                     if (path) {
                                         hobbit.path = path;
                                         hobbit.state = 'walking';
@@ -1197,7 +1250,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 }
                             }
                         } else {
-                            // 🎯 THE FIX: Immediately clear target references if the crop has withered or been harvested
                             hobbit.targetPlant = null;
                             hobbit.goal = 'wander';
                         }
@@ -1356,7 +1408,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             else {
                                 if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
                                     hobbit.pathTimer = 1.5 + Math.random() * 1.5;
-                                    const path = findPathToCoords(currTX, currTY, storeDoorX, storeDoorY, worldMatrix, roomMatrix, hobbit, 60); // 🎯 Fixed doorInY typo to storeDoorY reference
+                                    const path = findPathToCoords(currTX, currTY, storeDoorX, storeDoorY, worldMatrix, roomMatrix, hobbit, 60);
                                     if (path) {
                                         hobbit.path = path;
                                         hobbit.state = 'walking';
@@ -1783,15 +1835,12 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             }
                         }
                         else {
-                            // ⚡ SMOOTH WANDERING INTERCEPTOR:
-                            // If they are on a wandering cooldown, continue waiting/walking naturally instead of re-searching
                             if (hobbit.goal === 'wander' && hobbit.moveTimer > 0) {
                                 hobbit.moveTimer -= modifier;
                                 if (hobbit.moveTimer <= 0) {
-                                    hobbit.goal = 'harvest'; // Cooldown over, ready to search again
+                                    hobbit.goal = 'harvest'; 
                                 }
                                 
-                                // Rest peacefully once they reach their single-tile wander point
                                 if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
                                     hobbit.state = 'idle';
                                 }
@@ -1819,7 +1868,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                         } else {
                                             if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
                                                 hobbit.pathTimer = 1.5 + Math.random() * 1.5;
-                                                const path = findPathToCoords(currTX, currTY, doorInX, doorInY, worldMatrix, roomMatrix, hobbit, 12); // Low Depth
+                                                const path = findPathToCoords(currTX, currTY, doorInX, doorInY, worldMatrix, roomMatrix, hobbit, 12); 
                                                 if (path) {
                                                     hobbit.path = path;
                                                     hobbit.state = 'walking';
@@ -1866,7 +1915,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                             } else {
                                                 if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
                                                     hobbit.pathTimer = 1.5 + Math.random() * 1.5;
-                                                    const path = findPathToCoords(currTX, currTY, livePlant.gx, livePlant.gy, worldMatrix, roomMatrix, hobbit, 12); // Low Depth
+                                                    const path = findPathToCoords(currTX, currTY, livePlant.gx, livePlant.gy, worldMatrix, roomMatrix, hobbit, 12); 
                                                     if (path) {
                                                         hobbit.path = path;
                                                         hobbit.state = 'walking';
@@ -1883,7 +1932,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                         if (nearest) {
                                             hobbit.targetPlant = nearest;
                                         } else {
-                                            // 🎯 Natural Wander Cooldown: Plan a single-tile step, then rest peacefully for 2-4 seconds before searching again
                                             assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
                                             hobbit.goal = 'wander';
                                             hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
@@ -1941,7 +1989,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             if (oldTimer > 0.25 && hobbit.attackTimer <= 0.25) {
                 let currentEnemy = null;
                 
-                // 🎯 Melee target resolving, including military combat
                 if (hobbit.job === 'Military' && hobbit.attackTarget) {
                     currentEnemy = hobbit.attackTarget;
                 } else if (hobbit.goal === 'defend_home' && enemyTarget) {
@@ -1983,7 +2030,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             const dist = Math.sqrt(dx * dx + dy * dy);
 
             const angle = Math.atan2(dy, dx);
-            // Convert angle to a positive [0, 2pi] range for clean JS octant modulo mapping
             let positiveAngle = angle;
             if (positiveAngle < 0) {
                 positiveAngle += Math.PI * 2;
@@ -2010,7 +2056,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             hobbit.state = 'idle';
         }
 
-        // Decay timers unconditionally
         if (hobbit.pathTimer > 0) {
             hobbit.pathTimer -= modifier;
         }

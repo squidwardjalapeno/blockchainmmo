@@ -8,7 +8,7 @@ import { getWaitModifier, getRandomFish, globalFishCount } from './fish.js';
 import { submitVoucherToChain, connectWallet } from './blockchainManager.js';
 import { mapCanvas } from './renderer.js';
 import { recalculateStats } from './interactionManager.js';
-import { PALADIN_SKILLS } from './abilities.js'; // 👈 Loaded from abilities.js to break circular loops
+import { PALADIN_SKILLS } from './abilities.js'; 
 
 if (typeof window !== 'undefined') {
     logStep("uiManager.js loaded");
@@ -75,7 +75,7 @@ let confirmingSpeedUp = false;
 export let activeStorageContext = {
     id: null,
     items: [],
-    type: null // 'CHEST', 'CELLAR', or 'HAY'
+    type: null 
 };
 
 const VALID_FOOD_TYPES = [
@@ -128,7 +128,6 @@ export const uiState = {
     currentTab: 'inventory'
 };
 
-// 🏰 CLIENT-SIDE VILLAGE OWNERSHIP CACHE
 export const villageOwners = new Map();
 export const villageCriminals = new Map();
 
@@ -138,7 +137,7 @@ if (typeof window !== 'undefined') {
 }
 
 // ==========================================
-// 🎨 FACTION COLOR DETERMINISTIC GENERATOR
+// 🎨 FACTION COLOR GENERATOR
 // ==========================================
 const factionColors = new Map();
 
@@ -147,14 +146,13 @@ export function getFactionColor(factionName) {
         return factionColors.get(factionName);
     }
     
-    // Deterministic string HSL color hashing
     let hash = 0;
     for (let i = 0; i < factionName.length; i++) {
         hash = factionName.charCodeAt(i) + ((hash << 5) - hash);
     }
     
     const h = Math.abs(hash) % 360;
-    const color = `hsl(${h}, 85%, 65%)`; // High-contrast bright pastels
+    const color = `hsl(${h}, 85%, 65%)`; 
     
     factionColors.set(factionName, color);
     return color;
@@ -503,7 +501,7 @@ export function initUI() {
         };
     }
 
-    initMiningListeners(); // 👈 Fully operational!
+    initMiningListeners(); 
 }
 
 export function openUnifiedStorage(id, items, type) {
@@ -946,107 +944,91 @@ export function processClaimedStorage(items) {
 
 function switchStoreTab(tab) {
     currentStoreTab = tab;
-    document.getElementById('tab-market').className = tab === 'market' ? 'pixel-btn' : 'pixel-btn pixel-btn-cancel';
-    document.getElementById('tab-ledger').className = tab === 'ledger' ? 'pixel-btn' : 'pixel-btn pixel-btn-cancel';
-    document.getElementById('tab-lockbox').className = tab === 'lockbox' ? 'pixel-btn' : 'pixel-btn pixel-btn-cancel';
-    
+    document.getElementById('tab-market').className = tab === 'market' ? 'pixel-btn' : 'pixel-btn cancel';
+    document.getElementById('tab-ledger').className = tab === 'ledger' ? 'pixel-btn' : 'pixel-btn cancel';
+    document.getElementById('tab-lockbox').className = tab === 'lockbox' ? 'pixel-btn' : 'pixel-btn cancel';
+
     renderStoreUI();
 }
 
-function renderStoreUI() {
-    if (!activeStoreData) return;
+export function renderStoreUI() {
     const content = document.getElementById('store-content');
-    content.innerHTML = '';
+    if (!content || !activeStoreData) return;
 
     if (currentStoreTab === 'market') {
-        const othersListings = activeStoreData.listings.filter(l => l.seller !== playerWallet);
-        
-        if (othersListings.length === 0) {
-            content.innerHTML = `<div style="text-align:center; font-size:8px; color:#555; margin-top:80px;">MARKET IS EMPTY</div>`;
+        const activeListings = activeStoreData.listings || [];
+        if (activeListings.length === 0) {
+            content.innerHTML = `<p style="font-size:10px; text-align:center; margin-top:50px; color:#555;">NO ACTIVE MARKET OFFERS</p>`;
             return;
         }
 
-        othersListings.forEach(l => {
-            const hasExactItem = hero.inventory.some(i => i.seedType === l.wantedType);
-            const isNegotiating = l.counterOffer !== null;
+        content.innerHTML = activeListings.map(listing => {
+            const hasPayment = hero.inventory.some(i => i.seedType === listing.wantedType);
+            const isMyListing = listing.seller === playerWallet;
 
-            content.innerHTML += `
-                <div style="background: #fff; border: 4px solid var(--bg-dark); margin-bottom: 10px; padding: 10px; display: flex; justify-content: space-between; align-items: center; box-shadow: inset -4px -4px 0px rgba(0,0,0,0.1);">
+            return `
+                <div style="background: white; border: 4px solid var(--bg-dark); padding: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
                     <div>
-                        <div style="font-size: 14px; margin-bottom: 5px;">${getItemIcon(l.offeredItem)} ${l.offeredItem.name}</div>
-                        <div style="font-size: 10px;">WANTS: ${typeNames[l.wantedType] || 'Unknown'}</div>
+                        <strong>OFFER:</strong> ${getItemIcon(listing.offeredItem)} ${listing.offeredItem.name} (x${listing.offeredItem.count})<br>
+                        <span style="font-size:8px; color:#555;">SELLER: ${listing.seller.substring(0,6)}...</span>
                     </div>
                     <div style="text-align: right;">
-                        ${isNegotiating ? 
-                            `<span style="color: var(--banana-dark); font-size: 10px;">PENDING...</span>` : 
-                            `
-                            <button onclick="window.buyListing('${l.id}', '${l.wantedType}')" class="${hasExactItem ? 'pixel-btn' : 'pixel-btn pixel-btn-cancel'}" ${!hasExactItem ? 'disabled' : ''} style="padding: 8px; font-size: 10px; margin-bottom: 5px;">BUY</button><br>
-                            <button onclick="window.counterOffer('${l.id}')" class="pixel-btn" style="padding: 8px; font-size: 10px;">COUNTER</button>
-                            `
+                        <span style="font-size:8px;">WANTS: ${typeNames[listing.wantedType]}</span><br>
+                        ${isMyListing ? 
+                            `<button onclick="window.cancelListing('${listing.id}')" class="pixel-btn cancel" style="padding:4px; font-size:6px; margin-top:5px;">CANCEL</button>` :
+                            `<button onclick="window.buyListing('${listing.id}', '${listing.wantedType}')" class="pixel-btn ${hasPayment ? 'safe' : 'cancel'}" ${!hasPayment ? 'disabled' : ''} style="padding:4px; font-size:6px; margin-top:5px;">FULFILL</button>`
                         }
                     </div>
                 </div>
             `;
-        });
+        }).join('');
     } 
     else if (currentStoreTab === 'ledger') {
-        let inventoryOptions = hero.inventory.map((item, idx) => `<option value="${idx}">${getItemIcon(item)} ${item.name}</option>`).join('');
+        let inventoryOptions = hero.inventory.map((item, idx) => `<option value="${idx}">${getItemIcon(item)} ${item.name} (x${item.count})</option>`).join('');
         let wantedOptions = Object.keys(typeNames).map(key => `<option value="${key}">${typeNames[key]}</option>`).join('');
 
-        content.innerHTML += `
-            <div style="background: var(--banana); padding: 10px; margin-bottom: 15px; border: 4px solid var(--bg-dark);">
-                <h4 style="margin:0 0 10px 0; text-align:center;">POST LISTING</h4>
-                ${hero.inventory.length === 0 ? `<p style="font-size:10px; text-align:center;">BACKPACK EMPTY.</p>` : `
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <select id="offer-select" style="width: 45%; padding: 5px; font-size:10px; border: 4px solid var(--bg-dark);">${inventoryOptions}</select>
-                        <span style="font-size:10px;">FOR</span>
-                        <select id="wanted-select" style="width: 45%; padding: 5px; font-size:10px; border: 4px solid var(--bg-dark);">${wantedOptions}</select>
+        content.innerHTML = `
+            <div style="background: var(--bg-panel); border: 4px solid var(--bg-dark); padding: 10px; margin-bottom: 15px;">
+                <h3 style="margin: 0 0 10px 0; font-size: 10px; text-align: center;">POST NEW OFFER</h3>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <div>
+                        <label style="font-size: 8px;">SELECT ITEM TO SELL:</label><br>
+                        <select id="offer-select" class="pixel-input" style="width: 100%; font-size: 8px; padding: 4px;">${inventoryOptions}</select>
                     </div>
-                    <button onclick="window.createListing()" class="pixel-btn" style="width: 100%; margin-top: 10px; background: #fff;">POST TO MARKET</button>
-                `}
+                    <div>
+                        <label style="font-size: 8px;">SELECT REQUESTED ASSET:</label><br>
+                        <select id="wanted-select" class="pixel-input" style="width: 100%; font-size: 8px; padding: 4px;">${wantedOptions}</select>
+                    </div>
+                    <button onclick="window.createListing()" class="pixel-btn safe" style="width:100%; font-size:8px; padding:8px;">POST LISTING</button>
+                </div>
             </div>
         `;
-
-        const myListings = activeStoreData.listings.filter(l => l.seller === playerWallet);
-        if (myListings.length === 0) {
-            content.innerHTML += `<p style="text-align:center; font-size:10px;">NO ACTIVE LISTINGS.</p>`;
-        } else {
-            myListings.forEach(l => {
-                content.innerHTML += `
-                    <div style="background: #fff; border: 4px solid var(--bg-dark); margin-bottom: 10px; padding: 10px;">
-                        <div style="display: flex; justify-content: space-between; margin-bottom:5px;">
-                            <span style="font-size:12px;">${getItemIcon(l.offeredItem)} SELLING: ${l.offeredItem.name}</span>
-                            <button onclick="window.cancelListing('${l.id}')" class="pixel-btn pixel-btn-cancel" style="padding:4px 8px; font-size:10px;">X</button>
-                        </div>
-                        <div style="font-size: 10px;">ASKING FOR: ${typeNames[l.wantedType] || 'Unknown'}</div>
-                        
-                        ${l.counterOffer ? `
-                            <div style="margin-top: 10px; padding: 10px; background: var(--bg-panel); border: 4px solid var(--bg-dark);">
-                                <span style="color:var(--banana-dark); font-size: 10px;">COUNTER OFFER!</span><br>
-                                <span style="font-size:8px; color: #555;">Buyer offers: <strong>${l.counterOffer.item.name}</strong></span><br>
-                                <div style="display:flex; gap:10px; margin-top:10px;">
-                                    <button onclick="window.acceptCounter('${l.id}')" class="pixel-btn safe" style="padding:5px 10px; font-size:8px; flex:1;">ACCEPT</button>
-                                    <button onclick="window.rejectCounter('${l.id}')" class="pixel-btn cancel" style="padding:5px 10px; font-size:8px; flex:1;">REJECT</button>
-                                </div>
-                            </div>
-                        ` : ''}
-                    </div>
-                `;
-            });
-        }
     } 
     else if (currentStoreTab === 'lockbox') {
         const stored = activeStoreData.storage[playerWallet] || [];
         if (stored.length === 0) {
-            content.innerHTML = `<div style="text-align:center; font-size:8px; color:#555; margin-top:80px;">LOCKBOX EMPTY</div>`;
-        } else {
-            content.innerHTML = `<div class="inv-grid">` + stored.map((item, idx) => `
-                <div class="inv-item" onclick="window.claimStoredItem(${idx})">
-                    <div class="item-icon" style="font-size:20px;">${getItemIcon(item)}</div>
-                    <span>${item.name}</span>
-                </div>
-            `).join('') + `</div><p style="font-size:8px; text-align:center; margin-top:10px; color:#555;">Click an item to collect it to your backpack.</p>`;
+            content.innerHTML = `<p style="font-size:10px; text-align:center; margin-top:50px; color:#555;">YOUR LOCKBOX IS EMPTY</p>`;
+            return;
         }
+
+        content.innerHTML = `
+            <div class="inv-grid">
+                ${stored.map((item, idx) => `
+                    <div class="inv-item click-claim-item" data-index="${idx}" style="cursor: pointer;">
+                        <div class="item-icon" style="font-size: 20px;">${getItemIcon(item)}</div>
+                        <span style="font-size: 6px;">${item.name}</span>
+                        ${item.count > 1 ? `<span style="font-size:6px; color:var(--banana-dark);">(x${item.count})</span>` : ''}
+                    </div>
+                `).join('')}
+            </div>
+            <button onclick="window.claimStorage()" class="pixel-btn safe" style="width: 100%; margin-top: 15px; font-size: 8px;">CLAIM ALL ITEMS</button>
+        `;
+
+        setTimeout(() => {
+            document.querySelectorAll('#store-menu .click-claim-item').forEach(el => {
+                el.onclick = () => window.claimStoredItem(parseInt(el.dataset.index));
+            });
+        }, 50);
     }
 }
 
@@ -1163,7 +1145,9 @@ export function renderTempleUI() {
 
             if (confirm(`Do you want to sacrifice ${inventoryItem.count}x ${inventoryItem.name} for UNI?`)) {
                 if (socket) {
-                    socket.emit('sacrificeItem', { index: index });
+                    socket.emit('sacrificeItem', { itemType: inventoryItem.seedType, count: inventoryItem.count });
+                    hero.inventory.splice(index, 1);
+                    syncInventoryWithServer();
                 }
             }
         });
@@ -1216,7 +1200,6 @@ export async function executeWithdrawal(voucher) {
 export function openMapTableMenu() {
     document.getElementById('maptable-menu').classList.remove('hidden');
     
-    // Draw pre-rendered minimap directly into the UI container
     const mapCanvasEl = document.getElementById('ui-map-canvas');
     const ctx = mapCanvasEl.getContext('2d');
     
@@ -1224,11 +1207,10 @@ export function openMapTableMenu() {
     ctx.clearRect(0, 0, mapCanvasEl.width, mapCanvasEl.height);
     ctx.drawImage(mapCanvas, 0, 0, mapCanvasEl.width, mapCanvasEl.height);
 
-    // Draw Player Location indicator on the minimap
     const pX = Math.floor(hero.x / 16);
     const pY = Math.floor(hero.y / 16);
     
-    ctx.fillStyle = "#FFD700"; // Golden player beacon
+    ctx.fillStyle = "#FFD700"; 
     ctx.strokeStyle = "white";
     ctx.lineWidth = 1;
     
@@ -1268,7 +1250,6 @@ function renderHobbitManagerUI() {
             return;
         }
 
-        // ⚡ OPTIMIZATION: Filter roster to show only hobbits belonging to the player's local village
         import('./cellDecorator.js').then(decorator => {
             const playerX = Math.floor(hero.x / 16);
             const playerY = Math.floor(hero.y / 16);
@@ -1323,6 +1304,7 @@ function renderHobbitManagerUI() {
                     <button onclick="window.assignHobbitJob('Forager')" class="pixel-btn ${selected.job === 'Forager' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">FORAGER</button>
                     <button onclick="window.assignHobbitJob('Farmer')" class="pixel-btn ${selected.job === 'Farmer' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">FARMER</button>
                     <button onclick="window.assignHobbitJob('Trader')" class="pixel-btn ${selected.job === 'Trader' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">TRADER</button>
+                    <button onclick="window.assignHobbitJob('Military')" class="pixel-btn ${selected.job === 'Military' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">MILITARY 🪖</button>
                     <button onclick="window.assignHobbitJob('Idle')" class="pixel-btn ${selected.job === 'Idle' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">IDLE</button>
                     <button id="spectate-btn" onclick="window.toggleSpectateHobbit('${selected.id}')" class="pixel-btn ${isSpectating ? 'safe' : 'cancel'}" style="padding: 8px; font-size: 8px; margin-top: 10px; width: 100%;">${isSpectating ? '🛑 STOP SPECTATING' : '👁️ SPECTATE'}</button>
                 `;
@@ -1536,6 +1518,37 @@ export function getZoneName(seed1, seed2) {
     return pre + suf;
 }
 
+export function triggerLocationBanner(cx, cy, cellType) {
+    const locationBanner = document.getElementById('location-banner');
+    const locationName = document.getElementById('location-name');
+    const locationType = document.getElementById('location-type');
+
+    if (!locationBanner || !locationName || !locationType) return;
+
+    let typeStr = "WILDERNESS";
+    let nameStr = getZoneName(cx, cy);
+
+    if (cellType === 101) {
+        typeStr = "CONTESTED VILLAGE";
+    } else if (cellType === 102) {
+        typeStr = "TRADING TOWN";
+    } else if (cellType === 103) {
+        typeStr = "CITADEL CASTLE";
+        nameStr = "Castle Faction Core";
+    } else if (cellType === 107) {
+        typeStr = "OUTLAW MINING CAMP";
+    }
+
+    locationName.innerText = nameStr;
+    locationType.innerText = typeStr;
+
+    locationBanner.style.opacity = '1';
+
+    setTimeout(() => {
+        locationBanner.style.opacity = '0';
+    }, 4000);
+}
+
 export function updateHUD() {
     const uniDisplay = document.getElementById('uni-display');
     const playerCount = document.getElementById('player-count');
@@ -1579,7 +1592,6 @@ export function updateHUD() {
         if (gameState.spectatedHobbitId && window.hobbits) {
             const hob = window.hobbits.find(h => h.id === gameState.spectatedHobbitId);
             if (hob) {
-                // Determine faction details cleanly
                 let factionName = "THE WILDS";
                 let factionColor = "#ffffff";
 
@@ -1596,15 +1608,14 @@ export function updateHUD() {
                 }
 
                 spectateName.innerText = hob.name;
-                spectateName.style.color = factionColor; // Color-code top text banner
+                spectateName.style.color = factionColor; 
                 spectateBanner.classList.remove('hidden');
 
                 if (spectatePanel && specName && specRole && specGoal && specState && specEnergy && specItems) {
                     specName.innerText = hob.name;
-                    specName.style.color = factionColor; // Color-code detailed name
+                    specName.style.color = factionColor; 
                     specRole.innerText = hob.job ? hob.job.toUpperCase() : "IDLE";
 
-                    // Dynamic Faction element injection
                     let specFaction = document.getElementById('spec-info-faction');
                     if (!specFaction) {
                         const factionDiv = document.createElement('div');
@@ -1616,7 +1627,7 @@ export function updateHUD() {
 
                     if (specFaction) {
                         specFaction.innerText = factionName.toUpperCase();
-                        specFaction.style.color = factionColor; // Color-code faction text
+                        specFaction.style.color = factionColor; 
                     }
 
                     const goalMap = {
@@ -1635,8 +1646,6 @@ export function updateHUD() {
                         'unlock_door': 'OPENING PREMISES',
                         'lock_door': 'SECURING PREMISES',
                         'wait_at_barn': 'GUARDING BARN',
-                        
-                        // 🪖 Military States:
                         'attack_enemy': '⚔️ ENGAGING FOE',
                         'march': '🪖 MARCHING THE ROAD'
                     };
@@ -2073,7 +2082,6 @@ export function setupMultiplayerListeners(s) {
         updateDoorControlUI(data.gx, data.gy, data.locked);
     });
 
-    // 🏰 CORE VILLAGE CAPTURE SYNC LISTENERS
     s.on('wellStateResponse', (data) => {
         villageOwners.set(`${data.wellX}_${data.wellY}`, {
             owner: data.owner,
@@ -2092,7 +2100,6 @@ export function setupMultiplayerListeners(s) {
             }
             window.villageCriminals.get(key).add(data.intruderId);
             
-            // Expire criminal status automatically after 30 seconds
             setTimeout(() => {
                 if (window.villageCriminals && window.villageCriminals.has(key)) {
                     window.villageCriminals.get(key).delete(data.intruderId);
@@ -2130,7 +2137,6 @@ export function setupMultiplayerListeners(s) {
     });
 }
 
-// 🏰 DECOUPLED WELL RESOLVER TO AVOID COMPILE-TIME LOOPS
 if (typeof window !== 'undefined') {
     import('./cellDecorator.js').then(m => {
         window.getVillageAt = m.getVillageAt;
