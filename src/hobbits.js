@@ -1542,7 +1542,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         } else {
                             if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
                                 hobbit.pathTimer = 1.5 + Math.random() * 1.5;
-                                const path = findPathToCoords(currTX, currTY, depositTX, depositTY, worldMatrix, roomMatrix, hobbit, 40);
+                                const path = findPathToCoords(currTX, currTY, depositTX, depositTY, worldMatrix, roomMatrix, hobbit);
                                 if (path) {
                                     hobbit.path = path;
                                     hobbit.state = 'walking';
@@ -1823,8 +1823,12 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             const dy = targetY - hobbit.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
 
-            const angle = Math.atan2(dy, dx);
-            const octant = Math.round(8 * angle / (2 * Math.PI)) % 8;
+            // Convert angle to a positive [0, 2pi] range for clean JS octant modulo mapping
+            let angle = Math.atan2(dy, dx);
+            if (angle < 0) {
+                angle += Math.PI * 2;
+            }
+            const octant = Math.round(8 * angle / (Math.PI * 2)) % 8;
             const directions = ['East', 'SouthEast', 'South', 'SouthWest', 'West', 'NorthWest', 'North', 'NorthEast'];
             
             hobbit.dir = directions[octant] || 'South';
