@@ -14,7 +14,7 @@ if (typeof window !== 'undefined') {
     logStep("uiManager.js loaded");
 }
 
-export const activeDoorCoords = null;
+export let activeDoorCoords = null;
 let selectedSkills = []; 
 
 // ==========================================
@@ -503,7 +503,7 @@ export function initUI() {
         };
     }
 
-    initMiningListeners();
+    initMiningListeners(); // 👈 Fully operational!
 }
 
 export function openUnifiedStorage(id, items, type) {
@@ -940,7 +940,7 @@ export function processClaimedStorage(items) {
         if (hero.inventory.length < hero.maxSlots) hero.inventory.push(item);
         else console.log("Dropped due to full inventory:", item.name);
     });
-    alert(`Looted ${items.length} items from Lockbox!`);
+    alert("Looted items successfully retrieved!");
     syncInventoryWithServer();
 }
 
@@ -962,7 +962,7 @@ function renderStoreUI() {
         const othersListings = activeStoreData.listings.filter(l => l.seller !== playerWallet);
         
         if (othersListings.length === 0) {
-            content.innerHTML = `<p style="text-align:center; font-size:10px;">MARKET IS EMPTY.</p>`;
+            content.innerHTML = `<div style="text-align:center; font-size:8px; color:#555; margin-top:80px;">MARKET IS EMPTY</div>`;
             return;
         }
 
@@ -1181,29 +1181,22 @@ function transferTempleItem(index, source) {
         const item = hero.inventory[index];
         const isSeed = item.seedType.includes("_seed");
         if (!isSeed) {
-            alert(`Only designated items are allowed in this storage container!`);
+            alert("The Gods reject this offering! They only accept Seeds.");
             return;
         }
-
-        player.inventory.splice(index, 1);
-        cellarItems.push(item);
-    } else if (direction === 'to_hero') {
-        if (player.inventory.length >= 10) {
-            socket.emit('inventoryFull');
+        
+        if (altarItem) hero.inventory.push(altarItem);
+        altarItem = hero.inventory.splice(index, 1)[0];
+    } else if (source === 'altar') {
+        if (hero.inventory.length >= hero.maxSlots) {
+            alert("Backpack is full!");
             return;
         }
-        const item = cellarItems[index];
-        if (!item) return;
-
-        cellarItems.splice(index, 1);
-        player.inventory.push(item);
+        hero.inventory.push(altarItem);
+        altarItem = null;
     }
-
-    fs.writeFileSync('cellars.json', JSON.stringify(cellarDb, null, 2));
-    syncPlayerAndSave(socket.id);
-
-    socket.emit('updateInventory', player.inventory);
-    io.emit('cellarUpdated', { cellarId: cellarId, items: cellarItems });
+    renderTempleUI();
+    syncInventoryWithServer();
 }
 
 // ==========================================
@@ -1213,6 +1206,11 @@ function transferTempleItem(index, source) {
 export function openWithdrawMenu() {
     document.getElementById('withdraw-menu').classList.remove('hidden');
     document.getElementById('withdraw-balance-max').innerText = hero.inGameUni.toFixed(8);
+}
+
+export async function executeWithdrawal(voucher) {
+    console.log("🎟️ Received cryptographic voucher from server. Opening MetaMask...");
+    await submitVoucherToChain(voucher);
 }
 
 export function openMapTableMenu() {
@@ -1243,6 +1241,18 @@ export function openMapTableMenu() {
 // ==========================================
 // 🧝 HOBBIT WORKFORCE RENDERER
 // ==========================================
+let selectedHobbitId = null;
+
+export function openHobbitManagerMenu() {
+    selectedHobbitId = null; 
+    document.getElementById('hobbit-manager-menu').classList.remove('hidden');
+    renderHobbitManagerUI();
+
+    document.getElementById('close-hobbit-manager-btn').onclick = () => {
+        document.getElementById('hobbit-manager-menu').classList.add('hidden');
+    };
+}
+
 function renderHobbitManagerUI() {
     const listEl = document.getElementById('hobbit-list');
     const detailsEl = document.getElementById('selected-hobbit-details');
@@ -1420,6 +1430,93 @@ export function openVillageMenu(wellX, wellY, villageData) {
     document.getElementById('close-village-btn').onclick = () => {
         document.getElementById('village-menu').classList.add('hidden');
     };
+}
+
+// ==========================================
+// ⛏️ MINING UI LOGIC
+// ==========================================
+export let activeOreId = null;
+export let activeOreData = null;
+let confirmingOreSpeedUp = false; 
+
+export function openMiningMenu(oreId, data) {
+    activeOreId = oreId;
+    activeOreData = data;
+    confirmingOreSpeedUp = false; 
+    document.getElementById('mining-menu').classList.remove('hidden');
+    renderMiningUI();
+}
+
+export function handleRemoteOreUpdate(oreId, data) {
+    if (activeOreId === oreId) {
+        activeOreData = data;
+        renderMiningUI();
+    }
+}
+
+function renderMiningUI() {
+    if (!activeOreData) return;
+    
+    const bar = document.getElementById('mining-progress-bar');
+    const text = document.getElementById('mining-progress-text');
+    const costText = document.getElementById('mining-cost-text'); 
+    const actionBtn = document.getElementById('mining-action-btn');
+
+    const pct = ((activeOreData.maxWork - activeOreData.workLeft) / activeOreData.maxWork) * 100;
+    bar.style.width = `${pct}%`;
+    text.innerText = `${activeOreData.workLeft} / ${activeOreData.maxWork}`;
+
+    if (activeOreData.claimed) {
+        actionBtn.innerText = "DEPLETED";
+        actionBtn.className = "pixel-btn";
+        actionBtn.disabled = true;
+        text.innerText = "0 / 3600";
+        costText.innerText = "";
+    } else if (activeOreData.workLeft <= 0) {
+        actionBtn.innerText = "COLLECT NOW!";
+        actionBtn.className = "pixel-btn safe";
+        actionBtn.disabled = false;
+        text.innerText = "JOB COMPLETE";
+        costText.innerText = "";
+        confirmingOreSpeedUp = false;
+    } else {
+        actionBtn.disabled = false;
+        
+        if (confirmingOreSpeedUp) {
+            actionBtn.innerText = "SPEED - UP NOW!";
+            actionBtn.className = "pixel-btn safe";
+            costText.innerText = "COST: 50 UNI"; 
+        } else {
+            actionBtn.innerText = "SPEED - UP";
+            actionBtn.className = "pixel-btn";
+            costText.innerText = ""; 
+        }
+    }
+}
+
+export function initMiningListeners() {
+    document.getElementById('close-mining-btn').addEventListener('click', () => {
+        document.getElementById('mining-menu').classList.add('hidden');
+        activeOreId = null;
+        confirmingOreSpeedUp = false;
+    });
+
+    document.getElementById('mining-action-btn').addEventListener('click', () => {
+        if (activeOreData.claimed) return;
+
+        if (activeOreData.workLeft <= 0) {
+            if (socket) socket.emit('collectOre', { oreId: activeOreId });
+        } else {
+            if (!confirmingOreSpeedUp) {
+                confirmingOreSpeedUp = true;
+                renderMiningUI(); 
+            } else {
+                if (socket) socket.emit('speedUpOre', { oreId: activeOreId });
+                confirmingOreSpeedUp = false; 
+                renderMiningUI(); 
+            }
+        }
+    });
 }
 
 // ==========================================
@@ -1815,94 +1912,8 @@ function renderActivityLog(logData) {
 }
 
 // ==========================================
-// 🗺️ LOCATION BANNER ENGINE
+// 🎨 MULTIPLAYER PORTAL LOGIC & HUDS
 // ==========================================
-let bannerTimeout = null;
-
-export function triggerLocationBanner(cx, cy, cellType) {
-    const banner = document.getElementById('location-banner');
-    const nameEl = document.getElementById('location-name');
-    const typeEl = document.getElementById('location-type');
-    if (!banner || !nameEl || !typeEl) return;
-
-    let zoneName = "The Wilds";
-    let zoneDesc = "UNCLAIMED TERRITORY";
-    const chunkIdx = cy * CONFIG.MAP_SIZE + cx;
-
-    if (cellType === 101) {
-        zoneName = getZoneName(cx, cy);
-        zoneDesc = "PEACEFUL VILLAGE";
-    } else if (cellType === 102) {
-        zoneName = getZoneName(cx, cy);
-        zoneDesc = "FORTIFIED TOWN";
-    } else if (cellType === 103) {
-        zoneName = getZoneName(cx, cy) + " Castle";
-        zoneDesc = "ROYAL STRONGHOLD";
-    } else if (cellType === 107) { 
-        zoneName = getZoneName(cx, cy) + " Camp";
-        zoneDesc = "MINING EXPEDITION";
-    } else if (cellType < 55 || cellType === 10 || cellType === 11 || cellType === 12) {
-        let isLake = false;
-        let lakeId = -1;
-        
-        if (window.geography && window.geography.lakes) {
-            for (let i = 0; i < window.geography.lakes.length; i++) {
-                if (window.geography.lakes[i].includes(chunkIdx)) {
-                    isLake = true; lakeId = i; break;
-                }
-            }
-        }
-
-        if (isLake) {
-            zoneName = getZoneName(lakeId * 10, lakeId * 20) + " Lake";
-            zoneDesc = "FRESH WATER";
-        } else if (cellType === 12) {
-            zoneName = getZoneName(cx, cy) + " River";
-            zoneDesc = "FLOWING WATER";
-        } else {
-            zoneName = getZoneName(999, 999) + " Ocean"; 
-            zoneDesc = "OPEN WATER";
-        }
-    } else {
-        let contId = -1;
-        if (window.geography && window.geography.continents) {
-            for (let i = 0; i < window.geography.continents.length; i++) {
-                if (window.geography.continents[i].includes(chunkIdx)) {
-                    contId = i; break;
-                }
-            }
-        }
-
-        let landName = getZoneName(contId * 5, contId * 15);
-        zoneName = landName + (contId === 0 ? " Continent" : " Isle");
-        
-        if (cellType === 104) zoneDesc = "FOREST BIOME";
-        else if (cellType === 105) zoneDesc = "DESERT BIOME";
-        else if (cellType === 106) zoneDesc = "MOUNTAIN BIOME";
-        else zoneDesc = "THE WILDS";
-    }
-
-    nameEl.innerText = zoneName;
-    typeEl.innerText = zoneDesc;
-
-    banner.style.opacity = "1";
-
-    if (bannerTimeout) clearTimeout(bannerTimeout);
-    bannerTimeout = setTimeout(() => {
-        banner.style.opacity = "0";
-    }, 4000);
-}
-
-export function openHobbitManagerMenu() {
-    selectedHobbitId = null; 
-    document.getElementById('hobbit-manager-menu').classList.remove('hidden');
-    renderHobbitManagerUI();
-
-    document.getElementById('close-hobbit-manager-btn').onclick = () => {
-        document.getElementById('hobbit-manager-menu').classList.add('hidden');
-    };
-}
-
 export function setupMultiplayerListeners(s) {
     s.on('needsCharacterCreation', () => {
         document.getElementById('main-menu').classList.add('hidden');
@@ -2108,6 +2119,10 @@ export function setupMultiplayerListeners(s) {
 
     s.on('wellInteractionMessage', (data) => {
         alert(data.message);
+    });
+
+    s.on('receiveWithdrawalVoucher', (voucher) => {
+        executeWithdrawal(voucher);
     });
 }
 
