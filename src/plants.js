@@ -1,15 +1,12 @@
 // src/plants.js
 import { seedBacteria } from './bacteria.js';
 import { ITEM_TYPES } from './items.js';
-// src/plants.js
 import { hero, getFocusCoordinates } from './entities.js';
-import { viewport } from './viewport.js'; // 👈 IMPORTED: Allows viewport boundary checks
-import { socket } from './multiplayer.js'; // 👈 ADD THIS IMPORT
-
-
+import { viewport } from './viewport.js'; 
+import { socket } from './multiplayer.js'; 
 
 if (typeof window !== 'undefined') {
-    logStep("plants.js");
+    logStep("plants.js loaded");
 }
 
 export const plants = new Map();
@@ -86,8 +83,6 @@ function witherPlant(plant, key, fertilityMatrix) {
     plants.delete(key);
 }
 
-// Replace createPlant() in src/plants.js with this:
-
 export function createPlant(gx, gy, fertilityMatrix = null, startingGrowth = 0, type = 'grass', leftoverTime = 0, isServerSync = false) {
     const key = `${gx}_${gy}`;
     if (plants.has(key)) return; 
@@ -143,8 +138,8 @@ export function createPlant(gx, gy, fertilityMatrix = null, startingGrowth = 0, 
 
 export function updatePlants(modifier, fertilityMatrix, worldMatrix, roomMatrix) {
     const focus = getFocusCoordinates();
-    const heroCX = Math.floor(hero.x / 1600);
-    const heroCY = Math.floor(hero.y / 1600);
+    const focusCX = Math.floor(focus.x / 1600); // 🎯 Centers active chunk calculations on current camera focus coordinates
+    const focusCY = Math.floor(focus.y / 1600); 
     const now = Date.now();
 
     for (let [key, plant] of plants) {
@@ -152,9 +147,9 @@ export function updatePlants(modifier, fertilityMatrix, worldMatrix, roomMatrix)
         const plantCY = Math.floor(plant.gy / 100);
 
         // ==========================================
-        // ❄️ TIER 3: FROZEN ZONE (Outside 3x3 Chunks)
+        // ❄️ TIER 3: FROZEN ZONE (Outside 3x3 Chunks centered on focus)
         // ==========================================
-        const isInsideActiveChunks = Math.abs(plantCX - heroCX) <= 1 && Math.abs(plantCY - heroCY) <= 1;
+        const isInsideActiveChunks = Math.abs(plantCX - focusCX) <= 1 && Math.abs(plantCY - focusCY) <= 1;
         if (!isInsideActiveChunks) {
             // Purge distant plants from client memory to prevent unbound RAM leakage
             plants.delete(key); 
@@ -193,7 +188,6 @@ export function updatePlants(modifier, fertilityMatrix, worldMatrix, roomMatrix)
 
         // --- 1. GROWTH PHASE ---
         if (plant.growth < 100) {
-            // 🎯 THE FIX: Restored the * 0.1 multiplier
             const ratePerSec = plant.growthRate * 0.1; 
             const growthAdded = ratePerSec * simulatedTime;
             const def = PLANT_DEFS[plant.type];
@@ -274,4 +268,3 @@ function spreadSeed(parentPlant, fertilityMatrix, worldMatrix, roomMatrix, lefto
 
     createPlant(targetX, targetY, fertilityMatrix, 0, parentPlant.type, leftoverTime);
 }
-
