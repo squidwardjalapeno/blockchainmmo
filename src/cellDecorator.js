@@ -1267,7 +1267,7 @@ export function populateWorld(worldMap) {
             if (roll > 1.99995177469) worldMap[i] = 103; 
             else if (roll > 1.99942129629) worldMap[i] = 102; 
             else if (roll > 0.9978) worldMap[i] = 107; 
-            else if (roll > 0.99305555555) worldMap[i] = 101; 
+            else if (roll > 0.98305555555) worldMap[i] = 101; 
         }
     }
 
