@@ -115,7 +115,6 @@ function isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix, hobbit = null, fro
     const data = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix);
     if (!data || data.tileID === undefined) return false;
 
-    // 🎯 Collision tiles aligned with the central rules (Stone walls: 11, wall panels: 48)
     const absoluteWalls = [40, 50, 52, 1, 3, 5, 41, 43, 27, 46, 47, 17, 18, 19, 21, 24, 11, 48];
     if (absoluteWalls.includes(data.tileID)) return false;
 
@@ -161,8 +160,6 @@ function findPathToCoords(startTX, startTY, targetTX, targetTY, worldMatrix, roo
 
 /**
  * 🎯 High-performance intermediate BFS Pathfinding engine for far-away targets.
- * Bounded queue system that computes safe walkable waypoints towards distant coordinates
- * to bypass structures, gates, and trees.
  */
 function findPathToFarTarget(startTX, startTY, targetTX, targetTY, worldMatrix, roomMatrix, hobbit, maxSearch = 300) {
     const queue = [{ x: startTX, y: startTY, path: [] }];
@@ -207,7 +204,6 @@ function findPathToFarTarget(startTX, startTY, targetTX, targetTY, worldMatrix, 
         }
     }
     
-    // Fall back to returning the intermediate path representing the closest physically reachable node to the target
     return bestNode ? bestNode.path : null;
 }
 
@@ -246,8 +242,6 @@ function estimateCatchUpStep(startX, startY, targetX, targetY) {
 
 /**
  * ⚡ HIGH-PERFORMANCE ROAD-MARCHING HEURISTIC (LOOP RESISTANT)
- * Encourages tracking designated pathways while heavily penalizing recently
- * visited steps in short-term memory to instantly resolve local loop trap states.
  */
 function findNextRoadStep(currX, currY, targetX, targetY, worldMatrix, roomMatrix, hobbit) {
     const dirs = [[0,-1], [0,1], [-1,0], [1,0], [-1,-1], [1,-1], [-1,1], [1,1]];
@@ -991,7 +985,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 hobbit.attackTarget = nearestEnemy; 
                 
                 if (nearestEnemyDist <= 24) {
-                    // 🎯 THE FIX: Do not overwrite state to idle if currently attacking
                     if (hobbit.state !== 'attacking') {
                         hobbit.state = 'idle';
                         hobbit.path = [];
@@ -1036,14 +1029,24 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         hobbit.state = 'idle';
                         hobbit.path = [];
                     } else if (!hobbit.path || hobbit.path.length === 0) {
-                        // 🎯 THE FIX: Run a robust wall-avoiding waypoint generation check towards the target well
-                        const path = findPathToFarTarget(currTX, currTY, targetWell.x, targetWell.y, worldMatrix, roomMatrix, hobbit, 400);
-                        if (path && path.length > 0) {
-                            hobbit.path = path;
-                            hobbit.state = 'walking';
+                        // Throttled long-range paths to prevent planning loops on blockage
+                        if (hobbit.pathTimer <= 0) {
+                            const path = findPathToFarTarget(currTX, currTY, targetWell.x, targetWell.y, worldMatrix, roomMatrix, hobbit, 400);
+                            if (path && path.length > 0) {
+                                hobbit.path = path;
+                                hobbit.state = 'walking';
+                                hobbit.pathTimer = 0; 
+                            } else {
+                                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                                hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
+                                hobbit.pathTimer = 1.5 + Math.random() * 1.0; 
+                            }
                         } else {
-                            assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                            hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
+                            hobbit.state = 'idle';
+                            if (Math.random() > 0.98) {
+                                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                                if (hobbit.path.length > 0) hobbit.state = 'walking';
+                            }
                         }
                     }
                 } else {
@@ -1093,7 +1096,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     hobbit.goal = 'defend_home';
                     
                     if (enemyDist <= 24) {
-                        // 🎯 THE FIX: Do not overwrite state to idle if currently attacking
                         if (hobbit.state !== 'attacking') {
                             hobbit.state = 'idle';
                             hobbit.path = [];
@@ -1884,8 +1886,8 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                     hobbit.pathTimer = 1.5 + Math.random() * 1.5;
                                     const path = findPathToCoords(currTX, currTY, hobbit.doorX, hobbit.doorY, worldMatrix, roomMatrix, hobbit, 40);
                                     if (path) {
-                                        hobbit.path = path;
                                         hobbit.state = 'walking';
+                                        hobbit.path = path;
                                     } else {
                                         assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
                                         hobbit.goal = 'wander';
@@ -2101,7 +2103,20 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 const moveX = (dx / dist) * hobbit.speed * modifier;
                 const moveY = (dy / dist) * hobbit.speed * modifier;
 
-                moveEntity(hobbit, moveX, moveY, worldMatrix, roomMatrix);
+                const moved = moveEntity(hobbit, moveX, moveY, worldMatrix, roomMatrix);
+                
+                // Stuck Detection Engine: wipe path if sliding against physically unpassable collisions for more than 0.5 seconds
+                if (!moved) {
+                    hobbit.stuckTimer = (hobbit.stuckTimer || 0) + modifier;
+                    if (hobbit.stuckTimer > 0.5) {
+                        hobbit.path = [];
+                        hobbit.state = 'idle';
+                        hobbit.pathTimer = 1.0 + Math.random() * 1.0; 
+                        hobbit.stuckTimer = 0;
+                    }
+                } else {
+                    hobbit.stuckTimer = 0;
+                }
             } else {
                 hobbit.x = targetX;
                 hobbit.y = targetY;
