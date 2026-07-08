@@ -115,7 +115,7 @@ function isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix, hobbit = null, fro
     const data = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix);
     if (!data || data.tileID === undefined) return false;
 
-    // 🎯 THE FIX: Added 11 (Citadel/Town Stone Walls) and 48 (Exterior Wall Panels) to the blocked path array
+    // 🎯 Collision tiles aligned with the central rules (Stone walls: 11, wall panels: 48)
     const absoluteWalls = [40, 50, 52, 1, 3, 5, 41, 43, 27, 46, 47, 17, 18, 19, 21, 24, 11, 48];
     if (absoluteWalls.includes(data.tileID)) return false;
 
@@ -160,12 +160,12 @@ function findPathToCoords(startTX, startTY, targetTX, targetTY, worldMatrix, roo
 }
 
 /**
- * 🎯 NEW: High-performance intermediate BFS Pathfinding engine for far-away targets.
+ * 🎯 High-performance intermediate BFS Pathfinding engine for far-away targets.
  * Bounded queue system that computes safe walkable waypoints towards distant coordinates
  * to bypass structures, gates, and trees.
  */
 function findPathToFarTarget(startTX, startTY, targetTX, targetTY, worldMatrix, roomMatrix, hobbit, maxSearch = 300) {
-    const queue = [{ x: startTX, y: startY, path: [] }];
+    const queue = [{ x: startTX, y: startTY, path: [] }];
     const visited = new Set([`${startTX}_${startTY}`]);
     
     let bestNode = null;
@@ -1036,7 +1036,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         hobbit.state = 'idle';
                         hobbit.path = [];
                     } else if (!hobbit.path || hobbit.path.length === 0) {
-                        // 🎯 THE FIX: Bypassed the simple 1-tile lookahead check and run a robust wall-avoiding waypoint generation check towards the target well
+                        // 🎯 THE FIX: Run a robust wall-avoiding waypoint generation check towards the target well
                         const path = findPathToFarTarget(currTX, currTY, targetWell.x, targetWell.y, worldMatrix, roomMatrix, hobbit, 400);
                         if (path && path.length > 0) {
                             hobbit.path = path;
@@ -1374,8 +1374,8 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                     hobbit.pathTimer = 1.5 + Math.random() * 1.5;
                                     const path = findPathToCoords(currTX, currTY, hobbit.doorX, hobbit.doorY, worldMatrix, roomMatrix, hobbit, 40);
                                     if (path) {
-                                        hobbit.path = path;
                                         hobbit.state = 'walking';
+                                        hobbit.path = path;
                                     } else {
                                         assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
                                         hobbit.goal = 'wander';
