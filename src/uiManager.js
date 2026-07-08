@@ -14,8 +14,8 @@ if (typeof window !== 'undefined') {
     logStep("uiManager.js loaded");
 }
 
-export let activeDoorCoords = null;
-let selectedSkills = []; // 👈 Declared at file scope to resolve the ReferenceError
+export const activeDoorCoords = null;
+let selectedSkills = []; 
 
 // ==========================================
 // 🏗️ UNIFIED WORKSTATION CONFIGURATIONS
@@ -135,6 +135,29 @@ export const villageCriminals = new Map();
 if (typeof window !== 'undefined') {
     window.villageOwners = villageOwners;
     window.villageCriminals = villageCriminals;
+}
+
+// ==========================================
+// 🎨 FACTION COLOR DETERMINISTIC GENERATOR
+// ==========================================
+const factionColors = new Map();
+
+export function getFactionColor(factionName) {
+    if (factionColors.has(factionName)) {
+        return factionColors.get(factionName);
+    }
+    
+    // Deterministic string HSL color hashing
+    let hash = 0;
+    for (let i = 0; i < factionName.length; i++) {
+        hash = factionName.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    
+    const h = Math.abs(hash) % 360;
+    const color = `hsl(${h}, 85%, 65%)`; // High-contrast bright pastels
+    
+    factionColors.set(factionName, color);
+    return color;
 }
 
 // ==========================================
@@ -759,18 +782,17 @@ export function renderTabContent() {
     switch (uiState.currentTab) {
         case 'inventory':
             const heldItem = hero.equipment?.mainHand;
+            const borderStyle = (item) => (heldItem === item) ? 'border: 4px dashed var(--highlight); background: rgba(138, 154, 91, 0.2);' : '';
+            
             container.innerHTML = `<h3 style="margin-top:0;">Backpack</h3><div class="inv-grid">` + 
-                hero.inventory.map((item, index) => {
-                    const isActive = (heldItem === item);
-                    const borderStyle = isActive ? 'border: 4px dashed var(--highlight); background: rgba(138, 154, 91, 0.2);' : '';
-                    
-                    return `
+                hero.inventory.map((item, index) => `
                     <div class="inv-item draggable-item" draggable="true" data-index="${index}" data-source="hero" 
-                         onclick="window.equipItem(${index})" style="${borderStyle}">
+                         onclick="window.equipItem(${index})" style="${borderStyle(item)}">
                         <div class="item-icon" style="font-size: 20px; margin-bottom:5px;">${getItemIcon(item)}</div>
-                        <span>${item.name} ${item.count > 1 ? `<br><span style="color:var(--banana-dark);">(x${item.count})</span>` : ''}</span>
+                        <span>${item.name}</span>
+                        ${item.count > 1 ? `<br><span style="color:var(--banana-dark);">(x${item.count})</span>` : ''}
                     </div>
-                `}).join('') + `</div>
+                `).join('') + `</div>
                 <p style="font-size: 8px; text-align: center; margin-top: 10px; color: #555;">Click to hold in Main Hand.</p>`;
             
             setTimeout(() => {
@@ -1106,7 +1128,7 @@ window.claimStoredItem = (index) => {
 };
 
 // ==========================================
-// ⛩️ TEMPLE ALTAR MENU --> Setup listeners
+// ⛩️ TEMPLE ALTAR MENU
 // ==========================================
 export function openTempleMenu() {
     altarItem = null;
@@ -1159,149 +1181,264 @@ function transferTempleItem(index, source) {
         const item = hero.inventory[index];
         const isSeed = item.seedType.includes("_seed");
         if (!isSeed) {
-            alert("The Gods reject this offering! They only accept Seeds.");
+            alert(`Only designated items are allowed in this storage container!`);
             return;
         }
-        
-        if (altarItem) hero.inventory.push(altarItem);
-        altarItem = hero.inventory.splice(index, 1)[0];
-    } else if (source === 'altar') {
-        if (hero.inventory.length >= hero.maxSlots) {
-            alert("Backpack is full!");
+
+        player.inventory.splice(index, 1);
+        cellarItems.push(item);
+    } else if (direction === 'to_hero') {
+        if (player.inventory.length >= 10) {
+            socket.emit('inventoryFull');
             return;
         }
-        hero.inventory.push(altarItem);
-        altarItem = null;
+        const item = cellarItems[index];
+        if (!item) return;
+
+        cellarItems.splice(index, 1);
+        player.inventory.push(item);
     }
-    renderTempleUI();
-    syncInventoryWithServer();
+
+    fs.writeFileSync('cellars.json', JSON.stringify(cellarDb, null, 2));
+    syncPlayerAndSave(socket.id);
+
+    socket.emit('updateInventory', player.inventory);
+    io.emit('cellarUpdated', { cellarId: cellarId, items: cellarItems });
 }
 
 // ==========================================
-// 🗺️ MAP TABLE UI LOGIC
+// CARTOGRAPHY (Map Table) & WITHDRAWAL
 // ==========================================
+
+export function openWithdrawMenu() {
+    document.getElementById('withdraw-menu').classList.remove('hidden');
+    document.getElementById('withdraw-balance-max').innerText = hero.inGameUni.toFixed(8);
+}
+
 export function openMapTableMenu() {
     document.getElementById('maptable-menu').classList.remove('hidden');
-    const uiMapCanvas = document.getElementById('ui-map-canvas');
-    const uiMapCtx = uiMapCanvas.getContext('2d');
     
-    uiMapCtx.imageSmoothingEnabled = false;
-    uiMapCtx.clearRect(0, 0, uiMapCanvas.width, uiMapCanvas.height);
-    uiMapCtx.drawImage(mapCanvas, 0, 0, uiMapCanvas.width, uiMapCanvas.height);
+    // Draw pre-rendered minimap directly into the UI container
+    const mapCanvasEl = document.getElementById('ui-map-canvas');
+    const ctx = mapCanvasEl.getContext('2d');
     
-    const scale = uiMapCanvas.width / CONFIG.MAP_SIZE;
-    const pX = Math.floor(hero.x / 1600);
-    const pY = Math.floor(hero.y / 1600);
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, mapCanvasEl.width, mapCanvasEl.height);
+    ctx.drawImage(mapCanvas, 0, 0, mapCanvasEl.width, mapCanvasEl.height);
+
+    // Draw Player Location indicator on the minimap
+    const pX = Math.floor(hero.x / 16);
+    const pY = Math.floor(hero.y / 16);
     
-    uiMapCtx.fillStyle = "#FFD700";
-    uiMapCtx.fillRect((pX * scale) - (scale / 4), (pY * scale) - (scale / 4), scale * 1.5, scale * 1.5); 
+    ctx.fillStyle = "#FFD700"; // Golden player beacon
+    ctx.strokeStyle = "white";
+    ctx.lineWidth = 1;
+    
+    ctx.beginPath();
+    ctx.arc(pX * 8, pY * 8, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
 }
 
 // ==========================================
-// ⛏️ MINING UI LOGIC
+// 🧝 HOBBIT WORKFORCE RENDERER
 // ==========================================
-export let activeOreId = null;
-export let activeOreData = null;
-let confirmingOreSpeedUp = false; 
-
-export function openMiningMenu(oreId, data) {
-    activeOreId = oreId;
-    activeOreData = data;
-    confirmingOreSpeedUp = false; 
-    document.getElementById('mining-menu').classList.remove('hidden');
-    renderMiningUI();
-}
-
-export function handleRemoteOreUpdate(oreId, data) {
-    if (activeOreId === oreId) {
-        activeOreData = data;
-        renderMiningUI();
-    }
-}
-
-function renderMiningUI() {
-    if (!activeOreData) return;
+function renderHobbitManagerUI() {
+    const listEl = document.getElementById('hobbit-list');
+    const detailsEl = document.getElementById('selected-hobbit-details');
+    const buttonContainer = document.getElementById('job-button-container');
     
-    const bar = document.getElementById('mining-progress-bar');
-    const text = document.getElementById('mining-progress-text');
-    const costText = document.getElementById('mining-cost-text'); 
-    const actionBtn = document.getElementById('mining-action-btn');
+    import('./hobbits.js').then(m => {
+        const activeHobbits = m.hobbits;
 
-    const pct = ((activeOreData.maxWork - activeOreData.workLeft) / activeOreData.maxWork) * 100;
-    bar.style.width = `${pct}%`;
-    text.innerText = `${activeOreData.workLeft} / ${activeOreData.maxWork}`;
-
-    if (activeOreData.claimed) {
-        actionBtn.innerText = "DEPLETED";
-        actionBtn.className = "pixel-btn";
-        actionBtn.disabled = true;
-        text.innerText = "0 / 3600";
-        costText.innerText = "";
-    } else if (activeOreData.workLeft <= 0) {
-        actionBtn.innerText = "COLLECT NOW!";
-        actionBtn.className = "pixel-btn safe";
-        actionBtn.disabled = false;
-        text.innerText = "JOB COMPLETE";
-        costText.innerText = "";
-        confirmingOreSpeedUp = false;
-    } else {
-        actionBtn.disabled = false;
-        
-        if (confirmingOreSpeedUp) {
-            actionBtn.innerText = "SPEED - UP NOW!";
-            actionBtn.className = "pixel-btn safe";
-            costText.innerText = "COST: 50 UNI"; 
-        } else {
-            actionBtn.innerText = "SPEED - UP";
-            actionBtn.className = "pixel-btn";
-            costText.innerText = ""; 
+        if (activeHobbits.length === 0) {
+            listEl.innerHTML = `<div style="text-align:center; font-size:8px; color:#555; margin-top:80px;">NO ACTIVE WORKERS IN RANGE</div>`;
+            detailsEl.innerText = "Workforce empty.";
+            buttonContainer.innerHTML = "";
+            return;
         }
-    }
-}
 
-export function initMiningListeners() {
-    document.getElementById('close-mining-btn').addEventListener('click', () => {
-        document.getElementById('mining-menu').classList.add('hidden');
-        activeOreId = null;
-        confirmingOreSpeedUp = false;
-    });
+        // ⚡ OPTIMIZATION: Filter roster to show only hobbits belonging to the player's local village
+        import('./cellDecorator.js').then(decorator => {
+            const playerX = Math.floor(hero.x / 16);
+            const playerY = Math.floor(hero.y / 16);
+            
+            let closestWell = null;
+            let minWellDist = Infinity;
+            
+            decorator.plannedWells.forEach(well => {
+                const dist = Math.hypot(well.x - playerX, well.y - playerY);
+                if (dist < minWellDist) {
+                    minWellDist = dist;
+                    closestWell = well;
+                }
+            });
 
-    document.getElementById('mining-action-btn').addEventListener('click', () => {
-        if (activeOreData.claimed) return;
-
-        if (activeOreData.workLeft <= 0) {
-            if (socket) socket.emit('collectOre', { oreId: activeOreId });
-        } else {
-            if (!confirmingOreSpeedUp) {
-                confirmingOreSpeedUp = true;
-                renderMiningUI(); 
-            } else {
-                if (socket) socket.emit('speedUpOre', { oreId: activeOreId });
-                confirmingOreSpeedUp = false; 
-                renderMiningUI(); 
+            let filteredHobbits = activeHobbits;
+            if (closestWell) {
+                filteredHobbits = activeHobbits.filter(hob => {
+                    const hobWell = decorator.getVillageAt(hob.homeX || Math.floor(hob.x / 16), hob.homeY || Math.floor(hob.y / 16));
+                    return hobWell && hobWell.x === closestWell.x && hobWell.y === closestWell.y;
+                });
             }
-        }
+
+            if (filteredHobbits.length === 0) {
+                listEl.innerHTML = `<div style="text-align:center; font-size:8px; color:#555; margin-top:80px;">NO WORKERS IN THIS SETTLEMENT</div>`;
+                detailsEl.innerText = "Workforce empty.";
+                buttonContainer.innerHTML = "";
+                return;
+            }
+
+            listEl.innerHTML = filteredHobbits.map(hob => {
+                const isSelected = (hob.id === selectedHobbitId);
+                const style = isSelected ? 'background: var(--highlight); color: white; border: 4px solid var(--bg-dark);' : 'background: white; border: 4px solid var(--bg-dark);';
+                return `
+                    <div class="workforce-row" onclick="window.selectHobbit('${hob.id}')" style="${style} padding: 8px; font-size: 8px; cursor: pointer; display: flex; justify-content: space-between;">
+                        <strong>${hob.name}</strong>
+                        <span style="color: ${hob.job === 'Idle' ? '#888' : 'var(--banana-dark)'};">${hob.job.toUpperCase()}</span>
+                    </div>
+                `;
+            }).join('');
+
+            const selected = filteredHobbits.find(h => h.id === selectedHobbitId);
+            if (selected) {
+                detailsEl.innerHTML = `
+                    <strong style="font-size: 10px; color: var(--text-dark);">${selected.name}</strong><br>
+                    <span style="font-size:8px; color: #555;">CURRENT ROLE: <strong style="color:var(--highlight);">${selected.job.toUpperCase()}</strong></span>
+                `;
+
+                const isSpectating = (gameState.spectatedHobbitId === selected.id);
+
+                buttonContainer.innerHTML = `
+                    <button onclick="window.assignHobbitJob('Forager')" class="pixel-btn ${selected.job === 'Forager' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">FORAGER</button>
+                    <button onclick="window.assignHobbitJob('Farmer')" class="pixel-btn ${selected.job === 'Farmer' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">FARMER</button>
+                    <button onclick="window.assignHobbitJob('Trader')" class="pixel-btn ${selected.job === 'Trader' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">TRADER</button>
+                    <button onclick="window.assignHobbitJob('Idle')" class="pixel-btn ${selected.job === 'Idle' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">IDLE</button>
+                    <button id="spectate-btn" onclick="window.toggleSpectateHobbit('${selected.id}')" class="pixel-btn ${isSpectating ? 'safe' : 'cancel'}" style="padding: 8px; font-size: 8px; margin-top: 10px; width: 100%;">${isSpectating ? '🛑 STOP SPECTATING' : '👁️ SPECTATE'}</button>
+                `;
+            } else {
+                detailsEl.innerText = "Select a hobbit to modify their duties.";
+                buttonContainer.innerHTML = "";
+            }
+        });
     });
 }
 
-// ==========================================
-// 🏦 WITHDRAWAL UI LOGIC
-// ==========================================
-export function openWithdrawMenu() {
-    if (!playerWallet) { alert("Connect your wallet first!"); return; }
-    document.getElementById('withdraw-balance-max').innerText = hero.inGameUni.toFixed(8); 
-    document.getElementById('withdraw-input').value = "";
-    document.getElementById('withdraw-menu').classList.remove('hidden');
+window.selectHobbit = (id) => {
+    selectedHobbitId = id;
+    renderHobbitManagerUI();
+};
+
+window.assignHobbitJob = (jobName) => {
+    if (!selectedHobbitId) return;
+    import('./hobbits.js').then(m => {
+        const target = m.hobbits.find(m => m.id === selectedHobbitId);
+        if (target) {
+            target.job = jobName;
+            target.path = []; 
+            target.state = 'idle';
+            renderHobbitManagerUI();
+        }
+    });
+};
+
+window.toggleSpectateHobbit = (id) => {
+    if (gameState.spectatedHobbitId === id) {
+        gameState.spectatedHobbitId = null;
+    } else {
+        gameState.spectatedHobbitId = id;
+        document.getElementById('hobbit-manager-menu').classList.add('hidden');
+    }
+    renderHobbitManagerUI();
+    updateHUD();
+};
+
+export function openDoorControlMenu(gx, gy, roomID) {
+    activeDoorCoords = { gx, gy, roomID };
+    document.getElementById('door-menu-title').innerText = `🚪 ROOM #${roomID}`;
+    document.getElementById('door-menu').classList.remove('hidden');
+    
+    if (socket) {
+        socket.emit('requestDoorState', { gx, gy });
+    }
 }
 
-export async function executeWithdrawal(voucher) {
-    console.log("🎟️ Received cryptographic voucher from server. Opening MetaMask...");
-    await submitVoucherToChain(voucher);
+export function updateDoorControlUI(gx, gy, locked) {
+    if (activeDoorCoords && activeDoorCoords.gx === gx && activeDoorCoords.gy === gy) {
+        const label = document.getElementById('door-status-label');
+        if (label) {
+            label.innerText = locked ? "LOCKED" : "UNLOCKED";
+            label.style.color = locked ? "#d95757" : "var(--highlight)";
+        }
+    }
+}
+
+export function openVillageMenu(wellX, wellY, villageData) {
+    document.getElementById('village-menu').classList.remove('hidden');
+    
+    const ownerLabel = document.getElementById('village-owner-label');
+    const progressSection = document.getElementById('village-progress-section');
+    const progressBar = document.getElementById('village-progress-bar');
+    const progressText = document.getElementById('village-progress-text');
+    const claimBtn = document.getElementById('village-claim-btn');
+
+    const shortOwner = villageData.owner ? (villageData.owner.startsWith('0x') ? villageData.owner.substring(0, 6) + "..." : villageData.owner) : "UNCLAIMED";
+    ownerLabel.innerText = shortOwner;
+
+    if (villageData.owner === null) {
+        progressSection.classList.add('hidden');
+        claimBtn.innerText = "CLAIM PEACEFULLY";
+        claimBtn.className = "pixel-btn safe";
+        claimBtn.disabled = false;
+        
+        claimBtn.onclick = () => {
+            if (socket) socket.emit('requestWellInteraction', { wellX, wellY });
+            document.getElementById('village-menu').classList.add('hidden');
+        };
+    } else {
+        progressSection.classList.remove('hidden');
+        const pct = villageData.progress || 0;
+        progressBar.style.width = `${pct}%`;
+        progressText.innerText = `${Math.floor(pct)}%`;
+
+        const isOwner = (villageData.owner === playerWallet);
+        if (isOwner) {
+            claimBtn.innerText = "YOU OWN THIS VILLAGE";
+            claimBtn.className = "pixel-btn";
+            claimBtn.disabled = true;
+        } else {
+            claimBtn.innerText = "INITIATE SIEGE";
+            claimBtn.className = "pixel-btn cancel";
+            claimBtn.disabled = false;
+            claimBtn.onclick = () => {
+                if (socket) socket.emit('requestWellInteraction', { wellX, wellY });
+                document.getElementById('village-menu').classList.add('hidden');
+            };
+        }
+    }
+
+    document.getElementById('close-village-btn').onclick = () => {
+        document.getElementById('village-menu').classList.add('hidden');
+    };
 }
 
 // ==========================================
-// 🔄 HUD UPDATES
+// 🔄 HUD & SPECTATE CARD UPDATES
 // ==========================================
+const prefixes = ["Oak", "Pine", "River", "Stone", "Iron", "Gold", "Silver", "Wind", "Storm", "High", "Low", "Dark", "Light", "Ash", "Thorn", "Green", "Red", "Blue", "Gryph", "Dragon", "Dawn", "Dusk"];
+const suffixes = ["wood", "ford", "bridge", "mont", "ville", "town", "bury", "ton", "vale", "dale", "peak", "haven", "keep", "watch", "fall", "stead", "moor", "marsh", "gate", "run", "brook"];
+
+export function getZoneName(seed1, seed2) {
+    const hash = Math.sin(seed1 * 12.9898 + seed2 * 78.233) * 43758.5453;
+    const rand1 = Math.floor(Math.abs(hash) * 100);
+    const rand2 = Math.floor(Math.abs(hash * 10) * 100);
+    
+    const pre = prefixes[rand1 % prefixes.length];
+    const suf = suffixes[rand2 % suffixes.length];
+    
+    return pre + suf;
+}
+
 export function updateHUD() {
     const uniDisplay = document.getElementById('uni-display');
     const playerCount = document.getElementById('player-count');
@@ -1345,12 +1482,45 @@ export function updateHUD() {
         if (gameState.spectatedHobbitId && window.hobbits) {
             const hob = window.hobbits.find(h => h.id === gameState.spectatedHobbitId);
             if (hob) {
+                // Determine faction details cleanly
+                let factionName = "THE WILDS";
+                let factionColor = "#ffffff";
+
+                if (hob.cachedWell === undefined && typeof window !== 'undefined' && window.getVillageAt) {
+                    const hx = hob.homeX || Math.floor(hob.x / 16);
+                    const hy = hob.homeY || Math.floor(hob.y / 16);
+                    hob.cachedWell = window.getVillageAt(hx, hy);
+                }
+
+                const well = hob.cachedWell;
+                if (well) {
+                    factionName = getZoneName(well.x, well.y);
+                    factionColor = getFactionColor(factionName);
+                }
+
                 spectateName.innerText = hob.name;
+                spectateName.style.color = factionColor; // Color-code top text banner
                 spectateBanner.classList.remove('hidden');
 
                 if (spectatePanel && specName && specRole && specGoal && specState && specEnergy && specItems) {
                     specName.innerText = hob.name;
+                    specName.style.color = factionColor; // Color-code detailed name
                     specRole.innerText = hob.job ? hob.job.toUpperCase() : "IDLE";
+
+                    // Dynamic Faction element injection
+                    let specFaction = document.getElementById('spec-info-faction');
+                    if (!specFaction) {
+                        const factionDiv = document.createElement('div');
+                        factionDiv.style.marginBottom = '6px';
+                        factionDiv.innerHTML = `FACTION: <span id="spec-info-faction" style="font-weight: bold;">THE WILDS</span>`;
+                        specRole.parentNode.insertBefore(factionDiv, specRole);
+                        specFaction = document.getElementById('spec-info-faction');
+                    }
+
+                    if (specFaction) {
+                        specFaction.innerText = factionName.toUpperCase();
+                        specFaction.style.color = factionColor; // Color-code faction text
+                    }
 
                     const goalMap = {
                         'wander': 'WANDERING',
@@ -1371,7 +1541,6 @@ export function updateHUD() {
                     };
 
                     specGoal.innerText = goalMap[hob.goal] || hob.goal.toUpperCase().replace('_', ' ');
-
                     specState.innerText = hob.state ? hob.state.toUpperCase() : "IDLE";
 
                     const energyPct = (hob.energy !== undefined ? hob.energy : 100);
@@ -1648,20 +1817,6 @@ function renderActivityLog(logData) {
 // ==========================================
 // 🗺️ LOCATION BANNER ENGINE
 // ==========================================
-const prefixes = ["Oak", "Pine", "River", "Stone", "Iron", "Gold", "Silver", "Wind", "Storm", "High", "Low", "Dark", "Light", "Ash", "Thorn", "Green", "Red", "Blue", "Gryph", "Dragon", "Dawn", "Dusk"];
-const suffixes = ["wood", "ford", "bridge", "mont", "ville", "town", "bury", "ton", "vale", "dale", "peak", "haven", "keep", "watch", "fall", "stead", "moor", "marsh", "gate", "run", "brook"];
-
-function getZoneName(seed1, seed2) {
-    const hash = Math.sin(seed1 * 12.9898 + seed2 * 78.233) * 43758.5453;
-    const rand1 = Math.floor(Math.abs(hash) * 100);
-    const rand2 = Math.floor(Math.abs(hash * 10) * 100);
-    
-    const pre = prefixes[rand1 % prefixes.length];
-    const suf = suffixes[rand2 % suffixes.length];
-    
-    return pre + suf;
-}
-
 let bannerTimeout = null;
 
 export function triggerLocationBanner(cx, cy, cellType) {
@@ -1738,11 +1893,6 @@ export function triggerLocationBanner(cx, cy, cellType) {
     }, 4000);
 }
 
-// ==========================================
-// 🧝 HOBBIT WORKFORCE MANAGEMENT UI
-// ==========================================
-let selectedHobbitId = null;
-
 export function openHobbitManagerMenu() {
     selectedHobbitId = null; 
     document.getElementById('hobbit-manager-menu').classList.remove('hidden');
@@ -1753,186 +1903,6 @@ export function openHobbitManagerMenu() {
     };
 }
 
-function renderHobbitManagerUI() {
-    const listEl = document.getElementById('hobbit-list');
-    const detailsEl = document.getElementById('selected-hobbit-details');
-    const buttonContainer = document.getElementById('job-button-container');
-    
-    import('./hobbits.js').then(m => {
-        const activeHobbits = m.hobbits;
-
-        if (activeHobbits.length === 0) {
-            listEl.innerHTML = `<div style="text-align:center; font-size:8px; color:#555; margin-top:80px;">NO ACTIVE WORKERS IN RANGE</div>`;
-            detailsEl.innerText = "Workforce empty.";
-            buttonContainer.innerHTML = "";
-            return;
-        }
-
-        // ⚡ OPTIMIZATION: Filter roster to show only hobbits belonging to the player's local village
-        import('./cellDecorator.js').then(decorator => {
-            const playerX = Math.floor(hero.x / 16);
-            const playerY = Math.floor(hero.y / 16);
-            
-            let closestWell = null;
-            let minWellDist = Infinity;
-            
-            decorator.plannedWells.forEach(well => {
-                const dist = Math.hypot(well.x - playerX, well.y - playerY);
-                if (dist < minWellDist) {
-                    minWellDist = dist;
-                    closestWell = well;
-                }
-            });
-
-            let filteredHobbits = activeHobbits;
-            if (closestWell) {
-                filteredHobbits = activeHobbits.filter(hob => {
-                    const hobWell = decorator.getVillageAt(hob.homeX || Math.floor(hob.x / 16), hob.homeY || Math.floor(hob.y / 16));
-                    return hobWell && hobWell.x === closestWell.x && hobWell.y === closestWell.y;
-                });
-            }
-
-            if (filteredHobbits.length === 0) {
-                listEl.innerHTML = `<div style="text-align:center; font-size:8px; color:#555; margin-top:80px;">NO WORKERS IN THIS SETTLEMENT</div>`;
-                detailsEl.innerText = "Workforce empty.";
-                buttonContainer.innerHTML = "";
-                return;
-            }
-
-            listEl.innerHTML = filteredHobbits.map(hob => {
-                const isSelected = (hob.id === selectedHobbitId);
-                const style = isSelected ? 'background: var(--highlight); color: white; border: 4px solid var(--bg-dark);' : 'background: white; border: 4px solid var(--bg-dark);';
-                return `
-                    <div class="workforce-row" onclick="window.selectHobbit('${hob.id}')" style="${style} padding: 8px; font-size: 8px; cursor: pointer; display: flex; justify-content: space-between;">
-                        <strong>${hob.name}</strong>
-                        <span style="color: ${hob.job === 'Idle' ? '#888' : 'var(--banana-dark)'};">${hob.job.toUpperCase()}</span>
-                    </div>
-                `;
-            }).join('');
-
-            const selected = filteredHobbits.find(h => h.id === selectedHobbitId);
-            if (selected) {
-                detailsEl.innerHTML = `
-                    <strong style="font-size: 10px; color: var(--text-dark);">${selected.name}</strong><br>
-                    <span style="font-size:8px; color: #555;">CURRENT ROLE: <strong style="color:var(--highlight);">${selected.job.toUpperCase()}</strong></span>
-                `;
-
-                const isSpectating = (gameState.spectatedHobbitId === selected.id);
-
-                buttonContainer.innerHTML = `
-                    <button onclick="window.assignHobbitJob('Forager')" class="pixel-btn ${selected.job === 'Forager' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">FORAGER</button>
-                    <button onclick="window.assignHobbitJob('Farmer')" class="pixel-btn ${selected.job === 'Farmer' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">FARMER</button>
-                    <button onclick="window.assignHobbitJob('Trader')" class="pixel-btn ${selected.job === 'Trader' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">TRADER</button>
-                    <button onclick="window.assignHobbitJob('Idle')" class="pixel-btn ${selected.job === 'Idle' ? 'safe' : ''}" style="padding: 8px; font-size: 8px;">IDLE</button>
-                    <button id="spectate-btn" onclick="window.toggleSpectateHobbit('${selected.id}')" class="pixel-btn ${isSpectating ? 'safe' : 'cancel'}" style="padding: 8px; font-size: 8px; margin-top: 10px; width: 100%;">${isSpectating ? '🛑 STOP SPECTATING' : '👁️ SPECTATE'}</button>
-                `;
-            } else {
-                detailsEl.innerText = "Select a hobbit to modify their duties.";
-                buttonContainer.innerHTML = "";
-            }
-        });
-    });
-}
-
-window.selectHobbit = (id) => {
-    selectedHobbitId = id;
-    renderHobbitManagerUI();
-};
-
-window.assignHobbitJob = (jobName) => {
-    if (!selectedHobbitId) return;
-    import('./hobbits.js').then(m => {
-        const target = m.hobbits.find(m => m.id === selectedHobbitId);
-        if (target) {
-            target.job = jobName;
-            target.path = []; 
-            target.state = 'idle';
-            renderHobbitManagerUI();
-        }
-    });
-};
-
-window.toggleSpectateHobbit = (id) => {
-    if (gameState.spectatedHobbitId === id) {
-        gameState.spectatedHobbitId = null;
-    } else {
-        gameState.spectatedHobbitId = id;
-        document.getElementById('hobbit-manager-menu').classList.add('hidden');
-    }
-    renderHobbitManagerUI();
-    updateHUD();
-};
-
-export function openDoorControlMenu(gx, gy, roomID) {
-    activeDoorCoords = { gx, gy, roomID };
-    document.getElementById('door-menu-title').innerText = `🚪 ROOM #${roomID}`;
-    document.getElementById('door-menu').classList.remove('hidden');
-    
-    if (socket) {
-        socket.emit('requestDoorState', { gx, gy });
-    }
-}
-
-export function updateDoorControlUI(gx, gy, locked) {
-    if (activeDoorCoords && activeDoorCoords.gx === gx && activeDoorCoords.gy === gy) {
-        const label = document.getElementById('door-status-label');
-        if (label) {
-            label.innerText = locked ? "LOCKED" : "UNLOCKED";
-            label.style.color = locked ? "#d95757" : "var(--highlight)";
-        }
-    }
-}
-
-export function openVillageMenu(wellX, wellY, villageData) {
-    document.getElementById('village-menu').classList.remove('hidden');
-    
-    const ownerLabel = document.getElementById('village-owner-label');
-    const progressSection = document.getElementById('village-progress-section');
-    const progressBar = document.getElementById('village-progress-bar');
-    const progressText = document.getElementById('village-progress-text');
-    const claimBtn = document.getElementById('village-claim-btn');
-
-    const shortOwner = villageData.owner ? (villageData.owner.startsWith('0x') ? villageData.owner.substring(0, 6) + "..." : villageData.owner) : "UNCLAIMED";
-    ownerLabel.innerText = shortOwner;
-
-    if (villageData.owner === null) {
-        progressSection.classList.add('hidden');
-        claimBtn.innerText = "CLAIM PEACEFULLY";
-        claimBtn.className = "pixel-btn safe";
-        claimBtn.disabled = false;
-        
-        claimBtn.onclick = () => {
-            if (socket) socket.emit('requestWellInteraction', { wellX, wellY });
-            document.getElementById('village-menu').classList.add('hidden');
-        };
-    } else {
-        progressSection.classList.remove('hidden');
-        const pct = villageData.progress || 0;
-        progressBar.style.width = `${pct}%`;
-        progressText.innerText = `${Math.floor(pct)}%`;
-
-        const isOwner = (villageData.owner === playerWallet);
-        if (isOwner) {
-            claimBtn.innerText = "YOU OWN THIS VILLAGE";
-            claimBtn.className = "pixel-btn";
-            claimBtn.disabled = true;
-        } else {
-            claimBtn.innerText = "INITIATE SIEGE";
-            claimBtn.className = "pixel-btn cancel";
-            claimBtn.disabled = false;
-            claimBtn.onclick = () => {
-                if (socket) socket.emit('requestWellInteraction', { wellX, wellY });
-                document.getElementById('village-menu').classList.add('hidden');
-            };
-        }
-    }
-
-    document.getElementById('close-village-btn').onclick = () => {
-        document.getElementById('village-menu').classList.add('hidden');
-    };
-}
-
-// 🎯 THE FIX: Relocating UI-specific socket events into uiManager to prevent circular dependency loads
 export function setupMultiplayerListeners(s) {
     s.on('needsCharacterCreation', () => {
         document.getElementById('main-menu').classList.add('hidden');
