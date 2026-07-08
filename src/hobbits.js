@@ -115,7 +115,8 @@ function isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix, hobbit = null, fro
     const data = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix);
     if (!data || data.tileID === undefined) return false;
 
-    const absoluteWalls = [40, 50, 52, 1, 3, 5, 41, 43, 27, 46, 47, 17, 18, 19, 21, 24];
+    // 🎯 THE FIX: Added 11 (Citadel/Town Stone Walls) and 48 (Exterior Wall Panels) to the blocked path array
+    const absoluteWalls = [40, 50, 52, 1, 3, 5, 41, 43, 27, 46, 47, 17, 18, 19, 21, 24, 11, 48];
     if (absoluteWalls.includes(data.tileID)) return false;
 
     if (fromX !== null && fromY !== null) {
@@ -156,6 +157,58 @@ function findPathToCoords(startTX, startTY, targetTX, targetTY, worldMatrix, roo
     };
 
     return findPath(startTX, startTY, isWalkableFn, isTargetFn, maxDepth); 
+}
+
+/**
+ * 🎯 NEW: High-performance intermediate BFS Pathfinding engine for far-away targets.
+ * Bounded queue system that computes safe walkable waypoints towards distant coordinates
+ * to bypass structures, gates, and trees.
+ */
+function findPathToFarTarget(startTX, startTY, targetTX, targetTY, worldMatrix, roomMatrix, hobbit, maxSearch = 300) {
+    const queue = [{ x: startTX, y: startY, path: [] }];
+    const visited = new Set([`${startTX}_${startTY}`]);
+    
+    let bestNode = null;
+    let bestDist = Math.hypot(targetTX - startTX, targetTY - startTY);
+    let iterations = 0;
+    
+    while (queue.length > 0 && iterations++ < maxSearch) {
+        const curr = queue.shift();
+        
+        const dist = Math.hypot(targetTX - curr.x, targetTY - curr.y);
+        if (dist < bestDist) {
+            bestDist = dist;
+            bestNode = curr;
+        }
+        
+        if (curr.x === targetTX && curr.y === targetTY) {
+            return curr.path;
+        }
+        
+        const neighbors = [
+            { x: curr.x, y: curr.y - 1 },
+            { x: curr.x, y: curr.y + 1 },
+            { x: curr.x - 1, y: curr.y },
+            { x: curr.x + 1, y: curr.y }
+        ];
+        
+        for (let n of neighbors) {
+            const key = `${n.x}_${n.y}`;
+            if (!visited.has(key)) {
+                visited.add(key);
+                if (isWalkableForHobbit(n.x, n.y, worldMatrix, roomMatrix, hobbit, curr.x, curr.y)) {
+                    queue.push({
+                        x: n.x,
+                        y: n.y,
+                        path: [...curr.path, { x: n.x, y: n.y }]
+                    });
+                }
+            }
+        }
+    }
+    
+    // Fall back to returning the intermediate path representing the closest physically reachable node to the target
+    return bestNode ? bestNode.path : null;
 }
 
 function findNearestMaturePlant(hobbit, range = 80) { 
@@ -983,9 +1036,10 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         hobbit.state = 'idle';
                         hobbit.path = [];
                     } else if (!hobbit.path || hobbit.path.length === 0) {
-                        const nextStep = findNextRoadStep(currTX, currTY, targetWell.x, targetWell.y, worldMatrix, roomMatrix, hobbit);
-                        if (nextStep) {
-                            hobbit.path = [{ x: nextStep.x, y: nextStep.y }];
+                        // 🎯 THE FIX: Bypassed the simple 1-tile lookahead check and run a robust wall-avoiding waypoint generation check towards the target well
+                        const path = findPathToFarTarget(currTX, currTY, targetWell.x, targetWell.y, worldMatrix, roomMatrix, hobbit, 400);
+                        if (path && path.length > 0) {
+                            hobbit.path = path;
                             hobbit.state = 'walking';
                         } else {
                             assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
