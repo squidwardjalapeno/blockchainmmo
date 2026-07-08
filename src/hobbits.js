@@ -483,7 +483,9 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 }
 
                 const hx = hero.x + 8;
-                const py = hero.y + 8;
+                const hy = hero.y + 8;
+                const px = hx - (simX * 16 + 8);
+                const py = hy - (simY * 16 + 8);
                 const distToHero = Math.hypot(px, py);
 
                 if (distToHero < 80 && hero.hp > 0) {
@@ -494,7 +496,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
                     } else {
                         const hTX = Math.floor(hx / 16);
-                        const hTY = Math.floor(py / 16);
+                        const hTY = Math.floor(hy / 16);
                         
                         // ⚡ HIGH-PERFORMANCE REPLACEMENT: Step estimation instead of heavy BFS pathing
                         const next = estimateCatchUpStep(simX, simY, hTX, hTY);
@@ -510,26 +512,30 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         if (isLocked) {
                             if (simX !== hobbit.doorX || simY !== hobbit.doorY) {
                                 const next = estimateCatchUpStep(simX, simY, hobbit.doorX, hobbit.doorY);
-                                simX = next.x; simY = next.y;
+                                simX = next.x;
+                                simY = next.y;
                             }
                         }
                     } else {
                         if (!isLocked) {
                             if (simX !== hobbit.doorX || simY !== hobbit.doorY) {
                                 const next = estimateCatchUpStep(simX, simY, hobbit.doorX, hobbit.doorY);
-                                simX = next.x; simY = next.y;
+                                simX = next.x;
+                                simY = next.y;
                             }
                         } else {
                             if (simX !== hobbit.homeX && simY !== hobbit.homeY) {
                                 const next = estimateCatchUpStep(simX, simY, hobbit.homeX, hobbit.homeY);
-                                simX = next.x; simY = next.y;
+                                simX = next.x;
+                                simY = next.y;
                             }
                         }
                     }
                 } else if (worldTime.isNight && hobbit.houseId) {
                     if (simX !== hobbit.homeX || simY !== hobbit.homeY) {
                         const next = estimateCatchUpStep(simX, simY, hobbit.homeX, hobbit.homeY);
-                        simX = next.x; simY = next.y;
+                        simX = next.x;
+                        simY = next.y;
                     }
                 } else {
                     const dirs = [[0,-1], [0,1], [-1,0], [1,0]];
@@ -1204,7 +1210,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         else {
                             if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
                                 hobbit.pathTimer = 1.5 + Math.random() * 1.5;
-                                const path = findPathToCoords(currTX, currTY, storeDoorX, storeDoorY, worldMatrix, roomMatrix, hobbit, 60);
+                                const path = findPathToCoords(currTX, currTY, storeDoorX, doorInY, worldMatrix, roomMatrix, hobbit, 60);
                                 if (path) {
                                     hobbit.path = path;
                                     hobbit.state = 'walking';
