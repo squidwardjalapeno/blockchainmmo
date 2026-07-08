@@ -7,6 +7,7 @@ import { seededRandom, setWorldSeed } from "./mapGenerator.js";
 import { registerObject, getObjectAt } from './staticObjects.js';
 import { getTileData } from './physics.js';
 import { socket } from './multiplayer.js'; 
+import { getFocusCoordinates } from './entities.js'; // 👈 🎯 ADDED THIS IMPORT TO RESOLVE BOOT CRASH
 
 export const roomMetadata = {};
 export const ecoGenerated = new Set();
