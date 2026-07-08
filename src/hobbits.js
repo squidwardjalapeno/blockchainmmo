@@ -199,8 +199,8 @@ function estimateCatchUpStep(startX, startY, targetX, targetY) {
 function findOffScreenPath(startTX, startTY, targetTX, targetTY) {
     const path = [];
     let curX = startTX;
-    let curY = startY;
-    const maxSteps = 40; 
+    let curY = startTY; // 👈 Changed from startY to startTY
+    const maxSteps = 40; // Prevent infinite runs
 
     for (let i = 0; i < maxSteps; i++) {
         if (curX === targetTX && curY === targetTY) break;
