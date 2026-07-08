@@ -199,8 +199,8 @@ function estimateCatchUpStep(startX, startY, targetX, targetY) {
 function findOffScreenPath(startTX, startTY, targetTX, targetTY) {
     const path = [];
     let curX = startTX;
-    let curY = startTY; // 👈 Changed from startY to startTY
-    const maxSteps = 40; // Prevent infinite runs
+    let curY = startTY;
+    const maxSteps = 40; 
 
     for (let i = 0; i < maxSteps; i++) {
         if (curX === targetTX && curY === targetTY) break;
@@ -483,9 +483,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 }
 
                 const hx = hero.x + 8;
-                const hy = hero.y + 8;
-                const px = hx - (simX * 16 + 8);
-                const py = hy - (simY * 16 + 8);
+                const py = hero.y + 8;
                 const distToHero = Math.hypot(px, py);
 
                 if (distToHero < 80 && hero.hp > 0) {
@@ -496,7 +494,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
                     } else {
                         const hTX = Math.floor(hx / 16);
-                        const hTY = Math.floor(hy / 16);
+                        const hTY = Math.floor(py / 16);
                         
                         // ⚡ HIGH-PERFORMANCE REPLACEMENT: Step estimation instead of heavy BFS pathing
                         const next = estimateCatchUpStep(simX, simY, hTX, hTY);
@@ -1633,98 +1631,112 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
                     }
                     else {
-                        hobbit.goal = 'harvest';
-
-                        if (roomID !== 0 && roomID !== 9999) {
-                            if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
-                                const doorInX = hobbit.doorX;
-                                const doorInY = hobbit.doorY - 1; 
-
-                                if (currTX === hobbit.doorX && currTY === hobbit.doorY) {
-                                    hobbit.path = [
-                                        { x: hobbit.doorX, y: hobbit.doorY + 1 } 
-                                    ];
-                                    hobbit.state = 'walking';
-                                    console.log(`🚪 ${hobbit.name} is clearing the threshold to the outside...`);
-                                }
-                                else if (currTX === doorInX && currTY === doorInY) {
-                                    hobbit.path = [
-                                        { x: hobbit.doorX, y: hobbit.doorY } 
-                                    ];
-                                    hobbit.state = 'walking';
-                                    console.log(`🚪 ${hobbit.name} is stepping outside to harvest...`);
-                                } else {
-                                    if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
-                                        hobbit.pathTimer = 1.5 + Math.random() * 1.5;
-                                        const path = findPathToCoords(currTX, currTY, doorInX, doorInY, worldMatrix, roomMatrix, hobbit, 12); // Low Depth
-                                        if (path) {
-                                            hobbit.path = path;
-                                            hobbit.state = 'walking';
-                                        } else {
-                                            assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                                            hobbit.goal = 'wander';
-                                            hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
-                                        }
-                                    }
-                                }
+                        // ⚡ SMOOTH WANDERING INTERCEPTOR:
+                        // If they are on a wandering cooldown, continue waiting/walking naturally instead of re-searching
+                        if (hobbit.goal === 'wander' && hobbit.moveTimer > 0) {
+                            hobbit.moveTimer -= modifier;
+                            if (hobbit.moveTimer <= 0) {
+                                hobbit.goal = 'harvest'; // Cooldown over, ready to search again
                             }
-                        }
-                        else {
-                            if (hobbit.targetPlant) {
-                                const plantKey = `${hobbit.targetPlant.gx}_${hobbit.targetPlant.gy}`;
-                                const livePlant = plants.get(plantKey);
+                            
+                            // Rest peacefully once they reach their single-tile wander point
+                            if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
+                                hobbit.state = 'idle';
+                            }
+                        } else {
+                            hobbit.goal = 'harvest';
 
-                                if (livePlant && livePlant.growth >= 100) {
-                                    const dist = Math.hypot((livePlant.gx * 16 + 8) - (hobbit.x + 8), (livePlant.gy * 16 + 8) - (hobbit.y + 8));
+                            if (roomID !== 0 && roomID !== 9999) {
+                                if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
+                                    const doorInX = hobbit.doorX;
+                                    const doorInY = hobbit.doorY - 1; 
 
-                                    if (dist <= 24) {
-                                        console.log(`🌾 Hobbit harvesting mature ${livePlant.type} at [${livePlant.gx}, ${livePlant.gy}]`);
-
-                                        const keyName = yieldMap[livePlant.type];
-                                        if (keyName && ITEM_TYPES[keyName]) {
-                                            const harvestedItem = createItem(ITEM_TYPES[keyName]);
-                                            giveItemToHobbit(hobbit, harvestedItem); 
-                                        }
-
-                                        const seedKey = `${livePlant.type.toUpperCase()}_SEED`;
-                                        if (ITEM_TYPES[seedKey] && Math.random() < 0.6) {
-                                            const seedItem = createItem(ITEM_TYPES[seedKey]);
-                                            giveItemToHobbit(hobbit, seedItem); 
-                                        }
-
-                                        plants.delete(plantKey);
-                                        if (socket && socket.connected) {
-                                            socket.emit('syncTile', { gx: livePlant.gx, gy: livePlant.gy, traits: 0 });
-                                        }
-
-                                        hobbit.targetPlant = null;
-                                        hobbit.path = [];
-                                        hobbit.state = 'idle';
+                                    if (currTX === hobbit.doorX && currTY === hobbit.doorY) {
+                                        hobbit.path = [
+                                            { x: hobbit.doorX, y: hobbit.doorY + 1 } 
+                                        ];
+                                        hobbit.state = 'walking';
+                                        console.log(`🚪 ${hobbit.name} is clearing the threshold to the outside...`);
+                                    }
+                                    else if (currTX === doorInX && currTY === doorInY) {
+                                        hobbit.path = [
+                                            { x: hobbit.doorX, y: hobbit.doorY } 
+                                        ];
+                                        hobbit.state = 'walking';
+                                        console.log(`🚪 ${hobbit.name} is stepping outside to harvest...`);
                                     } else {
                                         if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
                                             hobbit.pathTimer = 1.5 + Math.random() * 1.5;
-                                            const path = findPathToCoords(currTX, currTY, livePlant.gx, livePlant.gy, worldMatrix, roomMatrix, hobbit, 12); // Low Depth
+                                            const path = findPathToCoords(currTX, currTY, doorInX, doorInY, worldMatrix, roomMatrix, hobbit, 12); // Low Depth
                                             if (path) {
                                                 hobbit.path = path;
                                                 hobbit.state = 'walking';
                                             } else {
-                                                hobbit.targetPlant = null; 
+                                                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                                                hobbit.goal = 'wander';
+                                                hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
                                             }
                                         }
                                     }
-                                } else {
-                                    hobbit.targetPlant = null; 
                                 }
-                            } else {
-                                const nearest = findNearestMaturePlant(hobbit);
-                                if (nearest) {
-                                    hobbit.targetPlant = nearest;
+                            }
+                            else {
+                                if (hobbit.targetPlant) {
+                                    const plantKey = `${hobbit.targetPlant.gx}_${hobbit.targetPlant.gy}`;
+                                    const livePlant = plants.get(plantKey);
+
+                                    if (livePlant && livePlant.growth >= 100) {
+                                        const dist = Math.hypot((livePlant.gx * 16 + 8) - (hobbit.x + 8), (livePlant.gy * 16 + 8) - (hobbit.y + 8));
+
+                                        if (dist <= 24) {
+                                            console.log(`🌾 Hobbit harvesting mature ${livePlant.type} at [${livePlant.gx}, ${livePlant.gy}]`);
+
+                                            const keyName = yieldMap[livePlant.type];
+                                            if (keyName && ITEM_TYPES[keyName]) {
+                                                const harvestedItem = createItem(ITEM_TYPES[keyName]);
+                                                giveItemToHobbit(hobbit, harvestedItem); 
+                                            }
+
+                                            const seedKey = `${livePlant.type.toUpperCase()}_SEED`;
+                                            if (ITEM_TYPES[seedKey] && Math.random() < 0.6) {
+                                                const seedItem = createItem(ITEM_TYPES[seedKey]);
+                                                giveItemToHobbit(hobbit, seedItem); 
+                                            }
+
+                                            plants.delete(plantKey);
+                                            if (socket && socket.connected) {
+                                                socket.emit('syncTile', { gx: livePlant.gx, gy: livePlant.gy, traits: 0 });
+                                            }
+
+                                            hobbit.targetPlant = null;
+                                            hobbit.path = [];
+                                            hobbit.state = 'idle';
+                                        } else {
+                                            if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
+                                                hobbit.pathTimer = 1.5 + Math.random() * 1.5;
+                                                const path = findPathToCoords(currTX, currTY, livePlant.gx, livePlant.gy, worldMatrix, roomMatrix, hobbit, 12); // Low Depth
+                                                if (path) {
+                                                    hobbit.path = path;
+                                                    hobbit.state = 'walking';
+                                                } else {
+                                                    hobbit.targetPlant = null; 
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        hobbit.targetPlant = null; 
+                                    }
                                 } else {
-                                    // 🎯 Retries: No plants in range, so wander for 3 seconds before next search
-                                    assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                                    hobbit.goal = 'wander';
-                                    hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
-                                    hobbit.moveTimer = 3.0; // Wander for 3 seconds
+                                    const nearest = findNearestMaturePlant(hobbit);
+                                    if (nearest) {
+                                        hobbit.targetPlant = nearest;
+                                    } else {
+                                        // 🎯 Natural Wander Cooldown: Plan a single-tile step, then rest peacefully for 2-4 seconds before searching again
+                                        assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                                        hobbit.goal = 'wander';
+                                        hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
+                                        hobbit.moveTimer = 2.0 + Math.random() * 2.0; 
+                                    }
                                 }
                             }
                         }
