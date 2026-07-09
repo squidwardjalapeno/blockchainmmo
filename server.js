@@ -332,7 +332,12 @@ function initServerAnimals() {
 initServerAnimals(); 
 
 function generateServerFloraForChunk(cx, cy) {
+    // ➔ KEPT: Seeding density remains strictly at 50%
     const density = 0.50; 
+    
+    // ➔ NEW: Evenly split choices to eliminate the lopsided 70% grass bias
+    const FLORA_TYPES = ['grass', 'sunflower', 'rose', 'violet'];
+
     for (let i = 0; i < 10000; i++) {
         if (Math.random() < density) {
             const lx = i % 100;
@@ -340,14 +345,13 @@ function generateServerFloraForChunk(cx, cy) {
             const gx = cx * 100 + lx;
             const gy = cy * 100 + ly;
 
-            const roll = Math.random();
-            let plantType = 'grass';
-            if (roll > 0.95) plantType = 'sunflower';
-            else if (roll > 0.85) plantType = 'rose';
-            else if (roll > 0.70) plantType = 'violet';
+            // ➔ REMOVED: The biased > 0.70 conditional chain
+            const plantType = FLORA_TYPES[Math.floor(Math.random() * FLORA_TYPES.length)];
 
             const gRate = SERVER_PLANT_DEFS[plantType]?.growthRate || 0.4;
-            const initialAge = Math.floor(Math.random() * 100);
+            
+            // ➔ KEPT: Randomly assigned age (0 to 100)
+            const initialAge = Math.floor(Math.random() * 100); 
 
             serverPlants.set(`${gx}_${gy}`, {
                 gx, gy,
