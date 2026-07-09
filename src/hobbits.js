@@ -259,13 +259,13 @@ function findNextRoadStep(currX, currY, targetX, targetY, worldMatrix, roomMatri
         let perceivedDist = dist;
         
         if (isRoad) {
-            perceivedDist -= 15; 
+            perceivedDist -= 15; // Primary road steering prioritization
         }
 
         const historyIdx = hobbit.visitedHistory.indexOf(`${nx}_${ny}`);
         if (historyIdx !== -1) {
             const recencyFactor = historyIdx + 1; 
-            perceivedDist += recencyFactor * 12; 
+            perceivedDist += recencyFactor * 12; // Backtracking penalty
         }
 
         if (perceivedDist < minDistance) {
@@ -538,7 +538,7 @@ export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null, 
 }
 
 // ==========================================
-// ⚙️ MAIN AI BEHAVIOR & MACRO LOOP
+// ⚙️ MAIN AI BEHAVIOR LOOP
 // ==========================================
 
 export function updateHobbits(modifier, worldMatrix, roomMatrix) {
@@ -548,24 +548,23 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
     const now = Date.now();
 
     // ==========================================
-    // ⚔️ REGIONAL HYBRID SPAWNER SYSTEM
+    // ⚔️ WAVE SPAWNER SYSTEM (Runs every 10s)
     // ==========================================
-    plannedWells.forEach(well => {
-        const wellCX = Math.floor(well.x / 100);
-        const wellCY = Math.floor(well.y / 100);
-        const isActiveChunk = Math.abs(wellCX - heroCX) <= 1 && Math.abs(wellCY - heroCY) <= 1;
-
-        const wellKey = `${well.x}_${well.y}`;
-        wellAccumulators.set(wellKey, (wellAccumulators.get(wellKey) || 0) + modifier);
-
-        if (wellAccumulators.get(wellKey) >= 10.0) {
-            wellAccumulators.set(wellKey, wellAccumulators.get(wellKey) - 10.0);
-
+    minionSpawnTimer -= modifier;
+    if (minionSpawnTimer <= 0) {
+        minionSpawnTimer = 10.0;
+        
+        plannedWells.forEach(well => {
+            const wellCX = Math.floor(well.x / 100);
+            const wellCY = Math.floor(well.y / 100);
+            
+            const isActiveChunk = Math.abs(wellCX - heroCX) <= 1 && Math.abs(wellCY - heroCY) <= 1;
+            
             if (isActiveChunk) {
-                // 1. Spawns physically within player's rendered active zones
+                // Spawn physical on-screen minion
                 spawnHobbit(well.x + 2, well.y + 2, null, well.x, well.y, 'Military');
             } else {
-                // 2. Distant Campaign model launches statistical Background Traveler
+                // Find nearest enemy/other well to target
                 let targetWell = null;
                 let minWellDist = Infinity;
                 plannedWells.forEach(otherWell => {
@@ -579,8 +578,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
 
                 if (targetWell) {
                     const travelDist = Math.hypot(targetWell.x - well.x, targetWell.y - well.y);
-                    // Standard progress: 2 tiles traversed per tick (second)
-                    const totalTicksNeeded = travelDist / 2; 
+                    const totalTicksNeeded = travelDist / 2; // 2 tiles/second travel speed
 
                     macroTravelers.push({
                         id: 'macro_' + Math.random().toString(36).substr(2, 9),
@@ -595,8 +593,8 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     });
                 }
             }
-        }
-    });
+        });
+    }
 
     // ==========================================
     // 🌍 MACRO CATCH-UP ENGINE
@@ -615,7 +613,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         const enteredActiveArea = Math.abs(currentCX - heroCX) <= 1 && Math.abs(currentCY - heroCY) <= 1;
 
         if (enteredActiveArea) {
-            // Emerges from the campaign fog into real physical simulation
+            // Emerges from off-screen statistical model into active simulated zones
             spawnHobbit(
                 Math.floor(mt.currentTileX), 
                 Math.floor(mt.currentTileY), 
@@ -624,6 +622,14 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 mt.homeY, 
                 'Military'
             );
+            
+            // 🎯 Automatically align state flags to break transition locks
+            const spawned = hobbits[hobbits.length - 1];
+            if (spawned) {
+                spawned.goal = 'march';
+                spawned.state = 'walking';
+                spawned.moveTimer = 0; 
+            }
             macroTravelers.splice(i, 1);
         } else if (ratio >= 1.0) {
             // Reached target well off-screen completely unnoticed - remove safely
@@ -658,11 +664,10 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
 
         const isInsideActiveChunks = Math.abs(hobbitCX - heroCX) <= 1 && Math.abs(hobbitCY - heroCY) <= 1;
         
-        // Dynamic Transition back to campaign macro scale if player walks away
+        // Transition back to macro projections if player moves away
         if (!isInsideActiveChunks) {
             if (hobbit.job === 'Military') {
                 const destinationWell = plannedWells.find(well => {
-                    // Try to map their previous logic destination, else target any closest
                     return well.x !== hobbit.homeX || well.y !== hobbit.homeY;
                 });
                 
@@ -683,7 +688,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     });
                 }
             }
-            // Remove physical instance safely
             const physicalIndex = hobbits.indexOf(hobbit);
             if (physicalIndex !== -1) hobbits.splice(physicalIndex, 1);
             return;
@@ -851,10 +855,12 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         });
 
                         if (targetWell) {
-                            const path = findOffScreenPath(currTX, currTY, targetWell.x, targetWell.y);
-                            if (path) {
-                                hobbit.path = path;
+                            // High performance localized road-steering engine
+                            const nextStep = findNextRoadStep(currTX, currTY, targetWell.x, targetWell.y, worldMatrix, roomMatrix, hobbit);
+                            if (nextStep) {
+                                hobbit.path = [{ x: nextStep.x, y: nextStep.y }];
                                 hobbit.goal = 'march';
+                                hobbit.state = 'walking';
                             } else {
                                 assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
                                 hobbit.goal = 'wander';
@@ -1157,9 +1163,10 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             hobbit.state = 'idle';
                             hobbit.path = [];
                         } else if (!hobbit.path || hobbit.path.length === 0) {
-                            const path = findPathToFarTarget(currTX, currTY, targetWell.x, targetWell.y, worldMatrix, roomMatrix, hobbit, 400);
-                            if (path && path.length > 0) {
-                                hobbit.path = path;
+                            // 🧭 Direct O(1) Waypoint Seeking (Bypasses failing long-distance BFS structures)
+                            const nextStep = findNextRoadStep(currTX, currTY, targetWell.x, targetWell.y, worldMatrix, roomMatrix, hobbit);
+                            if (nextStep) {
+                                hobbit.path = [{ x: nextStep.x, y: nextStep.y }];
                                 hobbit.state = 'walking';
                             } else {
                                 assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
@@ -1329,7 +1336,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                     if (foodIdx !== -1) {
                                         const foodItem = chestItems[foodIdx];
                                         foodItem.count--;
-                                        const foodToEat = { ...foodItem, count: 1 };
                                         if (foodItem.count <= 0) {
                                             chestItems.splice(foodIdx, 1);
                                         }
@@ -2202,7 +2208,10 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 hobbit.moveTimer = 1.0; 
             }
         }
-        else if (hobbit.path && hobbit.path.length > 0 && hobbit.state === 'walking') {
+        else if (hobbit.path && hobbit.path.length > 0) {
+            // 🎯 SELF-HEALING MOTOR CORRECTION (Enforces active stepping if path has elements)
+            hobbit.state = 'walking';
+
             const nextNode = hobbit.path[0];
             const targetX = nextNode.x * 16;
             const targetY = nextNode.y * 16;
@@ -2227,8 +2236,8 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 // ==========================================
                 let separationX = 0;
                 let separationY = 0;
-                const separationRadius = 12; // Radius in pixels
-                const separationForce = 15;  // Force multiplier
+                const separationRadius = 12; 
+                const separationForce = 15;  
 
                 hobbits.forEach(other => {
                     if (other.id === hobbit.id || other.hp <= 0) return;
@@ -2241,7 +2250,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     }
                 });
 
-                // Blend marching vector with physical separation coordinates
                 const moveX = ((dx / dist) * hobbit.speed + separationX) * modifier;
                 const moveY = ((dy / dist) * hobbit.speed + separationY) * modifier;
 
