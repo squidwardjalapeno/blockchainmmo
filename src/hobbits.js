@@ -115,8 +115,15 @@ function isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix, hobbit = null, fro
     const data = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix);
     if (!data || data.tileID === undefined) return false;
 
-    const absoluteWalls = [40, 50, 52, 1, 3, 5, 41, 43, 27, 46, 47, 17, 18, 19, 21, 24, 11, 48];
-    if (absoluteWalls.includes(data.tileID)) return false;
+    const isIndoor = data.roomID !== 0 && data.roomID !== 9999;
+
+    if (isIndoor) {
+        const hardSolids = [40, 41, 43, 27, 46, 47];
+        if (hardSolids.includes(data.tileID)) return false;
+    } else {
+        const worldSolids = [40, 48, 50, 52, 17, 18, 19, 21, 22, 24, 27, 1, 3, 46, 47];
+        if (worldSolids.includes(data.tileID)) return false;
+    }
 
     if (fromX !== null && fromY !== null) {
         const fromData = getTileData(fromX * 16 + 8, fromY * 16 + 8, worldMatrix, roomMatrix);
@@ -134,13 +141,33 @@ function isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix, hobbit = null, fro
     return true;
 }
 
+// 🧠 HELPER: Pick a random nearby walkable tile for wandering
 function assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix) {
     const dirs = [[0,-1], [0,1], [-1,0], [1,0]];
-    const valid = dirs.filter(d => isWalkableForHobbit(currTX + d[0], currTY + d[1], worldMatrix, roomMatrix, hobbit));
+    const valid = dirs.filter(d => isWalkableForHobbit(currTX + d[0], currTY + d[1], worldMatrix, roomMatrix));
+    
     if (valid.length > 0) {
         const pick = valid[Math.floor(Math.random() * valid.length)];
         hobbit.path = [{ x: currTX + pick[0], y: currTY + pick[1] }];
     }
+}
+
+/**
+ * 🧠 REFURBISHED: Leverages the unified findPath utility
+ */
+function findPathToTarget(startTX, startTY, worldMatrix, roomMatrix, targetTileID = null) {
+    const isWalkableFn = (tx, ty) => isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix);
+    
+    const isTargetFn = (tx, ty) => {
+        if (targetTileID === null) {
+            return plants.has(`${tx}_${ty}`); // Search for any growing plant
+        } else {
+            const tileData = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix);
+            return tileData && tileData.tileID === targetTileID; // Search for specific tile ID (e.g. Nesting Box 44)
+        }
+    };
+
+    return findPath(startTX, startTY, isWalkableFn, isTargetFn, 80); 
 }
 
 function findPathToCoords(startTX, startTY, targetTX, targetTY, worldMatrix, roomMatrix, hobbit = null, maxDepth = 80) {
@@ -879,6 +906,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     }
                 }
 
+                // Simplified path execution: Teleport to the next tile instantly
                 if (hobbit.path && hobbit.path.length > 0) {
                     const nextNode = hobbit.path.shift();
                     hobbit.x = nextNode.x * 16;
@@ -913,7 +941,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
                         hobbit.path = [];
                     }
-                    else if (hobbit.goal === 'deposit' && hobbit.x === hobbit.chestX * 16 && hobbit.y === hobbit.chestY * 16) {
+                    else if (hobbit.goal === 'deposit' && hobbit.x === (hobbit.chestX + 1) * 16 && hobbit.y === hobbit.chestY * 16) {
                         hobbit.inventory = hobbit.inventory.filter(i => i.isKey);
                         hobbit.path = [];
                     }
@@ -1063,7 +1091,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         }
 
         // ==========================================
-        // ⚔️ CONTESTED DEFENDER AI STATE MACHINES
+        // ⚖️ CONTESTED DEFENDER AI STATE MACHINES
         // ==========================================
         else {
             let isDefending = false;
@@ -1192,7 +1220,13 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     const ate = eatFoodIfAvailable(hobbit);
                     if (!ate) {
                         if (hobbit.houseId && hobbit.chestX !== null) {
-                            hobbit.goal = 'get_food_from_chest';
+                            const nonKeyItems = hobbit.inventory.filter(i => !i.isKey);
+                            if (nonKeyItems.length > 0) {
+                                hobbit.goal = 'deposit'; // Empty pockets into chest first
+                            } else {
+                                hobbit.goal = 'get_food_from_chest';
+                            }
+                            
                             const depositTX = hobbit.chestX + 1;
                             const depositTY = hobbit.chestY;
 
@@ -1200,42 +1234,79 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 hobbit.state = 'idle';
                                 hobbit.path = [];
                                 
-                                const chestId = `chest_${hobbit.chestX}_${hobbit.chestY}`;
-                                if (!chestCache.has(chestId)) {
-                                    if (socket && socket.connected) {
-                                        socket.emit('requestChest', chestId);
-                                    }
-                                } else {
-                                    const chestItems = chestCache.get(chestId) || [];
-                                    const foodIdx = chestItems.findIndex(i => HOBBIT_FOOD_VALUES[i.seedType] !== undefined);
-                                    if (foodIdx !== -1) {
-                                        const foodItem = chestItems[foodIdx];
-                                        foodItem.count--;
-                                        const foodToEat = { ...foodItem, count: 1 };
-                                        if (foodItem.count <= 0) {
-                                            chestItems.splice(foodIdx, 1);
+                                if (hobbit.goal === 'deposit') {
+                                    const chestId = `chest_${hobbit.chestX}_${hobbit.chestY}`;
+                                    if (!chestCache.has(chestId)) {
+                                        if (socket && socket.connected) {
+                                            socket.emit('requestChest', chestId);
                                         }
+                                    } else {
+                                        const chestItems = chestCache.get(chestId) || [];
+                                        const depositItems = hobbit.inventory.filter(item => !item.isKey);
+
+                                        depositItems.forEach(dep => {
+                                            const existing = chestItems.find(i => i.seedType === dep.seedType && i.count < (i.maxStack || 8));
+                                            if (existing) {
+                                                const space = (existing.maxStack || 8) - existing.count;
+                                                if (dep.count <= space) {
+                                                    existing.count += dep.count;
+                                                    hobbit.inventory = hobbit.inventory.filter(i => i !== dep);
+                                                } else {
+                                                    existing.count = existing.maxStack || 8;
+                                                    dep.count -= space; 
+                                                }
+                                            } else {
+                                                if (chestItems.length < 8) {
+                                                    chestItems.push(dep);
+                                                    hobbit.inventory = hobbit.inventory.filter(i => i !== dep);
+                                                } else {
+                                                    console.log("🔒 Chest is full! Remaining items kept in backpack.");
+                                                }
+                                            }
+                                        });
+
                                         if (socket && socket.connected) {
                                             socket.emit('updateChest', { chestId, items: chestItems });
                                         }
-                                        giveItemToHobbit(hobbit, foodToEat);
-                                        eatFoodIfAvailable(hobbit);
-                                        console.log(`📦 ${hobbit.name} withdrew food from chest and ate it.`);
+                                    }
+                                } else {
+                                    const chestId = `chest_${hobbit.chestX}_${hobbit.chestY}`;
+                                    if (!chestCache.has(chestId)) {
+                                        if (socket && socket.connected) {
+                                            socket.emit('requestChest', chestId);
+                                        }
                                     } else {
-                                        const nearest = findNearestMaturePlant(hobbit);
-                                        if (nearest) {
-                                            hobbit.goal = 'harvest_food';
-                                            hobbit.targetPlant = nearest;
+                                        const chestItems = chestCache.get(chestId) || [];
+                                        const foodIdx = chestItems.findIndex(i => HOBBIT_FOOD_VALUES[i.seedType] !== undefined);
+                                        if (foodIdx !== -1) {
+                                            const foodItem = chestItems[foodIdx];
+                                            foodItem.count--;
+                                            const foodToEat = { ...foodItem, count: 1 };
+                                            if (foodItem.count <= 0) {
+                                                chestItems.splice(foodIdx, 1);
+                                            }
+                                            if (socket && socket.connected) {
+                                                socket.emit('updateChest', { chestId, items: chestItems });
+                                            }
+                                            giveItemToHobbit(hobbit, foodToEat);
+                                            eatFoodIfAvailable(hobbit);
+                                            console.log(`📦 ${hobbit.name} withdrew food from chest and ate it.`);
                                         } else {
-                                            assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                                            hobbit.goal = 'wander';
-                                            hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
+                                            const nearest = findNearestMaturePlant(hobbit);
+                                            if (nearest) {
+                                                hobbit.goal = 'harvest_food';
+                                                hobbit.targetPlant = nearest;
+                                            } else {
+                                                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                                                hobbit.goal = 'wander';
+                                                hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
+                                            }
                                         }
                                     }
                                 }
                             } else if (roomID === hobbit.houseId) {
                                 if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
-                                    hobbit.pathTimer = 1.5 + Math.random() * 1.5; 
+                                    hobbit.pathTimer = 1.5 + Math.random() * 0.4; 
                                     const path = findPathToCoords(currTX, currTY, depositTX, depositTY, worldMatrix, roomMatrix, hobbit, 20); 
                                     if (path) {
                                         hobbit.path = path;
@@ -1256,7 +1327,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                 }
                             } else {
                                 if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking' && hobbit.pathTimer <= 0) {
-                                    hobbit.pathTimer = 1.5 + Math.random() * 1.5;
+                                    hobbit.pathTimer = 1.5 + Math.random() * 0.4;
                                     const path = findPathToCoords(currTX, currTY, hobbit.doorX, hobbit.doorY, worldMatrix, roomMatrix, hobbit, 40);
                                     if (path) {
                                         hobbit.path = path;
