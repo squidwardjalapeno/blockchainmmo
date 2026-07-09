@@ -16,8 +16,9 @@ if (typeof window !== 'undefined') {
     window.hobbits = hobbits;
 }
 
-// 🎯 Wave timer for League-style military minion spawns
-let minionSpawnTimer = 10.0;
+// 🎯 Off-screen spawner wave trackers
+const wellAccumulators = new Map();
+const macroTravelers = [];
 
 const HOBBIT_FIRST_NAMES = ["Bilbo", "Frodo", "Samwise", "Merry", "Pippin", "Bango", "Bungo", "Drogo", "Hamfast", "Longo", "Olo", "Paladin", "Rufus", "Sancho", "Tobold", "Wilibald"];
 const HOBBIT_LAST_NAMES = ["Baggins", "Gamgee", "Brandybuck", "Took", "Gardner", "Greenhand", "Grubb", "Chubb", "Proudfoot", "Bolger", "Boffin", "Sandyman", "Cotton", "Twofoot", "Underhill", "Hornblower"];
@@ -537,7 +538,7 @@ export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null, 
 }
 
 // ==========================================
-// ⚙️ MAIN AI BEHAVIOR LOOP
+// ⚙️ MAIN AI BEHAVIOR & MACRO LOOP
 // ==========================================
 
 export function updateHobbits(modifier, worldMatrix, roomMatrix) {
@@ -547,24 +548,87 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
     const now = Date.now();
 
     // ==========================================
-    // ⚔️ WAVE SPAWNER SYSTEM (Runs every 10s)
+    // ⚔️ REGIONAL HYBRID SPAWNER SYSTEM
     // ==========================================
-    minionSpawnTimer -= modifier;
-    if (minionSpawnTimer <= 0) {
-        minionSpawnTimer = 10.0;
-        
-        plannedWells.forEach(well => {
-            const wellCX = Math.floor((well.x * 16) / 1600);
-            const wellCY = Math.floor((well.y * 16) / 1600);
-            
-            // Only spawn if chunk is dynamically loaded / centered on player to conserve CPU
-            const isActiveChunk = Math.abs(wellCX - heroCX) <= 1 && Math.abs(wellCY - heroCY) <= 1;
-            
+    plannedWells.forEach(well => {
+        const wellCX = Math.floor(well.x / 100);
+        const wellCY = Math.floor(well.y / 100);
+        const isActiveChunk = Math.abs(wellCX - heroCX) <= 1 && Math.abs(wellCY - heroCY) <= 1;
+
+        const wellKey = `${well.x}_${well.y}`;
+        wellAccumulators.set(wellKey, (wellAccumulators.get(wellKey) || 0) + modifier);
+
+        if (wellAccumulators.get(wellKey) >= 10.0) {
+            wellAccumulators.set(wellKey, wellAccumulators.get(wellKey) - 10.0);
+
             if (isActiveChunk) {
-                // Spawn slightly offset from the well base to clear structural collision footprints
+                // 1. Spawns physically within player's rendered active zones
                 spawnHobbit(well.x + 2, well.y + 2, null, well.x, well.y, 'Military');
+            } else {
+                // 2. Distant Campaign model launches statistical Background Traveler
+                let targetWell = null;
+                let minWellDist = Infinity;
+                plannedWells.forEach(otherWell => {
+                    if (otherWell.x === well.x && otherWell.y === well.y) return;
+                    const d = Math.hypot(otherWell.x - well.x, otherWell.y - well.y);
+                    if (d < minWellDist) {
+                        minWellDist = d;
+                        targetWell = otherWell;
+                    }
+                });
+
+                if (targetWell) {
+                    const travelDist = Math.hypot(targetWell.x - well.x, targetWell.y - well.y);
+                    // Standard progress: 2 tiles traversed per tick (second)
+                    const totalTicksNeeded = travelDist / 2; 
+
+                    macroTravelers.push({
+                        id: 'macro_' + Math.random().toString(36).substr(2, 9),
+                        homeX: well.x,
+                        homeY: well.y,
+                        targetX: targetWell.x,
+                        targetY: targetWell.y,
+                        currentTileX: well.x,
+                        currentTileY: well.y,
+                        progressTicks: 0,
+                        totalTicksNeeded: totalTicksNeeded > 0 ? totalTicksNeeded : 1
+                    });
+                }
             }
-        });
+        }
+    });
+
+    // ==========================================
+    // 🌍 MACRO CATCH-UP ENGINE
+    // ==========================================
+    for (let i = macroTravelers.length - 1; i >= 0; i--) {
+        const mt = macroTravelers[i];
+        
+        mt.progressTicks += modifier;
+        const ratio = Math.min(1.0, mt.progressTicks / mt.totalTicksNeeded);
+        
+        mt.currentTileX = mt.homeX + (mt.targetX - mt.homeX) * ratio;
+        mt.currentTileY = mt.homeY + (mt.targetY - mt.homeY) * ratio;
+
+        const currentCX = Math.floor(mt.currentTileX / 100);
+        const currentCY = Math.floor(mt.currentTileY / 100);
+        const enteredActiveArea = Math.abs(currentCX - heroCX) <= 1 && Math.abs(currentCY - heroCY) <= 1;
+
+        if (enteredActiveArea) {
+            // Emerges from the campaign fog into real physical simulation
+            spawnHobbit(
+                Math.floor(mt.currentTileX), 
+                Math.floor(mt.currentTileY), 
+                null, 
+                mt.homeX, 
+                mt.homeY, 
+                'Military'
+            );
+            macroTravelers.splice(i, 1);
+        } else if (ratio >= 1.0) {
+            // Reached target well off-screen completely unnoticed - remove safely
+            macroTravelers.splice(i, 1);
+        }
     }
 
     for (let i = hobbits.length - 1; i >= 0; i--) {
@@ -593,7 +657,37 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         const hobbitCY = Math.floor(hobbit.y / 1600);
 
         const isInsideActiveChunks = Math.abs(hobbitCX - heroCX) <= 1 && Math.abs(hobbitCY - heroCY) <= 1;
-        if (!isInsideActiveChunks) return;
+        
+        // Dynamic Transition back to campaign macro scale if player walks away
+        if (!isInsideActiveChunks) {
+            if (hobbit.job === 'Military') {
+                const destinationWell = plannedWells.find(well => {
+                    // Try to map their previous logic destination, else target any closest
+                    return well.x !== hobbit.homeX || well.y !== hobbit.homeY;
+                });
+                
+                if (destinationWell) {
+                    const travelDist = Math.hypot(destinationWell.x - (hobbit.x / 16), destinationWell.y - (hobbit.y / 16));
+                    const totalTicksNeeded = travelDist / 2;
+
+                    macroTravelers.push({
+                        id: hobbit.id,
+                        homeX: hobbit.homeX || Math.floor(hobbit.x / 16),
+                        homeY: hobbit.homeY || Math.floor(hobbit.y / 16),
+                        targetX: destinationWell.x,
+                        targetY: destinationWell.y,
+                        currentTileX: Math.floor(hobbit.x / 16),
+                        currentTileY: Math.floor(hobbit.y / 16),
+                        progressTicks: 0,
+                        totalTicksNeeded: totalTicksNeeded > 0 ? totalTicksNeeded : 1
+                    });
+                }
+            }
+            // Remove physical instance safely
+            const physicalIndex = hobbits.indexOf(hobbit);
+            if (physicalIndex !== -1) hobbits.splice(physicalIndex, 1);
+            return;
+        }
 
         if (!hobbit.lastUpdated) hobbit.lastUpdated = now;
         let deltaSeconds = (now - hobbit.lastUpdated) / 1000;
