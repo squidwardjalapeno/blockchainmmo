@@ -1075,7 +1075,7 @@ export function populateWorld(worldMap) {
 
     // 3. Mark the exact cells as Villages (101)
     worldMap[50 * size + 50] = 101;
-    worldMap[50 * size + 53] = 101;
+    worldMap[50 * size + 56] = 101;
 
     // ==========================================
 
