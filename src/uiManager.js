@@ -1240,7 +1240,7 @@ function renderHobbitManagerUI() {
     const detailsEl = document.getElementById('selected-hobbit-details');
     const buttonContainer = document.getElementById('job-button-container');
     
-    import('./hobbits.js').then(m => {
+    import('./hobbitCore.js').then(m => {
         const activeHobbits = m.hobbits;
 
         if (activeHobbits.length === 0) {
@@ -1323,8 +1323,8 @@ window.selectHobbit = (id) => {
 
 window.assignHobbitJob = (jobName) => {
     if (!selectedHobbitId) return;
-    import('./hobbits.js').then(m => {
-        const target = m.hobbits.find(m => m.id === selectedHobbitId);
+    import('./hobbitCore.js').then(m => {
+        const target = m.hobbits.find(hob => hob.id === selectedHobbitId);
         if (target) {
             target.job = jobName;
             target.path = []; 

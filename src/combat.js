@@ -2,8 +2,7 @@
 import { remotePlayers } from './multiplayer.js';
 import { animals } from './animals.js';
 import { getTileData } from './physics.js';
-import { hobbits } from './hobbits.js'; // 👈 IMPORT HOBBITS
-
+import { hobbits } from './hobbitCore.js';
 
 
 export let currentTarget = null; // The passive "hover" target

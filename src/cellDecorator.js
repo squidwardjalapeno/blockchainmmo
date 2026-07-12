@@ -190,7 +190,8 @@ export function drawHouse(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worl
     registerObject(gx + 0, gy - 1, 'CHEST_STORAGE', { houseId: currentId });
     registerObject(gx + 3, gy - 1, 'BEDROLL', { houseId: currentId });
 
-    import('./hobbits.js').then(m => m.spawnHobbit(gx + 2, gy + 1, currentId, gx + 2, gy - 1));
+    // Inside drawHouse()
+import('./hobbitCore.js').then(m => m.spawnHobbit(gx + 2, gy + 1, currentId, gx + 2, gy - 1));
 }
 
 export function drawTemple(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
@@ -218,7 +219,8 @@ export function drawGeneralStore(gx, gy, worldMatrix, roomMatrix, fertilityMatri
     stampExteriorWalls(gx, gy, 4, 4, 3, 49, 1, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
 
     registerObject(gx + 2, gy - 2, 'STORE_COUNTER', { houseId: currentId });
-    import('./hobbits.js').then(m => m.spawnHobbit(gx + 2, gy + 1, currentId, gx + 2, gy - 1, 'Trader'));
+    // Inside drawGeneralStore()
+import('./hobbitCore.js').then(m => m.spawnHobbit(gx + 2, gy + 1, currentId, gx + 2, gy - 1, 'Trader'));
 }
 
 export function drawVillageHall(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
@@ -296,7 +298,8 @@ export function drawBarn(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, world
     registerObject(gx + 3, gy - 1, 'HAY_STORAGE', { houseId: currentId });
     registerObject(gx + 1, gy - 1, 'HAY_TABLE', { houseId: currentId });
 
-    import('./hobbits.js').then(m => m.spawnHobbit(gx + 2, gy + 1, currentId, gx + 2, gy - 1, 'Farmer'));
+    // Inside drawBarn()
+import('./hobbitCore.js').then(m => m.spawnHobbit(gx + 2, gy + 1, currentId, gx + 2, gy - 1, 'Farmer'));
 }
 
 export function drawRanch(gx, gy, width, height, gateX, barnType, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {

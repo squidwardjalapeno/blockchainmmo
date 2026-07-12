@@ -23,7 +23,8 @@ import { handleInteractions, updateHeroStats, handlePvPCombat, handleFinancialAc
 import { initUI, updateHUD } from './uiManager.js';
 import { getMasterBalance } from './blockchainManager.js';
 import { worldTime } from './clock.js'; // 👈 ADD THIS IMPORT
-import { updateHobbits, hobbits } from './hobbits.js';
+import { hobbits } from './hobbitCore.js';
+import { updateHobbits } from './hobbitManager.js';
 import { drawHobbits } from './renderer.js';
 
 // js/overworldGame.js
