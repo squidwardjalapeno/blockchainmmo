@@ -23,7 +23,8 @@ import {
     hobbits, 
     getHobbitVillage, 
     spawnHobbit, 
-    YIELD_MAP 
+    YIELD_MAP,
+    HOBBIT_FOOD_VALUES // 👈 Add this variable
 } from './hobbitCore.js';
 import { 
     isWalkableForHobbit, 
