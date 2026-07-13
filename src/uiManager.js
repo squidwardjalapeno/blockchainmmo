@@ -9,6 +9,8 @@ import { submitVoucherToChain, connectWallet } from './blockchainManager.js';
 import { mapCanvas } from './renderer.js';
 import { recalculateStats } from './interactionManager.js';
 import { PALADIN_SKILLS } from './abilities.js'; 
+import { hobbits } from './hobbitCore.js';
+import { macroTravelers } from './hobbitManager.js';
 
 if (typeof window !== 'undefined') {
     logStep("uiManager.js loaded");
@@ -1716,6 +1718,57 @@ export function updateHUD() {
         } else {
             contestHud.classList.add('hidden');
         }
+    }
+
+    // 🧝 UPDATE LEFT-ALIGNED HOBBIT DIAGNOSTICS TERMINAL
+    const debugLog = document.getElementById('debug-log');
+    if (debugLog) {
+        let projectionsHTML = "";
+        
+        if (macroTravelers.length === 0) {
+            projectionsHTML = `<div style="color: #666; font-size: 7px; text-align: center; margin-top: 10px;">NO ACTIVE PROJECTIONS</div>`;
+        } else {
+            projectionsHTML = macroTravelers.map(mt => {
+                const dx = mt.targetX - mt.homeX;
+                const dy = mt.targetY - mt.homeY;
+                let dir = "Idle";
+                if (Math.abs(dx) > Math.abs(dy)) {
+                    dir = dx > 0 ? "East" : "West";
+                } else {
+                    dir = dy > 0 ? "South" : "North";
+                }
+                const ratio = Math.min(1.0, mt.progressTicks / mt.totalTicksNeeded);
+                const speedStr = "~35 px/s"; 
+                
+                return `
+                    <div style="border-bottom: 1px dashed #333; padding-bottom: 4px; margin-bottom: 4px; font-family: monospace;">
+                        <span style="color: var(--banana-dark);">ID:</span> ${mt.id.substring(6)}<br>
+                        <span style="color: #ccc;">LOC:</span> [${Math.floor(mt.currentTileX)}, ${Math.floor(mt.currentTileY)}]<br>
+                        <span style="color: #ccc;">DEST:</span> [${mt.targetX}, ${mt.targetY}]<br>
+                        <span style="color: #ccc;">DIR:</span> ${dir} | <span style="color: #ccc;">SPD:</span> ${speedStr}<br>
+                        <span style="color: var(--highlight);">PROGRESS:</span> ${Math.floor(ratio * 100)}%
+                    </div>
+                `;
+            }).join('');
+        }
+
+        debugLog.innerHTML = `
+            <div style="color: var(--banana); font-size: 9px; border-bottom: 2px solid var(--bg-dark); padding-bottom: 4px; font-weight: bold; text-align: center; letter-spacing: 1px;">
+                🧝 HOBBIT DIAGNOSTICS
+            </div>
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #333; padding-bottom: 3px;">
+                <span>ACTIVE POPULATION:</span>
+                <span style="color: var(--highlight); font-weight: bold;">${hobbits.length}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #333; padding-bottom: 3px;">
+                <span>OFF-SCREEN TRAVELERS:</span>
+                <span style="color: var(--highlight); font-weight: bold;">${macroTravelers.length}</span>
+            </div>
+            <div style="font-size: 7px; color: var(--banana-dark); margin-top: 4px; font-weight: bold; border-bottom: 1px solid #333; padding-bottom: 2px;">PROJECTION TELEMETRY:</div>
+            <div style="max-height: 25vh; overflow-y: auto; padding-right: 4px; margin-top: 2px;">
+                ${projectionsHTML}
+            </div>
+        `;
     }
 }
 
