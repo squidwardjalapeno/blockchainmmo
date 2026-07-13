@@ -453,30 +453,31 @@
         </div>
     </div>
 
-    <!-- VILLAGE OWNERSHIP / CAPTURE MODAL -->
-        <div id="village-menu" class="hidden menu-modal" style="z-index: 3000;">
-            <div class="pixel-panel" style="width: 380px; text-align: center;">
-                <h2 id="village-title" style="color: var(--banana-dark); margin-top: 0;">VILLAGE CORE</h2>
-                <p id="village-subtitle" style="font-size: 8px; margin-bottom: 20px; color:#555;">Review and claim regional territory.</p>
-                
-                <div style="background: #fff; padding: 15px; border: 4px solid var(--bg-dark); margin-bottom: 20px;">
-                    <div style="font-size: 10px; margin-bottom: 10px;">CURRENT OWNER</div>
-                    <div id="village-owner-label" style="font-size: 12px; color: var(--highlight); font-weight: bold; margin-bottom: 15px;">UNCLAIMED</div>
-                    
-                    <div id="village-progress-section" class="hidden">
-                        <div style="font-size: 10px; margin-bottom: 5px;">CAPTURE PROGRESS</div>
-                        <div style="width: 100%; background: #ccc; height: 16px; border: 2px solid #000; position: relative;">
-                            <div id="village-progress-bar" style="width: 0%; height: 100%; background: #d95757;"></div>
-                            <div id="village-progress-text" style="position: absolute; width: 100%; top: 2px; font-size: 8px; text-align: center; color: #000;">0%</div>
-                        </div>
-                    </div>
+    <!-- index.html -->
+<!-- VILLAGE OWNERSHIP / CAPTURE MODAL -->
+<div id="village-menu" class="hidden menu-modal" style="z-index: 3000;">
+    <div class="pixel-panel" style="width: 380px; text-align: center;">
+        <h2 id="village-title" style="color: var(--banana-dark); margin-top: 0;">VILLAGE CORE</h2>
+        <p id="village-subtitle" style="font-size: 8px; margin-bottom: 20px; color:#555;">Review and claim regional territory.</p>
+        
+        <div style="background: #fff; padding: 15px; border: 4px solid var(--bg-dark); margin-bottom: 20px;">
+            <div style="font-size: 10px; margin-bottom: 10px;">CURRENT OWNER</div>
+            <div id="village-owner-label" style="font-size: 12px; color: var(--highlight); font-weight: bold; margin-bottom: 15px;">UNCLAIMED</div>
+            
+            <div id="village-progress-section" class="hidden">
+                <div style="font-size: 10px; margin-bottom: 5px;">CAPTURE PROGRESS</div>
+                <div style="width: 100%; background: #ccc; height: 16px; border: 2px solid #000; position: relative;">
+                    <div id="village-progress-bar" style="width: 0%; height: 100%; background: #d95757;"></div>
+                    <div id="village-progress-text" style="position: absolute; width: 100%; top: 2px; font-size: 8px; text-align: center; color: #000;">0%</div>
                 </div>
-
-                <button id="village-claim-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 10px;">CLAIM TERRITORY</button>
-                <button id="village-toggle-spawning-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 10px;">SPAWNING: ENABLED</button>
-                <button id="close-village-btn" class="pixel-btn cancel" style="width: 100%;">Step Away</button>
             </div>
         </div>
+
+        <button id="village-claim-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 10px;">CLAIM TERRITORY</button>
+        <button id="village-toggle-spawning-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 10px;">SPAWNING: ENABLED</button>
+        <button id="close-village-btn" class="pixel-btn cancel" style="width: 100%;">Step Away</button>
+    </div>
+</div>
 
     <!-- 🪧 ITEM TOOLTIP -->
     <div id="item-tooltip" style="position: fixed; display: none; background: rgba(0, 0, 0, 0.85); color: white; border: 4px solid var(--bg-dark); padding: 10px; z-index: 10000; width: 160px; pointer-events: none; font-size: 8px; line-height: 1.4; box-shadow: 4px 4px 0px rgba(0,0,0,0.5);">
