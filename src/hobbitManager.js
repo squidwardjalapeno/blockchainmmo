@@ -24,7 +24,7 @@ import {
     getHobbitVillage, 
     spawnHobbit, 
     YIELD_MAP,
-    HOBBIT_FOOD_VALUES // 👈 Add this variable
+    HOBBIT_FOOD_VALUES 
 } from './hobbitCore.js';
 import { 
     isWalkableForHobbit, 
@@ -54,6 +54,42 @@ export let minionSpawnTimer = 10.0;
 export const macroTravelers = [];
 
 /**
+ * Handles the instantiation of a complete squad with a Sergeant and followers
+ */
+export function spawnSquad(gx, gy, homeX, homeY) {
+    const squadId = 'squad_' + Math.random().toString(36).substr(2, 9);
+    
+    // 1. Spawn 1 Sergeant (Leader)
+    spawnHobbit(gx, gy, null, homeX, homeY, 'Military');
+    const sergeant = hobbits[hobbits.length - 1];
+    if (sergeant) {
+        sergeant.squadId = squadId;
+        sergeant.squadRole = 'Sergeant';
+        sergeant.name = "[Sergeant] " + sergeant.name;
+        sergeant.hp = 60; 
+        sergeant.maxHp = 60;
+        sergeant.speed = 38; 
+    }
+
+    // 2. Spawn 4 Military Followers with slight offsets
+    const offsets = [
+        { dx: -1, dy: 1 },
+        { dx: 1, dy: 1 },
+        { dx: -2, dy: 2 },
+        { dx: 2, dy: 2 }
+    ];
+
+    offsets.forEach(offset => {
+        spawnHobbit(gx + offset.dx, gy + offset.dy, null, homeX, homeY, 'Military');
+        const follower = hobbits[hobbits.length - 1];
+        if (follower) {
+            follower.squadId = squadId;
+            follower.squadRole = 'Military';
+        }
+    });
+}
+
+/**
  * Orchestrates the active hobbit entity lifecycle loops across Tiers 1, 2, and 3.
  */
 export function updateHobbits(modifier, worldMatrix, roomMatrix) {
@@ -70,16 +106,15 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         minionSpawnTimer = 10.0;
         
         plannedWells.forEach(well => {
-
-            // 🎯 SKIP SPAWNING IF DISABLED FOR DEBUG PURPOSES
             if (well.spawningDisabled) return;
-            
+
             const wellCX = Math.floor(well.x / 100);
             const wellCY = Math.floor(well.y / 100);
             const isActiveChunk = Math.abs(wellCX - heroCX) <= 1 && Math.abs(wellCY - heroCY) <= 1;
             
             if (isActiveChunk) {
-                spawnHobbit(well.x + 2, well.y + 2, null, well.x, well.y, 'Military');
+                // Spawn coordinated local squad
+                spawnSquad(well.x + 2, well.y + 2, well.x, well.y);
             } else {
                 // Find nearest enemy well for off-screen projection target
                 let targetWell = null;
@@ -98,7 +133,8 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     const totalTicksNeeded = travelDist / 2; // Travel speed approximation
 
                     macroTravelers.push({
-                        id: 'macro_' + Math.random().toString(36).substr(2, 9),
+                        id: 'squad_' + Math.random().toString(36).substr(2, 9),
+                        isSquad: true,
                         homeX: well.x,
                         homeY: well.y,
                         targetX: targetWell.x,
@@ -130,21 +166,13 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         const enteredActiveArea = Math.abs(currentCX - heroCX) <= 1 && Math.abs(currentCY - heroCY) <= 1;
 
         if (enteredActiveArea) {
-            spawnHobbit(
+            // Unpacks macro-squad projection upon entering active boundaries
+            spawnSquad(
                 Math.floor(mt.currentTileX), 
                 Math.floor(mt.currentTileY), 
-                null, 
                 mt.homeX, 
-                mt.homeY, 
-                'Military'
+                mt.homeY
             );
-            
-            const spawned = hobbits[hobbits.length - 1];
-            if (spawned) {
-                spawned.goal = 'march';
-                spawned.state = 'walking';
-                spawned.moveTimer = 0; 
-            }
             macroTravelers.splice(i, 1);
         } else if (ratio >= 1.0) {
             macroTravelers.splice(i, 1);
@@ -167,6 +195,17 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 Math.floor(hob.y / 16), 
                 "raw_chicken", 50, 0
             ));
+
+            // DISBAND SQUAD ON SERGEANT DEATH
+            if (hob.squadRole === 'Sergeant' && hob.squadId) {
+                console.log(`⚠️ Sergeant ${hob.name} fell in battle! Disbanding followers.`);
+                hobbits.forEach(follower => {
+                    if (follower.squadId === hob.squadId) {
+                        delete follower.squadId;
+                        delete follower.squadRole;
+                    }
+                });
+            }
 
             hobbits.splice(i, 1);
             continue;
@@ -193,7 +232,8 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                     const totalTicksNeeded = travelDist / 2;
 
                     macroTravelers.push({
-                        id: hobbit.id,
+                        id: hobbit.squadId || 'squad_' + Math.random().toString(36).substr(2, 9),
+                        isSquad: !!hobbit.squadId,
                         homeX: hobbit.homeX || Math.floor(hobbit.x / 16),
                         homeY: hobbit.homeY || Math.floor(hobbit.y / 16),
                         targetX: destinationWell.x,
@@ -345,7 +385,23 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 }
 
                 if (!hobbit.path || hobbit.path.length === 0) {
-                    if (hobbit.job === 'Military') {
+                    // SQUAD FOLLOW-THE-LEADER OFF-SCREEN SYNC
+                    if (hobbit.job === 'Military' && hobbit.squadId && hobbit.squadRole === 'Military') {
+                        const sergeant = hobbits.find(h => h.squadId === hobbit.squadId && h.squadRole === 'Sergeant');
+                        if (sergeant) {
+                            const sTX = Math.floor((sergeant.x + 8) / 16);
+                            const sTY = Math.floor((sergeant.y + 15) / 16);
+                            const path = findOffScreenPath(currTX, currTY, sTX, sTY);
+                            if (path) {
+                                hobbit.path = path;
+                                hobbit.goal = 'march';
+                            }
+                        } else {
+                            delete hobbit.squadId;
+                            delete hobbit.squadRole;
+                        }
+                    }
+                    else if (hobbit.job === 'Military') {
                         const homeWell = hobbit.cachedWell || getHobbitVillage(hobbit);
                         let targetWell = null;
                         let minWellDist = Infinity;
@@ -579,7 +635,73 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         // ⚔️ MILITARY JOB STATE MACHINE
         // ==========================================
         if (hobbit.job === 'Military') {
-            if (hobbit.goal === 'wander' && hobbit.moveTimer > 0) {
+            // SQUAD FOLLOW-THE-LEADER MOVEMENT OVERRIDE
+            if (hobbit.squadId && hobbit.squadRole === 'Military') {
+                const sergeant = hobbits.find(h => h.squadId === hobbit.squadId && h.squadRole === 'Sergeant');
+                
+                if (sergeant) {
+                    // Pull local target reference from Sergeant
+                    const target = sergeant.attackTarget;
+                    hobbit.attackTarget = target;
+                    
+                    if (target && target.hp > 0) {
+                        hobbit.goal = 'attack_enemy';
+                        const distToTarget = Math.hypot((target.x + 8) - (hobbit.x + 8), (target.y + 8) - (hobbit.y + 8));
+                        
+                        if (distToTarget <= 24) {
+                            if (hobbit.state !== 'attacking') {
+                                hobbit.state = 'idle';
+                                hobbit.path = [];
+                            }
+                            if (hobbit.attackTimer <= 0 && hobbit.state !== 'attacking') {
+                                hobbit.state = 'attacking';
+                                hobbit.attackTimer = 0.5;
+                                hobbit.hasStruck = false;
+                                const tdx = target.x - hobbit.x;
+                                const tdy = target.y - hobbit.y;
+                                hobbit.dir = Math.abs(tdx) > Math.abs(tdy) ? (tdx > 0 ? 'East' : 'West') : (tdy > 0 ? 'South' : 'North');
+                            }
+                        } else if (hobbit.pathTimer <= 0) {
+                            hobbit.pathTimer = 0.4 + Math.random() * 0.4;
+                            const targetTX = Math.floor((target.x + 8) / 16);
+                            const targetTY = Math.floor((target.y + 8) / 16);
+                            const path = findPathToCoords(currTX, currTY, targetTX, targetTY, worldMatrix, roomMatrix, hobbit, 15);
+                            if (path) {
+                                hobbit.path = path;
+                                hobbit.state = 'walking';
+                            }
+                        }
+                    } else {
+                        // Out of combat: Follow close to Sergeant
+                        hobbit.goal = 'march';
+                        const sTX = Math.floor((sergeant.x + 8) / 16);
+                        const sTY = Math.floor((sergeant.y + 15) / 16);
+                        const distToSergeant = Math.hypot(sergeant.x - hobbit.x, sergeant.y - hobbit.y);
+                        
+                        if (distToSergeant > 32) {
+                            if ((!hobbit.path || hobbit.path.length === 0) && hobbit.pathTimer <= 0) {
+                                hobbit.pathTimer = 0.3;
+                                const path = findPathToCoords(currTX, currTY, sTX, sTY, worldMatrix, roomMatrix, hobbit, 12);
+                                if (path) {
+                                    hobbit.path = path;
+                                    hobbit.state = 'walking';
+                                }
+                            }
+                        } else {
+                            if (sergeant.state === 'idle') {
+                                hobbit.state = 'idle';
+                                hobbit.path = [];
+                            }
+                        }
+                    }
+                } else {
+                    // Fallback to disband if Sergeant is not found
+                    delete hobbit.squadId;
+                    delete hobbit.squadRole;
+                }
+            }
+            // Standard Sergeant / Independent Military AI
+            else if (hobbit.goal === 'wander' && hobbit.moveTimer > 0) {
                 hobbit.moveTimer -= modifier;
                 if (hobbit.moveTimer <= 0) {
                     hobbit.goal = 'march';
