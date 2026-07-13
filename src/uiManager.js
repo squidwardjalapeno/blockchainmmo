@@ -1370,6 +1370,8 @@ export function updateDoorControlUI(gx, gy, locked) {
     }
 }
 
+// src/uiManager.js
+
 export function openVillageMenu(wellX, wellY, villageData) {
     document.getElementById('village-menu').classList.remove('hidden');
     
@@ -1381,6 +1383,23 @@ export function openVillageMenu(wellX, wellY, villageData) {
 
     const shortOwner = villageData.owner ? (villageData.owner.startsWith('0x') ? villageData.owner.substring(0, 6) + "..." : villageData.owner) : "UNCLAIMED";
     ownerLabel.innerText = shortOwner;
+
+    // 🎯 Dynamically check plannedWells to manage local spawner behavior
+    import('./cellDecorator.js').then(m => {
+        const well = m.plannedWells.find(w => w.x === wellX && w.y === wellY);
+        const toggleSpawningBtn = document.getElementById('village-toggle-spawning-btn');
+        if (toggleSpawningBtn && well) {
+            const updateSpawningBtnText = () => {
+                toggleSpawningBtn.innerText = well.spawningDisabled ? "SPAWNING: DISABLED" : "SPAWNING: ENABLED";
+                toggleSpawningBtn.className = well.spawningDisabled ? "pixel-btn cancel" : "pixel-btn safe";
+            };
+            updateSpawningBtnText();
+            toggleSpawningBtn.onclick = () => {
+                well.spawningDisabled = !well.spawningDisabled;
+                updateSpawningBtnText();
+            };
+        }
+    });
 
     if (villageData.owner === null) {
         progressSection.classList.add('hidden');

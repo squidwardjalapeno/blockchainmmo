@@ -70,6 +70,10 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         minionSpawnTimer = 10.0;
         
         plannedWells.forEach(well => {
+
+            // 🎯 SKIP SPAWNING IF DISABLED FOR DEBUG PURPOSES
+            if (well.spawningDisabled) return;
+            
             const wellCX = Math.floor(well.x / 100);
             const wellCY = Math.floor(well.y / 100);
             const isActiveChunk = Math.abs(wellCX - heroCX) <= 1 && Math.abs(wellCY - heroCY) <= 1;
