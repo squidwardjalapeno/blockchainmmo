@@ -1384,7 +1384,7 @@ export function openVillageMenu(wellX, wellY, villageData) {
     const shortOwner = villageData.owner ? (villageData.owner.startsWith('0x') ? villageData.owner.substring(0, 6) + "..." : villageData.owner) : "UNCLAIMED";
     ownerLabel.innerText = shortOwner;
 
-    // 🎯 Dynamically check plannedWells to manage local spawner behavior
+    // Dynamic well lookup to handle spawning toggle logic safely without circular imports
     import('./cellDecorator.js').then(m => {
         const well = m.plannedWells.find(w => w.x === wellX && w.y === wellY);
         const toggleSpawningBtn = document.getElementById('village-toggle-spawning-btn');
