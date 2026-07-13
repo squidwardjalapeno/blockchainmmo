@@ -1,6 +1,6 @@
 // src/uiManager.js
 
-import { hero, getLevelInfo, gameState } from './entities.js';
+import { hero, getLevelInfo, gameState, getFocusCoordinates } from './entities.js';
 import { socket, playerWallet, setPlayerWallet, syncInventoryWithServer, chestCache, hayStorageCache, storeDbCache, playerRequestedChestId, setPlayerRequestedChestId, doorStates } from './multiplayer.js';
 import { CONFIG } from './config.js';
 import { ITEM_TYPES, createItem } from './items.js';
