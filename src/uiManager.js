@@ -9,8 +9,11 @@ import { submitVoucherToChain, connectWallet } from './blockchainManager.js';
 import { mapCanvas } from './renderer.js';
 import { recalculateStats } from './interactionManager.js';
 import { PALADIN_SKILLS } from './abilities.js'; 
+import { roomMatrix } from './game.js';
+import { viewport } from './viewport.js';
 import { hobbits } from './hobbitCore.js';
 import { macroTravelers } from './hobbitManager.js';
+
 
 if (typeof window !== 'undefined') {
     logStep("uiManager.js loaded");
@@ -1720,6 +1723,54 @@ export function updateHUD() {
         }
     }
 
+    // 🧝 CALCULATE HOBBIT STATES (ON-SCREEN vs OFF-SCREEN LOCAL vs PROJECTIONS)
+    let onscreenHobbitsCount = 0;
+    let offscreenLocalCount = 0;
+
+    const focus = getFocusCoordinates();
+    const hTX = Math.floor((focus.x + 8) / 16);
+    const hTY = Math.floor((focus.y + 15) / 16);
+    
+    let heroHouseId = 0;
+    if (roomMatrix) {
+        const rCol = roomMatrix[Math.floor(hTX / 100)]?.[Math.floor(hTY / 100)];
+        if (rCol) {
+            heroHouseId = rCol[((hTY % 100 + 100) % 100 * 100) + ((hTX % 100 + 100) % 100)] || 0;
+        }
+    }
+
+    const screenW = viewport.screen[0];
+    const screenH = viewport.screen[1];
+
+    hobbits.forEach(hobbit => {
+        const screenX = Math.floor(hobbit.x + viewport.offset[0]);
+        const screenY = Math.floor(hobbit.y + viewport.offset[1]);
+        const isPhysicallyOnScreen = (screenX >= -32 && screenX <= screenW + 32 && screenY >= -32 && screenY <= screenH + 32);
+
+        let hobbitRoomId = 0;
+        if (roomMatrix) {
+            const pTX = Math.floor((hobbit.x + 8) / 16);
+            const pTY = Math.floor((hobbit.y + 15) / 16);
+            const pCol = roomMatrix[Math.floor(pTX / 100)]?.[Math.floor(pTY / 100)];
+            if (pCol) {
+                hobbitRoomId = pCol[((pTY % 100 + 100) % 100 * 100) + ((pTX % 100 + 100) % 100)] || 0;
+            }
+        }
+
+        let isIndoorVisibilityMatch = false;
+        if (heroHouseId !== 0 && heroHouseId !== 9999) {
+            isIndoorVisibilityMatch = (hobbitRoomId === heroHouseId);
+        } else {
+            isIndoorVisibilityMatch = (hobbitRoomId === 0 || hobbitRoomId === 9999);
+        }
+
+        if (isPhysicallyOnScreen && isIndoorVisibilityMatch) {
+            onscreenHobbitsCount++;
+        } else {
+            offscreenLocalCount++;
+        }
+    });
+
     // 🧝 UPDATE LEFT-ALIGNED HOBBIT DIAGNOSTICS TERMINAL
     const debugLog = document.getElementById('debug-log');
     if (debugLog) {
@@ -1756,16 +1807,26 @@ export function updateHUD() {
             <div style="color: var(--banana); font-size: 9px; border-bottom: 2px solid var(--bg-dark); padding-bottom: 4px; font-weight: bold; text-align: center; letter-spacing: 1px;">
                 🧝 HOBBIT DIAGNOSTICS
             </div>
-            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #333; padding-bottom: 3px;">
-                <span>ACTIVE POPULATION:</span>
-                <span style="color: var(--highlight); font-weight: bold;">${hobbits.length}</span>
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #333; padding-bottom: 3px; font-weight: bold;">
+                <span>TOTAL HOBBITS:</span>
+                <span style="color: var(--banana);">${hobbits.length + macroTravelers.length}</span>
             </div>
-            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #333; padding-bottom: 3px;">
-                <span>OFF-SCREEN TRAVELERS:</span>
-                <span style="color: var(--highlight); font-weight: bold;">${macroTravelers.length}</span>
+            <div style="padding-left: 6px; font-size: 7px; color: #ccc;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                    <span>├─ 👁️ ON-SCREEN (ACTIVE):</span>
+                    <span style="color: var(--highlight); font-weight: bold;">${onscreenHobbitsCount}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                    <span>├─ 🌫️ OFF-SCREEN (LOCAL):</span>
+                    <span style="color: var(--highlight); font-weight: bold;">${offscreenLocalCount}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span>└─ 🪖 PROJECTIONS (FAR):</span>
+                    <span style="color: var(--highlight); font-weight: bold;">${macroTravelers.length}</span>
+                </div>
             </div>
             <div style="font-size: 7px; color: var(--banana-dark); margin-top: 4px; font-weight: bold; border-bottom: 1px solid #333; padding-bottom: 2px;">PROJECTION TELEMETRY:</div>
-            <div style="max-height: 25vh; overflow-y: auto; padding-right: 4px; margin-top: 2px;">
+            <div style="max-height: 20vh; overflow-y: auto; padding-right: 4px; margin-top: 2px;">
                 ${projectionsHTML}
             </div>
         `;
