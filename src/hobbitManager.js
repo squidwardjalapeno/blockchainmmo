@@ -1,4 +1,3 @@
-// src/hobbitManager.js
 import { viewport } from './viewport.js';
 import { moveEntity, getTileData } from './physics.js'; 
 import { hero } from './entities.js'; 
@@ -198,7 +197,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
 
             // DISBAND SQUAD ON SERGEANT DEATH
             if (hob.squadRole === 'Sergeant' && hob.squadId) {
-                console.log(`⚠️ Sergeant ${hob.name} fell in battle! Disbanding followers.`);
+                console.log(`💀 Sergeant ${hob.name} fell in battle! Disbanding followers.`);
                 hobbits.forEach(follower => {
                     if (follower.squadId === hob.squadId) {
                         delete follower.squadId;
@@ -385,8 +384,23 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 }
 
                 if (!hobbit.path || hobbit.path.length === 0) {
+                    // TETHER CHECK FOR SERGEANT OFFSCREEN
+                    let isWaitingOffscreen = false;
+                    if (hobbit.job === 'Military' && hobbit.squadRole === 'Sergeant' && hobbit.squadId) {
+                        const followers = hobbits.filter(h => h.squadId === hobbit.squadId && h.squadRole === 'Military');
+                        const tooFar = followers.some(f => Math.hypot(f.x - hobbit.x, f.y - hobbit.y) > 48);
+                        if (tooFar) {
+                            hobbit.state = 'idle';
+                            hobbit.path = [];
+                            isWaitingOffscreen = true;
+                        }
+                    }
+
+                    if (isWaitingOffscreen) {
+                        // Skip updating path for Sergeant while waiting
+                    }
                     // SQUAD FOLLOW-THE-LEADER OFF-SCREEN SYNC
-                    if (hobbit.job === 'Military' && hobbit.squadId && hobbit.squadRole === 'Military') {
+                    else if (hobbit.job === 'Military' && hobbit.squadId && hobbit.squadRole === 'Military') {
                         const sergeant = hobbits.find(h => h.squadId === hobbit.squadId && h.squadRole === 'Sergeant');
                         if (sergeant) {
                             const sTX = Math.floor((sergeant.x + 8) / 16);
@@ -636,6 +650,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         // ==========================================
         if (hobbit.job === 'Military') {
             // SQUAD SERGEANT TETHER / CATCH-UP CHECK
+            let isWaitingForOutfit = false;
             if (hobbit.squadRole === 'Sergeant' && hobbit.squadId && hobbit.state !== 'attacking') {
                 const followers = hobbits.filter(h => h.squadId === hobbit.squadId && h.squadRole === 'Military');
                 const tooFar = followers.some(f => Math.hypot(f.x - hobbit.x, f.y - hobbit.y) > 48); // 3-tile threshold
@@ -643,16 +658,19 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 if (tooFar) {
                     hobbit.state = 'idle';
                     hobbit.path = [];
-                    // Skip movement update to wait for formation
+                    isWaitingForOutfit = true; 
                 }
             }
 
+            if (isWaitingForOutfit) {
+                // Sergeant is waiting for the followers: skip any path recalculations this frame
+            }
             // SQUAD FOLLOW-THE-LEADER MOVEMENT OVERRIDE
-            if (hobbit.squadId && hobbit.squadRole === 'Military') {
+            else if (hobbit.squadId && hobbit.squadRole === 'Military') {
                 const sergeant = hobbits.find(h => h.squadId === hobbit.squadId && h.squadRole === 'Sergeant');
                 
                 if (sergeant) {
-                    // Mirror Sergeant's current target
+                    // Pull target reference from Sergeant
                     const target = sergeant.attackTarget;
                     hobbit.attackTarget = target;
                     
@@ -992,7 +1010,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
                     }
                 }
-                // (Peasants & traders loop logic unchanged...)
                 else if (hobbit.goal === 'harvest_food') {
                     if (hobbit.targetPlant) {
                         const plantKey = `${hobbit.targetPlant.gx}_${hobbit.targetPlant.gy}`;
