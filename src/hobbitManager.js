@@ -635,12 +635,24 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         // ⚔️ MILITARY JOB STATE MACHINE
         // ==========================================
         if (hobbit.job === 'Military') {
+            // SQUAD SERGEANT TETHER / CATCH-UP CHECK
+            if (hobbit.squadRole === 'Sergeant' && hobbit.squadId && hobbit.state !== 'attacking') {
+                const followers = hobbits.filter(h => h.squadId === hobbit.squadId && h.squadRole === 'Military');
+                const tooFar = followers.some(f => Math.hypot(f.x - hobbit.x, f.y - hobbit.y) > 48); // 3-tile threshold
+                
+                if (tooFar) {
+                    hobbit.state = 'idle';
+                    hobbit.path = [];
+                    // Skip movement update to wait for formation
+                }
+            }
+
             // SQUAD FOLLOW-THE-LEADER MOVEMENT OVERRIDE
             if (hobbit.squadId && hobbit.squadRole === 'Military') {
                 const sergeant = hobbits.find(h => h.squadId === hobbit.squadId && h.squadRole === 'Sergeant');
                 
                 if (sergeant) {
-                    // Pull local target reference from Sergeant
+                    // Mirror Sergeant's current target
                     const target = sergeant.attackTarget;
                     hobbit.attackTarget = target;
                     
@@ -672,16 +684,37 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                             }
                         }
                     } else {
-                        // Out of combat: Follow close to Sergeant
+                        // Out of combat: Follow Sergeant in 2x2 grid offsets
                         hobbit.goal = 'march';
                         const sTX = Math.floor((sergeant.x + 8) / 16);
                         const sTY = Math.floor((sergeant.y + 15) / 16);
-                        const distToSergeant = Math.hypot(sergeant.x - hobbit.x, sergeant.y - hobbit.y);
                         
-                        if (distToSergeant > 32) {
+                        const squadFollowers = hobbits.filter(h => h.squadId === hobbit.squadId && h.squadRole === 'Military');
+                        const myIndex = squadFollowers.indexOf(hobbit);
+                        const formationOffsets = [
+                            { dx: -1, dy: 1 },  // Back-Left
+                            { dx: 1, dy: 1 },   // Back-Right
+                            { dx: -1, dy: -1 }, // Front-Left
+                            { dx: 1, dy: -1 }   // Front-Right
+                        ];
+                        const offset = formationOffsets[myIndex % 4] || { dx: 0, dy: 0 };
+                        let targetTX = sTX + offset.dx;
+                        let targetTY = sTY + offset.dy;
+                        
+                        // Safety fallback to Leader's tile if offset is obstructed
+                        if (!isWalkableForHobbit(targetTX, targetTY, worldMatrix, roomMatrix, hobbit)) {
+                            targetTX = sTX;
+                            targetTY = sTY;
+                        }
+
+                        const targetX = targetTX * 16;
+                        const targetY = targetTY * 16;
+                        const distToSlot = Math.hypot(targetX - hobbit.x, targetY - hobbit.y);
+                        
+                        if (distToSlot > 16) {
                             if ((!hobbit.path || hobbit.path.length === 0) && hobbit.pathTimer <= 0) {
                                 hobbit.pathTimer = 0.3;
-                                const path = findPathToCoords(currTX, currTY, sTX, sTY, worldMatrix, roomMatrix, hobbit, 12);
+                                const path = findPathToCoords(currTX, currTY, targetTX, targetTY, worldMatrix, roomMatrix, hobbit, 12);
                                 if (path) {
                                     hobbit.path = path;
                                     hobbit.state = 'walking';
@@ -959,6 +992,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         }
                     }
                 }
+                // (Peasants & traders loop logic unchanged...)
                 else if (hobbit.goal === 'harvest_food') {
                     if (hobbit.targetPlant) {
                         const plantKey = `${hobbit.targetPlant.gx}_${hobbit.targetPlant.gy}`;
