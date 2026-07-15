@@ -593,9 +593,13 @@ export const ABILITY_REGISTRY = {
     },
 };
 
+// src/abilities.js
+
 export function executeAbility(hero, skillIndex, inputState, worldMatrix, roomMatrix) {
     if (!hero.skills || !hero.skills[skillIndex]) return; 
     
+    // --- TEMPORARILY DISABLED LEVEL REQUIREMENTS ---
+    /*
     const unlockLevels = [1, 25, 50, 75];
     const currentLevel = getLevelInfo(hero.xp).level;
     
@@ -603,6 +607,8 @@ export function executeAbility(hero, skillIndex, inputState, worldMatrix, roomMa
         console.log(`🔒 Skill Locked! Requires Level ${unlockLevels[skillIndex]}.`);
         return; 
     }
+    */
+    // -----------------------------------------------
 
     if (hero.cooldowns[skillIndex] > 0) return; 
     if (hero.dashTimer > 0 || hero.warpTimer > 0) return; 

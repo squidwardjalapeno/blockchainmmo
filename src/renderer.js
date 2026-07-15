@@ -1324,12 +1324,17 @@ export function drawHUDButton(ctx, x, y, radius, label, icon, isPressed, cooldow
     }
 }
 
+// src/renderer.js
+
 export function drawAbilityButtons(ctxUI) {
     if (inputState.inputType === 'keyboard') return;
 
     const btns = getUIButtons();
     const currentLevel = getLevelInfo(hero.xp).level;
-    const reqLevels = [1, 25, 50, 75]; 
+    
+    // --- TEMPORARILY DISABLED LEVEL REQUIREMENTS FOR RENDERING ---
+    const reqLevels = [0, 0, 0, 0]; // Changed from [1, 25, 50, 75]
+    // -------------------------------------------------------------
 
     const getSkillIcon = (index) => {
         if (!hero.skills || !hero.skills[index]) return null;
@@ -1360,7 +1365,6 @@ export function drawAbilityButtons(ctxUI) {
         drawHUDButton(ctxUI, btns.INTERACT.x, btns.INTERACT.y, btns.INTERACT.r, "USE", "🖐️", inputState.interact, 0, 0, 0);
     }
 }
-
 export function drawXPStatus(ctxUI) {
     const info = getLevelInfo(hero.xp);
     const availablePoints = info.points - (hero.spentPoints || 0);
