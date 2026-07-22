@@ -71,6 +71,7 @@ export function initInput(canvas) {
     const chatSendBtn = document.getElementById('chat-send-btn');
     const chatInput = document.getElementById('chat-input');
     
+    // --- 💬 CHAT BYPASS & TRANSMISSION LOGIC ---
     if (chatSendBtn && chatInput) {
         chatSendBtn.addEventListener('click', () => {
             const msg = chatInput.value.trim();
@@ -82,8 +83,9 @@ export function initInput(canvas) {
         });
     }
 
-    // --- KEYBOARD LISTENERS ---
+    // --- ⌨️ KEYBOARD DOWN LISTENER ---
     window.addEventListener("keydown", (e) => {
+        // Prevent hotkeys from triggering while typing in chat
         if (document.activeElement && document.activeElement.id === 'chat-input') {
             if (e.code === 'Enter') {
                 const msg = document.activeElement.value.trim();
@@ -133,6 +135,7 @@ export function initInput(canvas) {
         if (e.code === 'Escape' && uiState.isOpen) toggleMenu();
     });
 
+    // --- ⌨️ KEYBOARD UP LISTENER ---
     window.addEventListener("keyup", (e) => {
         delete keysDown[e.code];
         updateKeyboardVectors();
@@ -164,7 +167,7 @@ export function initInput(canvas) {
         inputState.moveY = vy;
     }
 
-    // --- TOUCH / MOBILE LISTENERS ---
+    // --- 📱 MOBILE TOUCH ENGINE ---
     const handleTouch = (e) => {
         e.preventDefault();
         inputState.inputType = 'touch'; 
@@ -260,7 +263,7 @@ export function initInput(canvas) {
         }
     };
 
-    // Routing inputs dynamically depending on whether the RTS mode is active
+    // --- 📱 ROUTE MOBILE TOUCH INTERFACES ---
     canvas.addEventListener('touchstart', (e) => {
         if (rtsState.enabled) {
             handleRtsTouchStart(e);
@@ -327,6 +330,55 @@ export function initInput(canvas) {
             }
         }
     });
+
+    // --- 💻 ROUTE DESKTOP MOUSE INTERFACES FOR RTS MODE ---
+    canvas.addEventListener('contextmenu', (e) => {
+        if (rtsState.enabled) e.preventDefault();
+    });
+
+    canvas.addEventListener('mousedown', (e) => {
+        if (rtsState.enabled) {
+            e.preventDefault();
+            const isRightClick = (e.button === 2);
+            import('./rtsControls.js').then(rts => {
+                rts.handleRtsPointerDown(e.clientX, e.clientY, isRightClick);
+            });
+        }
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+        if (rtsState.enabled) {
+            e.preventDefault();
+            import('./rtsControls.js').then(rts => {
+                rts.handleRtsPointerMove(e.clientX, e.clientY);
+            });
+        }
+    });
+
+    canvas.addEventListener('mouseup', (e) => {
+        if (rtsState.enabled) {
+            e.preventDefault();
+            const isRightClick = (e.button === 2);
+            import('./rtsControls.js').then(rts => {
+                rts.handleRtsPointerUp(e.clientX, e.clientY, isRightClick);
+            });
+        }
+    });
+
+    // --- 💻 DESKTOP SCROLL WHEEL ZOOMING ---
+    canvas.addEventListener('wheel', (e) => {
+        if (rtsState.enabled) {
+            e.preventDefault();
+            
+            if (e.deltaY < 0) {
+                CONFIG.ZOOM = Math.min(3.0, CONFIG.ZOOM + 0.1); 
+            } else {
+                CONFIG.ZOOM = Math.max(1.0, CONFIG.ZOOM - 0.1); 
+            }
+
+            window.dispatchEvent(new Event('resize'));
+        }
+    }, { passive: false });
 }
 
 /**

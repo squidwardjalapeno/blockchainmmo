@@ -204,30 +204,29 @@ export function initUI() {
 
     // src/uiManager.js (Inside initUI function)
 
-    const rtsToggleBtn = document.getElementById('hud-rts-toggle-btn');
-    if (rtsToggleBtn) {
-        rtsToggleBtn.onclick = () => {
+    // src/uiManager.js (Inside initUI() function)
+
+    const menuRtsBtn = document.getElementById('menu-rts-btn');
+    if (menuRtsBtn) {
+        menuRtsBtn.onclick = () => {
+            const overseerID = "Overseer_" + Math.floor(Math.random() * 999999);
+            setPlayerWallet(overseerID);
+            
+            if (socket) {
+                // Connect to socket to sync background coordinates and entities
+                socket.emit('identifyWallet', overseerID);
+            }
+
             import('./rtsControls.js').then(rts => {
-                const currentMode = rts.rtsState.enabled;
-                const nextMode = !currentMode;
+                rts.setRtsMode(true);
                 
-                // Toggle state
-                rts.setRtsMode(nextMode);
-                
-                // Update Button Visuals
-                if (nextMode) {
-                    rtsToggleBtn.innerText = "HERO MODE";
-                    rtsToggleBtn.style.backgroundColor = "var(--banana)";
-                    rtsToggleBtn.style.color = "var(--bg-dark)";
-                    
-                    // Center the camera over the debug village if transitioning to RTS
-                    rts.rtsState.cameraX = 80800;
-                    rts.rtsState.cameraY = 80800;
-                } else {
-                    rtsToggleBtn.innerText = "OVERSEER MODE";
-                    rtsToggleBtn.style.backgroundColor = "var(--highlight)";
-                    rtsToggleBtn.style.color = "white";
-                }
+                // Position camera directly over the debug village center
+                rts.rtsState.cameraX = 80800;
+                rts.rtsState.cameraY = 80800;
+
+                // Close menu overlay and show HUD
+                document.getElementById('main-menu').classList.add('hidden');
+                document.getElementById('hud').style.display = 'block';
             });
         };
     }

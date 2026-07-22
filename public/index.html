@@ -12,30 +12,33 @@
         <canvas id="myCanvas2"></canvas>
         <canvas id="myCanvas3"></canvas>
 
-        <!-- MAIN MENU OVERLAY -->
-        <div id="main-menu" class="menu-overlay">
-            <div class="menu-content pixel-panel" style="width: 500px; text-align: center;">
-                <h1 style="color: var(--banana); font-size: 2.5em; margin-bottom: 10px; text-shadow: 4px 4px 0px var(--bg-dark);">Seeds & Bones</h1>
-                <p style="color: var(--text-dark); margin-bottom: 30px; font-size: 10px;">A RETRO SURVIVAL MOBA</p>
-                
-                <!-- Web3 Login -->
-                <button id="main-connect-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 15px;">CONNECT WALLET</button>
-                
-                <div style="font-size: 8px; color: #555; margin-bottom: 15px;">--- OR ---</div>
+        <!-- index.html (Updated Main Menu overlay) -->
+<div id="main-menu" class="menu-overlay">
+    <div class="menu-content pixel-panel" style="width: 500px; text-align: center;">
+        <h1 style="color: var(--banana); font-size: 2.5em; margin-bottom: 10px; text-shadow: 4px 4px 0px var(--bg-dark);">Seeds & Bones</h1>
+        <p style="color: var(--text-dark); margin-bottom: 30px; font-size: 10px;">A RETRO SURVIVAL MOBA</p>
+        
+        <!-- Web3 Login -->
+        <button id="main-connect-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 15px;">CONNECT WALLET</button>
+        
+        <div style="font-size: 8px; color: #555; margin-bottom: 15px;">--- OR ---</div>
 
-                <!-- Web2 Login / Register -->
-                <input type="text" id="login-username" class="pixel-input" placeholder="Username" style="width: 100%; margin-bottom: 10px; text-align: center;">
-                <input type="password" id="login-password" class="pixel-input" placeholder="Password" style="width: 100%; margin-bottom: 15px; text-align: center;">
-                
-                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                    <button id="login-btn" class="pixel-btn" style="flex: 1;">LOGIN</button>
-                    <button id="register-btn" class="pixel-btn" style="flex: 1;">REGISTER</button>
-                </div>
-
-                <!-- Online Guest Fallback -->
-                <button id="guest-btn" class="pixel-btn cancel" style="width: 100%; font-size: 8px;">PLAY AS GUEST (ONLINE)</button>
-            </div>
+        <!-- Web2 Login / Register -->
+        <input type="text" id="login-username" class="pixel-input" placeholder="Username" style="width: 100%; margin-bottom: 10px; text-align: center;">
+        <input type="password" id="login-password" class="pixel-input" placeholder="Password" style="width: 100%; margin-bottom: 15px; text-align: center;">
+        
+        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+            <button id="login-btn" class="pixel-btn" style="flex: 1;">LOGIN</button>
+            <button id="register-btn" class="pixel-btn" style="flex: 1;">REGISTER</button>
         </div>
+
+        <!-- Role Choices (RTS vs Guest Hero) -->
+        <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 15px; border-top: 4px dashed var(--bg-dark); padding-top: 15px;">
+            <button id="guest-btn" class="pixel-btn" style="width: 100%; font-size: 10px; background-color: var(--banana); color: var(--bg-dark);">PLAY AS HERO (GUEST)</button>
+            <button id="menu-rts-btn" class="pixel-btn safe" style="width: 100%; font-size: 10px;">PLAY AS OVERSEER (RTS)</button>
+        </div>
+    </div>
+</div>
 
         <!-- CHARACTER CREATION MENU -->
         <div id="character-creation-menu" class="menu-overlay hidden">
@@ -88,9 +91,7 @@
                 <button id="hud-withdraw-btn" class="pixel-btn" style="padding: 8px 12px; font-size: 8px;">WITHDRAW</button>
                 <button id="hud-activity-btn" class="pixel-btn" style="padding: 8px 12px; font-size: 10px;">📖</button>
                 <button id="hud-help-btn" class="pixel-btn safe" style="padding: 8px 12px; font-size: 8px;">?</button>
-
-                <!-- 🎯 ADD THIS BUTTON TO TOGGLE THE VIEW MODE -->
-                <button id="hud-rts-toggle-btn" class="pixel-btn" style="padding: 8px 12px; font-size: 8px; background-color: var(--highlight); color: white;">OVERSEER MODE</button>
+                
             </div>
 
             <!-- 🌍 WORLD INDICATORS (Top Right) -->

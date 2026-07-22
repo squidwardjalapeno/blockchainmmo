@@ -3,6 +3,7 @@ import { viewport } from './viewport.js';
 import { hobbits } from './hobbitCore.js';
 import { socket, playerWallet } from './multiplayer.js';
 import { getTileData } from './physics.js';
+import { CONFIG } from './config.js';
 
 if (typeof window !== 'undefined') {
     if (window.logStep) logStep("rtsControls.js loaded");
@@ -10,44 +11,33 @@ if (typeof window !== 'undefined') {
 
 export const rtsState = {
     enabled: false,
-    cameraX: 1600, 
-    cameraY: 1600,
+    cameraX: 80800, 
+    cameraY: 80800,
     selectedHobbitIds: new Set(),
-    dragStart: null,     // { x, y } screen space coordinates
-    dragCurrent: null,   // { x, y } screen space coordinates
+    dragStart: null,     // { x, y } in screen coordinates
+    dragCurrent: null,   // { x, y } in screen coordinates
     isPanning: false,
-    lastPanTouch: null   // { x, y } last touch position during panning
+    lastPanTouch: null
 };
 
-/**
- * 1. Toggle RTS Mode and center camera on player coordinates
- */
 export function setRtsMode(enabled) {
     rtsState.enabled = enabled;
     if (enabled) {
         import('./entities.js').then(m => {
-            rtsState.cameraX = m.hero.x;
-            rtsState.cameraY = m.hero.y;
+            m.hero.isMoving = false;
         });
-        console.log("👁️ Overseer RTS Mode enabled. Free camera active.");
+        console.log("👁️ Overseer RTS Mode enabled.");
     } else {
         rtsState.selectedHobbitIds.clear();
-        console.log("🛡️ MOBA Hero Mode enabled. Camera locked to Hero.");
     }
 }
 
-/**
- * 2. Translate Screen Coordinates (HTML UI Space) into World Pixel Coordinates
- */
 export function screenToWorld(screenX, screenY) {
     const worldX = screenX - viewport.offset[0];
     const worldY = screenY - viewport.offset[1];
     return { x: worldX, y: worldY };
 }
 
-/**
- * 3. Evaluate if a unit coordinate falls within the drawn selection bounds
- */
 function isWithinSelectionBox(unitX, unitY, startScreen, endScreen) {
     const uScreenX = unitX + viewport.offset[0];
     const uScreenY = unitY + viewport.offset[1];
@@ -60,20 +50,25 @@ function isWithinSelectionBox(unitX, unitY, startScreen, endScreen) {
     return uScreenX >= minX && uScreenX <= maxX && uScreenY >= minY && uScreenY <= maxY;
 }
 
-/**
- * 4. Input Triggers: Handle touch initiation
- */
-export function handleRtsTouchStart(e) {
+// ==========================================
+// 📡 UNIFIED POINTER ENGINE (MOUSE & TOUCH)
+// ==========================================
+
+export function handleRtsPointerDown(clientX, clientY, isRightClick = false) {
     if (!rtsState.enabled) return;
 
-    const touches = e.touches;
+    // Convert coordinates to account for current zoom level
+    const rx = clientX / CONFIG.ZOOM;
+    const ry = clientY / CONFIG.ZOOM;
 
-    if (touches.length === 1) {
-        const tx = touches[0].clientX;
-        const ty = touches[0].clientY;
-        const worldPos = screenToWorld(tx, ty);
+    const worldPos = screenToWorld(rx, ry);
 
-        // A. Check if the player tapped directly on a Hobbit
+    if (isRightClick) {
+        // Right click: start camera pan
+        rtsState.isPanning = true;
+        rtsState.lastPanTouch = { x: rx, y: ry };
+    } else {
+        // Left Click: Check for single-unit tap select first
         let clickedUnit = null;
         for (let hob of hobbits) {
             const dist = Math.hypot((hob.x + 8) - worldPos.x, (hob.y + 8) - worldPos.y);
@@ -84,71 +79,50 @@ export function handleRtsTouchStart(e) {
         }
 
         if (clickedUnit) {
-            // Manage selections
-            if (e.shiftKey) {
-                if (rtsState.selectedHobbitIds.has(clickedUnit.id)) {
-                    rtsState.selectedHobbitIds.delete(clickedUnit.id);
-                } else {
-                    rtsState.selectedHobbitIds.add(clickedUnit.id);
-                }
-            } else {
-                rtsState.selectedHobbitIds.clear();
-                rtsState.selectedHobbitIds.add(clickedUnit.id);
-            }
+            rtsState.selectedHobbitIds.clear();
+            rtsState.selectedHobbitIds.add(clickedUnit.id);
         } else {
-            // No unit tapped: initiate camera pan
-            rtsState.lastPanTouch = { x: tx, y: ty };
-            rtsState.isPanning = true;
+            // Clicked empty ground: start drawing selection box
+            rtsState.dragStart = { x: rx, y: ry };
+            rtsState.dragCurrent = { x: rx, y: ry };
         }
-    } else if (touches.length === 2) {
-        // Two fingers: drag marquee box
-        rtsState.isPanning = false;
-        rtsState.dragStart = { x: touches[0].clientX, y: touches[0].clientY };
-        rtsState.dragCurrent = { x: touches[1].clientX, y: touches[1].clientY };
     }
 }
 
-/**
- * 5. Input Updates: Handle drag movements
- */
-export function handleRtsTouchMove(e) {
+export function handleRtsPointerMove(clientX, clientY) {
     if (!rtsState.enabled) return;
 
-    const touches = e.touches;
+    const rx = clientX / CONFIG.ZOOM;
+    const ry = clientY / CONFIG.ZOOM;
 
-    if (rtsState.isPanning && touches.length === 1 && rtsState.lastPanTouch) {
-        const tx = touches[0].clientX;
-        const ty = touches[0].clientY;
+    if (rtsState.isPanning && rtsState.lastPanTouch) {
+        const dx = rx - rtsState.lastPanTouch.x;
+        const dy = ry - rtsState.lastPanTouch.y;
 
-        const dx = tx - rtsState.lastPanTouch.x;
-        const dy = ty - rtsState.lastPanTouch.y;
-
-        // Shift camera positions
         rtsState.cameraX -= dx;
         rtsState.cameraY -= dy;
 
-        rtsState.lastPanTouch = { x: tx, y: ty };
-    } else if (touches.length === 2 && rtsState.dragStart) {
-        rtsState.dragCurrent = { x: touches[1].clientX, y: touches[1].clientY };
+        rtsState.lastPanTouch = { x: rx, y: ry };
+    } else if (rtsState.dragStart) {
+        rtsState.dragCurrent = { x: rx, y: ry };
     }
 }
 
-/**
- * 6. Input Resolutions: Finalize selections or transmit coordinate commands
- */
-export function handleRtsTouchEnd(e) {
+export function handleRtsPointerUp(clientX, clientY, isRightClick = false) {
     if (!rtsState.enabled) return;
 
-    // A. Resolve Marquee box selection
+    // A. Resolve box marquee selection
     if (rtsState.dragStart && rtsState.dragCurrent) {
-        rtsState.selectedHobbitIds.clear();
-
-        hobbits.forEach(hob => {
-            if (isWithinSelectionBox(hob.x + 8, hob.y + 8, rtsState.dragStart, rtsState.dragCurrent)) {
-                rtsState.selectedHobbitIds.add(hob.id);
-            }
-        });
-
+        const dist = Math.hypot(rtsState.dragCurrent.x - rtsState.dragStart.x, rtsState.dragCurrent.y - rtsState.dragStart.y);
+        
+        if (dist > 5) { // Only select if drag is larger than 5 pixels
+            rtsState.selectedHobbitIds.clear();
+            hobbits.forEach(hob => {
+                if (isWithinSelectionBox(hob.x + 8, hob.y + 8, rtsState.dragStart, rtsState.dragCurrent)) {
+                    rtsState.selectedHobbitIds.add(hob.id);
+                }
+            });
+        }
         rtsState.dragStart = null;
         rtsState.dragCurrent = null;
         return;
@@ -161,20 +135,18 @@ export function handleRtsTouchEnd(e) {
         return;
     }
 
-    // C. Resolve unit commands if fingers lift and we have selections
-    if (rtsState.selectedHobbitIds.size > 0 && e.touches.length === 0 && e.changedTouches.length === 1) {
-        const tx = e.changedTouches[0].clientX;
-        const ty = e.changedTouches[0].clientY;
-        const worldPos = screenToWorld(tx, ty);
+    // C. Issue unit commands (on Left Click ground Tap)
+    if (!isRightClick && rtsState.selectedHobbitIds.size > 0) {
+        const rx = clientX / CONFIG.ZOOM;
+        const ry = clientY / CONFIG.ZOOM;
+        const worldPos = screenToWorld(rx, ry);
 
         const tileX = Math.floor(worldPos.x / 16);
         const tileY = Math.floor(worldPos.y / 16);
 
-        // Determine target context
         let actionType = 'MOVE';
         let combatTargetId = null;
 
-        // Scan for hostiles near tap location
         for (let other of hobbits) {
             if (rtsState.selectedHobbitIds.has(other.id)) continue;
             if (Math.hypot((other.x + 8) - worldPos.x, (other.y + 8) - worldPos.y) < 16) {
@@ -184,7 +156,6 @@ export function handleRtsTouchEnd(e) {
             }
         }
 
-        // --- 📡 SEND UNIT COMMAND TO THE SERVER ---
         if (socket && socket.connected) {
             socket.emit('command_hobbits', {
                 hobbitIds: Array.from(rtsState.selectedHobbitIds),
@@ -196,4 +167,4 @@ export function handleRtsTouchEnd(e) {
             });
         }
     }
-}
+}   
