@@ -81,6 +81,8 @@ export function handleRtsPointerDown(clientX, clientY, isRightClick = false, isS
     }
 }
 
+// src/rtsControls.js (Update inside handleRtsPointerMove)
+
 export function handleRtsPointerMove(clientX, clientY) {
     if (!rtsState.enabled) return;
 
@@ -91,11 +93,19 @@ export function handleRtsPointerMove(clientX, clientY) {
         const dx = rx - rtsState.lastPanTouch.x;
         const dy = ry - rtsState.lastPanTouch.y;
 
-        // 🎯 Direct updates to entities state
+        // Shift camera positions
         gameState.rtsCameraX -= dx;
         gameState.rtsCameraY -= dy;
 
         rtsState.lastPanTouch = { x: rx, y: ry };
+
+        // --- 📡 EMIT RTS CAMERA MOVEMENT TELEMETRY TO SERVER ---
+        if (socket && socket.connected) {
+            socket.emit('rts_camera_move', {
+                x: gameState.rtsCameraX,
+                y: gameState.rtsCameraY
+            });
+        }
     } else if (rtsState.dragStart) {
         rtsState.dragCurrent = { x: rx, y: ry };
     }

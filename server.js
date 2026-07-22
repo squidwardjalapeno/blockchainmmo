@@ -46,7 +46,6 @@ async function syncTVLWithBlockchain() {
 
     const effectiveTGV = Math.max(0, currentTVL - debt);
     
-    // Broadcast TGV adjustments inside low-frequency updates
     broadcastEffectiveTGV();
 
     console.log(`📊 ECONOMY SYNC | Raw: ${currentTVL.toFixed(8)} | Debt: ${debt.toFixed(8)} | Final TGV: ${effectiveTGV.toFixed(8)}`);
@@ -425,34 +424,40 @@ function getJobConfig(jobId, recipeName) {
 }
 
 // ==========================================
-// 📡 PHASE 1: AUTHORITATIVE INPUT BUFFER SYSTEM
+// 📡 DUAL-TIMER LOOP CONFIGURATIONS
 // ==========================================
 const inputBuffers = new Map();
+const cellStates = new Map(); // key: "cx_cy", value: "HOT" | "WARM"
 
 function validateServerCollision(nextX, nextY) {
-    // Basic boundaries check on the server
     if (nextX < 0 || nextX > 160000 || nextY < 0 || nextY > 160000) return false;
     return true; 
 }
 
 /**
  * 🎯 COMBAT LOOP (HOT - 30 Hz / 33.33ms)
- * Simulates high-stakes real-time tasks (combat, projectiles, and client movements)
  */
 function tickCombat() {
-    const delta = 0.0333; // Exactly 1/30th of a second
+    const delta = 0.0333; 
 
-    // A. Drain buffered client movement inputs and step positions authoritatively
     for (const id in players) {
         const p = players[id];
         if (!p || p.hp <= 0 || p.isOffline) continue;
 
+        const cx = Math.floor(p.x / 1600);
+        const cy = Math.floor(p.y / 1600);
+        const key = `${cx}_${cy}`;
+        const tempState = cellStates.get(key);
+
+        // Suspend high-frequency inputs in silent COLD sectors
+        if (tempState !== 'HOT') {
+            inputBuffers.delete(id); 
+            continue;
+        }
+
         const buffer = inputBuffers.get(id) || [];
-        
         while (buffer.length > 0) {
             const input = buffer.shift();
-
-            // Guard against illegal inputs (speedhack validation)
             const magnitude = Math.hypot(input.dx, input.dy);
             if (magnitude > 1.05) continue; 
 
@@ -467,7 +472,6 @@ function tickCombat() {
         }
     }
 
-    // B. Step Projectile Physics
     for (let i = projectiles.length - 1; i >= 0; i--) {
         let p = projectiles[i];
 
@@ -531,7 +535,6 @@ function tickCombat() {
         if (hit || p.life <= 0) projectiles.splice(i, 1); 
     }
 
-    // C. Broadcast the high-frequency state updates to all clients
     io.emit('position', { 
         playerbase: players,
         projectiles: projectiles
@@ -540,12 +543,45 @@ function tickCombat() {
 
 /**
  * 🚜 WORLD LOOP (WARM - 5 Hz / 200ms)
- * Simulates slower parameters (agriculture, spatial checks, and animal state machines)
  */
-function tickWorld() {
-    const delta = 0.200; // Exactly 1/5th of a second
+function updateSimulationTemperatures() {
+    cellStates.clear();
 
-    // A. Update Active Village Capture State Machines
+    for (const id in players) {
+        const p = players[id];
+        if (!p || p.isOffline) continue;
+
+        const isHero = !p.wallet || !p.wallet.startsWith('Overseer_');
+        const cx = Math.floor(p.x / 1600);
+        const cy = Math.floor(p.y / 1600);
+
+        for (let ox = -1; ox <= 1; ox++) {
+            for (let oy = -1; oy <= 1; oy++) {
+                const ncx = cx + ox;
+                const ncy = cy + oy;
+                
+                if (ncx >= 0 && ncx < CONFIG.MAP_SIZE && ncy >= 0 && ncy < CONFIG.MAP_SIZE) {
+                    const key = `${ncx}_${ncy}`;
+                    
+                    if (isHero) {
+                        cellStates.set(key, 'HOT');
+                    } else {
+                        if (cellStates.get(key) !== 'HOT') {
+                            cellStates.set(key, 'WARM');
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+function tickWorld() {
+    const delta = 0.200; 
+
+    // Update active spatial temperatures across the map cells
+    updateSimulationTemperatures();
+
     for (let [key, village] of serverVillages) {
         if (village.owner === null) continue;
 
@@ -578,8 +614,16 @@ function tickWorld() {
         }
     }
 
-    // B. Process slow animal logic (wander, poop, hunger)
     serverAnimals.forEach(a => {
+        const cx = Math.floor(a.x / 1600);
+        const cy = Math.floor(a.y / 1600);
+        const key = `${cx}_${cy}`;
+        
+        // 🎯 Freeze logic ticks in cold unobserved cells
+        if (!cellStates.has(key)) {
+            return; 
+        }
+
         if (a.eggTimer === undefined) a.eggTimer = 15;
         if (a.poopTimer === undefined) a.poopTimer = 10;
         if (a.energy === undefined) a.energy = 100;
@@ -735,7 +779,20 @@ function tickWorld() {
         }
     });
 
-    // C. Decrement CC states for players
+    for (let [plantKey, plant] of serverPlants) {
+        const cx = Math.floor(plant.gx / 100);
+        const cy = Math.floor(plant.gy / 100);
+        const key = `${cx}_${cy}`;
+
+        if (!cellStates.has(key)) {
+            continue; 
+        }
+
+        if (plant.growth < 100) {
+            plant.growth = Math.min(100, plant.growth + (plant.growthRate * delta));
+        }
+    }
+
     for (let vid in players) {
         const p = players[vid];
         if (p.resonanceTimer > 0) {
@@ -746,14 +803,11 @@ function tickWorld() {
         }
     }
 
-    // D. Low-Frequency Server Entity Updates (Broadcasting animals)
     io.emit('animals', { animals: serverAnimals });
 }
 
-// 🕹️ Initialize the Dual Simulation Timers
-setInterval(tickCombat, 33.33); // 30Hz HOT Loop
-setInterval(tickWorld, 200.00); // 5Hz WARM Loop
-
+setInterval(tickCombat, 33.33); 
+setInterval(tickWorld, 200.00); 
 
 // ==========================================
 // 📡 CONNECTION LISTENERS
@@ -789,7 +843,6 @@ io.on('connection', (socket) => {
 
     socket.emit('secret', { seed: worldSeed, myId: socket.id });
 
-    // --- ENQUEUE AUTHORITATIVE CLIENT INPUT VECTORS ---
     socket.on('player_input', (data) => {
         if (!inputBuffers.has(socket.id)) {
             inputBuffers.set(socket.id, []);
@@ -797,6 +850,14 @@ io.on('connection', (socket) => {
         const buffer = inputBuffers.get(socket.id);
         if (buffer.length < 10) { 
             buffer.push(data);
+        }
+    });
+
+    socket.on('rts_camera_move', (data) => {
+        const p = players[socket.id];
+        if (p) {
+            p.x = data.x;
+            p.y = data.y;
         }
     });
 
@@ -2146,15 +2207,12 @@ io.on('connection', (socket) => {
         socket.broadcast.emit('cellarUpdated', data);
     });
 
-    // server.js (Inside identifyWallet listener)
-
     socket.on('identifyWallet', (data) => {
         const rawAddress = (typeof data === 'object') ? data.address : data;
         if (!rawAddress) return;
         const address = (rawAddress.startsWith('0x')) ? ethers.getAddress(rawAddress) : rawAddress;
         socket.wallet = address;
 
-        // 🎯 INTERCEPT OVERSEER LOGINS AND SKIP CHARACTER CREATION INSTANTLY
         if (address.startsWith('Overseer_')) {
             if (!userDb[address]) {
                 userDb[address] = {
@@ -2181,7 +2239,6 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // Standard wallet flows...
         if (userDb[address]) {
             console.log(`💾 Restore: ${address} (${userDb[address].inventory?.length || 0} items)`);
             players[socket.id] = { ...players[socket.id], ...userDb[address], id: socket.id, isOffline: false };
