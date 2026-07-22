@@ -202,6 +202,36 @@ export function initUI() {
         closeHelpBtn.onclick = () => document.getElementById('help-menu').classList.add('hidden');
     }
 
+    // src/uiManager.js (Inside initUI function)
+
+    const rtsToggleBtn = document.getElementById('hud-rts-toggle-btn');
+    if (rtsToggleBtn) {
+        rtsToggleBtn.onclick = () => {
+            import('./rtsControls.js').then(rts => {
+                const currentMode = rts.rtsState.enabled;
+                const nextMode = !currentMode;
+                
+                // Toggle state
+                rts.setRtsMode(nextMode);
+                
+                // Update Button Visuals
+                if (nextMode) {
+                    rtsToggleBtn.innerText = "HERO MODE";
+                    rtsToggleBtn.style.backgroundColor = "var(--banana)";
+                    rtsToggleBtn.style.color = "var(--bg-dark)";
+                    
+                    // Center the camera over the debug village if transitioning to RTS
+                    rts.rtsState.cameraX = 80800;
+                    rts.rtsState.cameraY = 80800;
+                } else {
+                    rtsToggleBtn.innerText = "OVERSEER MODE";
+                    rtsToggleBtn.style.backgroundColor = "var(--highlight)";
+                    rtsToggleBtn.style.color = "white";
+                }
+            });
+        };
+    }
+
     // --- UNIFIED STORAGE LISTENERS ---
     document.getElementById('close-storage-btn').addEventListener('click', () => {
         document.getElementById('storage-menu').classList.add('hidden');
