@@ -168,3 +168,41 @@ export function handleRtsPointerUp(clientX, clientY, isRightClick = false) {
         }
     }
 }   
+
+// src/rtsControls.js (Add these functions to the end of the file)
+
+/**
+ * 📡 MOBILE TOUCH-TO-POINTER BRIDGES
+ * Translates mobile multitouch inputs into the unified pointer math
+ */
+export function handleRtsTouchStart(e) {
+    if (!rtsState.enabled) return;
+    
+    if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        handleRtsPointerDown(touch.clientX, touch.clientY, false);
+    } else if (e.touches.length === 2) {
+        // Map two-finger gestures to start a simulated Right-Click pan
+        const touch = e.touches[0];
+        handleRtsPointerDown(touch.clientX, touch.clientY, true);
+    }
+}
+
+export function handleRtsTouchMove(e) {
+    if (!rtsState.enabled) return;
+
+    if (e.touches.length > 0) {
+        const touch = e.touches[0];
+        handleRtsPointerMove(touch.clientX, touch.clientY);
+    }
+}
+
+export function handleRtsTouchEnd(e) {
+    if (!rtsState.enabled) return;
+
+    if (e.changedTouches.length > 0) {
+        const touch = e.changedTouches[0];
+        const wasRightClick = (e.touches.length >= 1); // If fingers remain, resolve as pan end
+        handleRtsPointerUp(touch.clientX, touch.clientY, wasRightClick);
+    }
+}
