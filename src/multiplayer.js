@@ -19,6 +19,12 @@ export const chestCache = new Map();
 export const villageOwners = new Map();
 export const villageCriminals = new Map();
 
+// 🎯 CACHE MODULE REFERENCE ONCE ON BOOT TO AVOID PROMISE THRASHING
+let animalsModule = null;
+import('./animals.js').then(m => {
+    animalsModule = m;
+});
+
 if (typeof window !== 'undefined') {
     window.villageOwners = villageOwners;
     window.villageCriminals = villageCriminals;
@@ -270,7 +276,8 @@ export function initMultiplayer() {
             const { animals: serverAnimals } = data;
 
             if (serverAnimals) {
-                import('./animals.js').then(m => {
+                // Ensure the module is cached before resolving references
+                const updatePass = (m) => {
                     serverAnimals.forEach(sa => {
                         const localA = m.animals.find(la => la.id === sa.id);
                         if (!localA) {
@@ -292,7 +299,16 @@ export function initMultiplayer() {
                             m.animals.splice(i, 1);
                         }
                     }
-                });
+                };
+
+                if (animalsModule) {
+                    updatePass(animalsModule);
+                } else {
+                    import('./animals.js').then(m => {
+                        animalsModule = m;
+                        updatePass(m);
+                    });
+                }
             }
         });
 
@@ -340,8 +356,10 @@ export function syncInventoryWithServer() {
 
 /**
  * 📡 UNIFIED CLIENT-SIDE INTERPOLATION ENGINE (LERP)
+ * Runs synchronously without Promise thrashing to eliminate stutters
  */
 export function interpolateEntities(delta) {
+    // 1. Interpolate Remote Players (HOT - 30 Hz updates)
     remotePlayers.forEach(p => {
         if (p.targetX !== undefined && p.targetY !== undefined) {
             const dx = p.targetX - p.x;
@@ -361,8 +379,10 @@ export function interpolateEntities(delta) {
         }
     });
 
-    import('./animals.js').then(m => {
-        m.animals.forEach(animal => {
+    // 2. Interpolate Pasture Animals (WARM - 5 Hz updates)
+    // Synchronous array iteration via our cached module reference
+    if (animalsModule && animalsModule.animals) {
+        animalsModule.animals.forEach(animal => {
             if (saIsTargetValid(animal)) {
                 const dx = animal.targetX - animal.x;
                 const dy = animal.targetY - animal.y;
@@ -380,7 +400,7 @@ export function interpolateEntities(delta) {
                 }
             }
         });
-    }).catch(() => {});
+    }
 }
 
 function saIsTargetValid(animal) {

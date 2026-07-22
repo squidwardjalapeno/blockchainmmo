@@ -144,13 +144,15 @@ function findOffScreenAnimalPath(startTX, startTY, targetTX, targetTY) {
     return path.length > 0 ? path : null;
 }
 
+// src/animals.js (Fully updated updateAnimals function)
+
 export function updateAnimals(modifier, worldMatrix, roomMatrix) {
     const focus = getFocusCoordinates();
     const heroCX = Math.floor(focus.x / 1600);
     const heroCY = Math.floor(focus.y / 1600);
     const now = Date.now();
 
-    // 1. CLEANUP DEAD ANIMALS AT THE VERY TOP
+    // 1. Clean up dead animals at the top of the update frame
     for (let i = animals.length - 1; i >= 0; i--) {
         if (animals[i].hp <= 0) {
             import('./bacteria.js').then(m => m.seedBacteria(
@@ -165,35 +167,36 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
 
     animals.forEach(chicken => {
         // ==========================================
-        // 🎯 ONLINE MODE: Real-Time 60fps smoothing
+        // 🎯 ONLINE MULTIPLAYER OVERRIDE:
+        // If the chicken is server-controlled (targetX is valid),
+        // we bypass the local movement calculation completely.
+        // The visual coordinates are glided smoothly at 60 FPS in multiplayer.js LERP engine.
         // ==========================================
-        if (chicken.targetX !== undefined && chicken.targetY !== undefined) {
-            chicken.x += (chicken.targetX - chicken.x) * 15 * modifier;
-            chicken.y += (chicken.targetY - chicken.y) * 15 * modifier;
-            return; // 🎯 Bypass offline local AI loops
+        if (chicken.targetX !== undefined && chicken.targetX !== null) {
+            return; 
         }
 
         const chickenCX = Math.floor(chicken.x / 1600);
         const chickenCY = Math.floor(chicken.y / 1600);
 
         // ==========================================
-        // ❄️ TIER 3: FROZEN ZONE (Outside 3x3 Chunks)
+        // ❄️ TIER 3: FROZEN ZONE (Outside 3x3 active chunks)
         // ==========================================
         const isInsideActiveChunks = Math.abs(chickenCX - heroCX) <= 1 && Math.abs(chickenCY - heroCY) <= 1;
         if (!isInsideActiveChunks) {
-            return; // Completely skip calculations. Animal is frozen.
+            return; // Completely freeze processing while unloaded
         }
 
-        // Initialize elapsed time
+        // Initialize elapsed time tracking
         if (!chicken.lastUpdated) chicken.lastUpdated = now;
         let deltaSeconds = (now - chicken.lastUpdated) / 1000;
         chicken.lastUpdated = now;
 
         // ==========================================
-        // 🕰️ TIER 3: CATCH-UP (Step-In Fast Forward)
+        // 🕰️ TIER 3: OFFLINE CATCH-UP (Backlogged Fast Forward)
         // ==========================================
         if (deltaSeconds > 2.0) {
-            let timeRemaining = Math.min(deltaSeconds, 86400); // Max 24 hours
+            let timeRemaining = Math.min(deltaSeconds, 86400); // Limit catch-up to max 24 hours
             let simX = Math.floor(chicken.x / 16);
             let simY = Math.floor(chicken.y / 16);
             let poopsToDrop = Math.floor(timeRemaining * 0.0133);
@@ -206,13 +209,11 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                 chicken.energy = Math.max(0, chicken.energy - (stepTime * 2.0));
                 chicken.eggTimer -= stepTime;
 
-                // Hunger
                 if (chicken.energy < 50) {
                     let foundFood = false;
                     let bestPlantKey = null;
                     let foodX, foodY;
 
-                    // ⚡ O(1) OPTIMIZATION: Coordinate checks instead of iterating the global plants Map
                     for (let ox = -5; ox <= 5; ox++) {
                         for (let oy = -5; oy <= 5; oy++) {
                             const checkKey = `${simX + ox}_${simY + oy}`;
@@ -245,19 +246,16 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                         simX = wanderResult.x; simY = wanderResult.y;
                     }
                 } 
-                // Lay Eggs
                 else if (chicken.eggTimer <= 0 && chicken.energy >= 40) {
                     chicken.energy -= 40;
                     import('./bacteria.js').then(m => m.seedBacteria(simX, simY, "egg", 1, 0));
                     chicken.eggTimer = 10.0;
                 }
-                // Wander
                 else {
                     const wanderResult = macroWander(simX, simY, 2, worldMatrix, roomMatrix); 
                     simX = wanderResult.x; simY = wanderResult.y;
                 }
 
-                // Dropping poop
                 if (poopsToDrop > 0 && Math.random() < 0.3) {
                     if (isWalkable(simX, simY, worldMatrix, roomMatrix)) {
                         import('./bacteria.js').then(m => m.seedBacteria(simX, simY, "chicken_poop", 3, 12));
@@ -290,7 +288,7 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
         if (!inViewport) {
             chicken.slowTickTimer -= modifier;
             if (chicken.slowTickTimer <= 0) {
-                chicken.slowTickTimer = 1.5; // Tick once every 1.5 seconds
+                chicken.slowTickTimer = 1.5; // Tick logic every 1.5 seconds
 
                 chicken.energy = Math.max(0, chicken.energy - 0.75);
                 chicken.eggTimer -= 1.5;
@@ -300,7 +298,6 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
 
                 if (!chicken.path || chicken.path.length === 0) {
                     if (chicken.energy < 50) {
-                        // ⚡ Bypasses BFS off-screen: Direct index lookup
                         const foodPos = findNearestPlantOffScreen(currTX, currTY, 8);
                         const pathToFood = foodPos ? findOffScreenAnimalPath(currTX, currTY, foodPos.x, foodPos.y) : null;
                         
@@ -313,7 +310,6 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                         }
                     } 
                     else if (chicken.eggTimer <= 0 && chicken.energy >= 40) {
-                        // ⚡ Bypasses BFS off-screen: Direct index lookup
                         const boxPos = findNearestTileIDOffScreen(currTX, currTY, worldMatrix, roomMatrix, 44, 8);
                         const pathToBox = boxPos ? findOffScreenAnimalPath(currTX, currTY, boxPos.x, boxPos.y) : null;
                         
@@ -333,7 +329,7 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                     }
                 }
 
-                // Simplified path execution: Teleport to the next tile instantly
+                // 🎯 Instant coordinate step-teleportation to bypass vector math
                 if (chicken.path && chicken.path.length > 0) {
                     const nextNode = chicken.path.shift();
                     chicken.x = nextNode.x * 16;
@@ -362,7 +358,7 @@ export function updateAnimals(modifier, worldMatrix, roomMatrix) {
                     import('./bacteria.js').then(m => m.seedBacteria(currTX, currTY, "chicken_poop", 3, 12));
                 }
             }
-            return; // Skip real-time physics and stepping completely!
+            return; 
         }
 
         // ==========================================
