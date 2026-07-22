@@ -19,7 +19,7 @@ import { ITEM_TYPES, createItem } from './items.js';
 import { updatePlants, plants } from './plants.js'; 
 import { updateAnimals, animals, spawnChicken } from './animals.js';
 import { scanForTarget, currentTarget, validateTarget } from './combat.js';
-import { socket, initMultiplayer, playerWallet, remotePlayers, serverProjectiles, interpolateEntities } from './multiplayer.js'; // 🎯 Removed updateRemotePlayers import
+import { socket, initMultiplayer, playerWallet, remotePlayers, serverProjectiles, interpolateEntities } from './multiplayer.js';
 import { handleInteractions, updateHeroStats, handlePvPCombat, handleFinancialActions } from './interactionManager.js';
 import { initUI, updateHUD } from './uiManager.js';
 import { getMasterBalance } from './blockchainManager.js';
@@ -122,6 +122,11 @@ var update = function (modifier) {
     if (DEBUG_FLAGS.ENABLE_PHYSICS_AND_INPUT) {
         ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
         handleHeroUpdate(modifier, worldMatrix, roomMatrix);
+        
+        // 🎯 LERP HOBBIT PHYSICS: Calculate Hobbit steps smoothly at 60 FPS
+        if (DEBUG_FLAGS.ENABLE_WORLD_SIM) {
+            updateHobbits(modifier, worldMatrix, roomMatrix); 
+        }
     }
 
     // 🎯 LERP INTERPOLATION ENGINE: Glides entities smoothly on every single frame
@@ -162,7 +167,6 @@ var update = function (modifier) {
         // Logical background updates (no visual snapping math)
         if (DEBUG_FLAGS.ENABLE_WORLD_SIM) {
             updateAnimals(modifier * 3, worldMatrix, roomMatrix); 
-            updateHobbits(modifier * 3, worldMatrix, roomMatrix); 
         }
     }
 

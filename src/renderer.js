@@ -13,25 +13,22 @@ import { getObjectAt } from './staticObjects.js';
 import { roomMetadata } from './cellDecorator.js';
 import { PALADIN_SKILLS } from './abilities.js';
 import { getHeroAnimationData, getPetAnimationData, getAnimalAnimationData, getHobbitAnimationData } from './animations.js';
-import { worldTime } from './clock.js'; // 👈 ADD THIS IMPORT
+import { worldTime } from './clock.js'; 
+import { hobbits } from './hobbitCore.js';
 import { rtsState } from './rtsControls.js';
-
 
 if (typeof window !== 'undefined') {
     logStep("renderer.js loaded");
 }
 
-// 🎮 CONSOLIDATED CANVAS DECLARATIONS (Unused Canvas 1 Removed)
 export const canvas2 = document.getElementById("myCanvas2");
 export const canvas3 = document.getElementById("myCanvas3");
 
 export const ctx2 = canvas2.getContext("2d");
 export const ctx3 = canvas3.getContext("2d");
 
-// 🌲 Flat-list array for ultra-fast, single-pass canopy rendering
 let visibleTrees = []; 
 
-// Sockets layout mapping for hold-item offsets
 const HERO_SOCKETS = {
     'walkSouth_0': { handX: 5, handY: 11, angle: 135, behind: false },
     'walkSouth_1': { handX: 7, handY: 12, angle: 135, behind: false },
@@ -104,13 +101,12 @@ export function initRenderer() {
 }
 
 export function clearAll() {
-    ctx2.clearRect(0, 0, canvas2.width, canvas2.height); // Game World
-    ctx3.clearRect(0, 0, canvas3.width, canvas3.height); // UI/HUD Overlay
+    ctx2.clearRect(0, 0, canvas2.width, canvas2.height); 
+    ctx3.clearRect(0, 0, canvas3.width, canvas3.height); 
 }
 
 export function drawNightTint() {
     if (worldTime.isNight) {
-        // Draws an atmospheric dark blue tint over the world
         ctx2.fillStyle = "rgba(0, 0, 50, 0.25)"; 
         ctx2.fillRect(0, 0, canvas2.width, canvas2.height);
     }
@@ -125,7 +121,6 @@ export function drawMap(worldMatrix, roomMatrix) {
     const startY = viewport.startTile[1];
     const endY = viewport.endTile[1];
 
-    // 1. Get the room ID the focus target is standing in
     const focus = getFocusCoordinates();
     const hTX = Math.floor((focus.x + 8) / 16);
     const hTY = Math.floor((focus.y + 15) / 16);
@@ -139,12 +134,8 @@ export function drawMap(worldMatrix, roomMatrix) {
     const tileImg = images.worldTilesColor;
     if (!tileImg || !tileImg.complete) return;
 
-    // Reset the visible trees collector for the active viewport frame
     visibleTrees = [];
 
-    // ==========================================
-    // 🌍 OUTDOOR MODE
-    // ==========================================
     if (hHouseId === 0 || hHouseId === 9999) {
         ctx2.fillStyle = "rgb(0, 204, 0)";
         ctx2.fillRect(0, 0, w, h);
@@ -161,7 +152,7 @@ export function drawMap(worldMatrix, roomMatrix) {
                 const ly = ((l % 100) + 100) % 100;
                 const tID = wChunk[(ly * 100) + lx];
 
-                if (tID === 63) continue; // Walkable grass
+                if (tID === 63) continue; 
 
                 const sY = Math.floor((l * 16) + viewport.offset[1]);
 
@@ -200,7 +191,6 @@ export function drawMap(worldMatrix, roomMatrix) {
                                 }
                             }
 
-                            // Retrieve the tile directly beneath the border
                             const cxBelow = Math.floor(k / 100);
                             const cyBelow = Math.floor((l + 1) / 100);
                             const lxBelow = ((k % 100) + 100) % 100;
@@ -208,7 +198,6 @@ export function drawMap(worldMatrix, roomMatrix) {
                             const belowTile = worldMatrix[cxBelow]?.[cyBelow]?.[lyBelow * 100 + lxBelow];
 
                             if (belowTile === 48) {
-                                // Use Roof Top (40) as the background base for the "dug-in" cellar roof
                                 ctx2.drawImage(tileImg, (40 % 8) * 16, Math.floor(40 / 8) * 16, 16, 16, sX, sY, 16, 16);
                             } else if (isBeach) {
                                 ctx2.drawImage(tileImg, 0, 0, 16, 16, sX, sY, 16, 16);
@@ -219,7 +208,10 @@ export function drawMap(worldMatrix, roomMatrix) {
                                 }
                             } else {
                                 const dirtIdx = 337 - 300; 
-                                ctx2.drawImage(woodsImg, (dirtIdx % 12) * 16, Math.floor(dirtIdx / 12) * 16, 16, 16, sX, sY, 16, 16);
+                                const woodsImg = images.woodsTileset2;
+                                if (woodsImg && woodsImg.complete) {
+                                    ctx2.drawImage(woodsImg, (dirtIdx % 12) * 16, Math.floor(dirtIdx / 12) * 16, 16, 16, sX, sY, 16, 16);
+                                }
                             }
                         }
 
@@ -245,9 +237,6 @@ export function drawMap(worldMatrix, roomMatrix) {
             }
         }
     } 
-    // ==========================================
-    // 🏠 INDOOR MODE
-    // ==========================================
     else {
         ctx2.fillStyle = "#2d232e"; 
         ctx2.fillRect(0, 0, w, h);
@@ -268,7 +257,6 @@ export function drawMap(worldMatrix, roomMatrix) {
                 const idx = (ly * 100) + lx;
                 const rID = rCol?.[cy]?.[idx] || 0;
 
-                // Dynamically include the top-row dug-in tile (367) in the active room if standing inside
                 let isInsideCellarTop = false;
                 if (rID === 0 && wChunk && wChunk[idx] === 367) {
                     const lyBelow = (ly + 1) % 100;
@@ -306,22 +294,21 @@ export function drawMap(worldMatrix, roomMatrix) {
                     else if (meta && meta.type === 'CELLAR') {
                         const oy = l - meta.frontY;
                         if (oy === -2) {
-                            base = 41; // Top-most row of cellar gets the interior wall tile
+                            base = 41; 
                         } else {
-                            base = 42; // Floor tiles
+                            base = 42; 
                         }
                     }
                     else {
-                        // Route the interior wall tile (41) to the top row (367) and preserve the middle row as wooden floor (42)
                         if (isInsideCellarTop) {
-                            base = 41; // Top-most row of cellar gets the interior wall tile
+                            base = 41; 
                         } else {
                             const lyAbove = (ly - 1 + 100) % 100;
                             const idxAbove = (lyAbove * 100) + lx;
                             if (wChunk && wChunk[idxAbove] === 367) {
-                                base = 42; // Middle row stays clean wooden floor tile
+                                base = 42; 
                             } else if (ly > 0 && rCol[cy][idx - 100] !== rID) {
-                                base = 41; // Standard interior wall tile for other houses
+                                base = 41; 
                             }
                         }
                     }
@@ -343,7 +330,7 @@ export function drawMap(worldMatrix, roomMatrix) {
                             const tImg = images.transparentTileset;
                             const tid = transMap[obj.type];
                             if (tImg && tImg.complete) {
-                                    ctx2.drawImage(tImg, (tid % 10) * 16, Math.floor(tid / 10) * 16, 16, 16, sX, sY, 16, 16);
+                                ctx2.drawImage(tImg, (tid % 10) * 16, Math.floor(tid / 10) * 16, 16, 16, sX, sY, 16, 16);
                             }
                         } else if (oldMap[obj.type] !== undefined) {
                             const oid = oldMap[obj.type];
@@ -368,7 +355,6 @@ export function drawStaticObjects() {
     const startY = viewport.startTile[1];
     const endY = viewport.endTile[1];
 
-    // Reset the visible trees array
     visibleTrees = [];
 
     for (let k = startX; k <= endX; k++) {
@@ -382,11 +368,10 @@ export function drawStaticObjects() {
             if (obj.type === 'WELL_OBJECT') {
                 const tImg = images.worldTilesColor;
                 if (tImg && tImg.complete) {
-                    // Draw 2x2 well segments smoothly over the completed ground
-                    ctx2.drawImage(tImg, (38 % 8) * 16, Math.floor(38 / 8) * 16, 16, 16, sX, sY, 16, 16);          // Bottom-Left
-                    ctx2.drawImage(tImg, (39 % 8) * 16, Math.floor(39 / 8) * 16, 16, 16, sX + 16, sY, 16, 16);     // Bottom-Right
-                    ctx2.drawImage(tImg, (30 % 8) * 16, Math.floor(30 / 8) * 16, 16, 16, sX, sY - 16, 16, 16);      // Top-Left
-                    ctx2.drawImage(tImg, (31 % 8) * 16, Math.floor(31 / 8) * 16, 16, 16, sX + 16, sY - 16, 16, 16); // Top-Right
+                    ctx2.drawImage(tImg, (38 % 8) * 16, Math.floor(38 / 8) * 16, 16, 16, sX, sY, 16, 16);          
+                    ctx2.drawImage(tImg, (39 % 8) * 16, Math.floor(39 / 8) * 16, 16, 16, sX + 16, sY, 16, 16);     
+                    ctx2.drawImage(tImg, (30 % 8) * 16, Math.floor(30 / 8) * 16, 16, 16, sX, sY - 16, 16, 16);      
+                    ctx2.drawImage(tImg, (31 % 8) * 16, Math.floor(31 / 8) * 16, 16, 16, sX + 16, sY - 16, 16, 16); 
                 }
             }
             else if (obj.type === 'FOREST_TREE') {
@@ -404,7 +389,7 @@ export function drawStaticObjects() {
 export function drawPlants(roomMatrix) {
     const focus = getFocusCoordinates();
     const hTX = Math.floor((focus.x + 8) / 16);
-    const hTY = Math.floor((focus.y + 15) / 16); // 👈 Aligned with physical stepping collision
+    const hTY = Math.floor((focus.y + 15) / 16); 
     const rCol = roomMatrix[Math.floor(hTX / 100)]?.[Math.floor(hTY / 100)];
     const heroHouseId = rCol ? rCol[((hTY % 100 + 100) % 100 * 100) + ((hTX % 100 + 100) % 100)] : 0;
 
@@ -573,7 +558,7 @@ export function drawDroppedItems() {
 
                     ctx2.fillStyle = "black";
                     ctx2.fillRect(bx, by, barW, barH);
-                    ctx2.fillStyle = "#8a9a5b"; // Soft green
+                    ctx2.fillStyle = "#8a9a5b"; 
                     ctx2.fillRect(bx, by, barW * pct, barH);
                 }
             }
@@ -604,12 +589,14 @@ export function drawAnimals() {
         const energyPct = (chicken.energy !== undefined ? chicken.energy : 100) / 100;
         ctx2.fillStyle = "black";
         ctx2.fillRect(screenX + 2, screenY - 4, 12, 2);
-        ctx2.fillStyle = "#FFD700"; // Stamina Yellow
+        ctx2.fillStyle = "#FFD700"; 
         ctx2.fillRect(screenX + 2, screenY - 4, 12 * Math.max(0, energyPct), 2);
     });
 }
 
 export function drawHero() {
+    if (hero.charClass === 'Overseer') return;
+
     const animData = getHeroAnimationData(hero, images);
 
     if (animData.img && animData.img.complete) {
@@ -810,11 +797,13 @@ export function drawHero() {
 export function drawRemotePlayers(ctx2, remotePlayersData, roomMatrix) {
     const focus = getFocusCoordinates();
     const hTX = Math.floor((focus.x + 8) / 16);
-    const hTY = Math.floor((focus.y + 15) / 16); // 👈 Aligned with physical collision threshold
+    const hTY = Math.floor((focus.y + 15) / 16); 
     const rCol = roomMatrix[Math.floor(hTX / 100)]?.[Math.floor(hTY / 100)];
     const heroHouseId = rCol ? rCol[((hTY % 100 + 100) % 100 * 100) + ((hTX % 100 + 100) % 100)] : 0;
 
     remotePlayersData.forEach(p => {
+        if (p.charClass === 'Overseer' || p.isOverseer) return;
+
         const pTX = Math.floor((p.x + 8) / 16);
         const pTY = Math.floor((p.y + 15) / 16);
         const pCol = roomMatrix[Math.floor(pTX / 100)]?.[Math.floor(pTY / 100)];
@@ -960,7 +949,6 @@ export function drawHobbits(ctx2, activeHobbits, roomMatrix) {
         const pCol = roomMatrix[Math.floor(pTX / 100)]?.[Math.floor(pTY / 100)];
         const hobbitRoomId = pCol ? pCol[((pTY % 100 + 100) % 100 * 100) + ((pTX % 100 + 100) % 100)] : 0;
 
-        // Hide units inside separate buildings to enforce the visual indoor/outdoor divide
         if (heroHouseId !== 0 && heroHouseId !== 9999) {
             if (hobbitRoomId !== heroHouseId) return;
         } else {
@@ -972,13 +960,12 @@ export function drawHobbits(ctx2, activeHobbits, roomMatrix) {
 
         if (screenX < -32 || screenX > w + 32 || screenY < -32 || screenY > h + 32) return;
 
-        // --- 📡 DRAW RTS SELECTION RINGS BELOW ACTIVE HOBBIT ---
         if (rtsState.enabled && rtsState.selectedHobbitIds.has(hobbit.id)) {
             ctx2.save();
             ctx2.strokeStyle = "rgba(0, 255, 120, 0.85)";
             ctx2.lineWidth = 1.5;
             ctx2.beginPath();
-            ctx2.ellipse(screenX + 8, screenY + 14, 8, 4, 0, 0, Math.PI * 2);
+            ctx2.ellipse(screenX + 8, screenY + 10, 8, 4, 0, 0, Math.PI * 2);
             ctx2.stroke();
             ctx2.restore();
         }
@@ -994,14 +981,12 @@ export function drawHobbits(ctx2, activeHobbits, roomMatrix) {
             );
         }
 
-        // Draw Health Bar
         const hpPct = hobbit.hp / hobbit.maxHp;
         ctx2.fillStyle = "black";
         ctx2.fillRect(screenX + 2, screenY - 4, 12, 1);
         ctx2.fillStyle = "green";
         ctx2.fillRect(screenX + 2, screenY - 4, 12 * Math.max(0, hpPct), 1);
 
-        // Draw Energy/Hunger Bar
         const energyPct = (hobbit.energy !== undefined ? hobbit.energy : 100) / 100;
         ctx2.fillStyle = "black";
         ctx2.fillRect(screenX + 2, screenY - 2, 12, 1);
@@ -1009,7 +994,6 @@ export function drawHobbits(ctx2, activeHobbits, roomMatrix) {
         ctx2.fillRect(screenX + 2, screenY - 2, 12 * Math.max(0, energyPct), 1);
     });
 
-    // --- 📡 DRAW RTS BOX SELECTION MARQUEE OVERLAY ---
     if (rtsState.enabled && rtsState.dragStart && rtsState.dragCurrent) {
         ctx2.save();
         ctx2.strokeStyle = "rgba(0, 255, 120, 0.7)";
@@ -1028,7 +1012,7 @@ export function drawHobbits(ctx2, activeHobbits, roomMatrix) {
 }
 
 export function drawBobber() {
-    if (!hero.isFishing) return;
+    if (!hero.isFishing || hero.charClass === 'Overseer') return;
 
     const img = images.feather;
     if (img && img.complete) {
@@ -1055,7 +1039,6 @@ export function drawCanopy(worldMatrix) {
     const woodsImg = images.woodsTileset2;
     if (!woodsImg || !woodsImg.complete) return;
 
-    // Fast O(N) flat rendering for visible canopies (replaces double screen loops)
     visibleTrees.forEach(tree => {
         const drawPiece = (localId, offsetX, offsetY) => {
             const srcX = (localId % 12) * 16;
@@ -1170,12 +1153,8 @@ export function drawProjectiles(ctx2, serverProjectilesData) {
     });
 }
 
-// inside src/renderer.js
-
-// inside drawTargetCircle() in src/renderer.js
-
 export function drawTargetCircle(ctx2, target) {
-    if (!target || target.hp <= 0) return; 
+    if (!target || target.hp <= 0 || hero.charClass === 'Overseer') return; 
 
     const screenX = viewport.offset[0] + target.x + 8;
     const screenY = viewport.offset[1] + target.y + 8; 
@@ -1183,7 +1162,6 @@ export function drawTargetCircle(ctx2, target) {
     const pulse = Math.sin(Date.now() / 150) * 2;
     const radius = 12 + pulse;
 
-    // 🎯 OPTIMIZATION: Check if target is an allied hobbit using cachedWell
     let isAlly = false;
     if (target.isHobbit) {
         if (target.cachedWell === undefined && typeof window !== 'undefined' && window.getVillageAt) {
@@ -1213,7 +1191,7 @@ export function drawTargetCircle(ctx2, target) {
 }
 
 export function drawWorkingIndicator(ctx2, workingObj) {
-    if (!workingObj) return;
+    if (!workingObj || hero.charClass === 'Overseer') return;
 
     const screenX = viewport.offset[0] + (workingObj.tx * 16) + 8;
     const screenY = viewport.offset[1] + (workingObj.ty * 16) + 8; 
@@ -1232,7 +1210,7 @@ export function drawWorkingIndicator(ctx2, workingObj) {
 }
 
 export function drawHeroRange(ctx2, hero) {
-    if (!inputState.mainBtn && !hero.isAttacking) return;
+    if ((!inputState.mainBtn && !hero.isAttacking) || hero.charClass === 'Overseer') return;
 
     const screenX = viewport.offset[0] + hero.x + 8;
     const screenY = viewport.offset[1] + hero.y + 8;
@@ -1275,7 +1253,7 @@ export function drawHealthBar(ctx, entity, color = "#00FF00") {
 }
 
 export function drawEnergyBar(ctx, entity, color = "#FFD700") {
-    if (entity.energy === undefined) return; 
+    if (entity.energy === undefined || hero.charClass === 'Overseer') return; 
 
     const barW = 16;
     const barH = 2;
@@ -1291,7 +1269,7 @@ export function drawEnergyBar(ctx, entity, color = "#FFD700") {
 }
 
 export function drawJoystick(ctxUI) {
-    if (inputState.inputType === 'keyboard' || !inputState.leftJoystick.active) return;
+    if (inputState.inputType === 'keyboard' || !inputState.leftJoystick.active || hero.charClass === 'Overseer') return;
 
     const { startX, startY, currX, currY } = inputState.leftJoystick;
 
@@ -1355,17 +1333,13 @@ export function drawHUDButton(ctx, x, y, radius, label, icon, isPressed, cooldow
     }
 }
 
-// src/renderer.js
-
 export function drawAbilityButtons(ctxUI) {
-    if (inputState.inputType === 'keyboard') return;
+    if (inputState.inputType === 'keyboard' || hero.charClass === 'Overseer') return;
 
     const btns = getUIButtons();
     const currentLevel = getLevelInfo(hero.xp).level;
     
-    // --- TEMPORARILY DISABLED LEVEL REQUIREMENTS FOR RENDERING ---
-    const reqLevels = [0, 0, 0, 0]; // Changed from [1, 25, 50, 75]
-    // -------------------------------------------------------------
+    const reqLevels = [0, 0, 0, 0]; 
 
     const getSkillIcon = (index) => {
         if (!hero.skills || !hero.skills[index]) return null;
@@ -1396,7 +1370,10 @@ export function drawAbilityButtons(ctxUI) {
         drawHUDButton(ctxUI, btns.INTERACT.x, btns.INTERACT.y, btns.INTERACT.r, "USE", "🖐️", inputState.interact, 0, 0, 0);
     }
 }
+
 export function drawXPStatus(ctxUI) {
+    if (hero.charClass === 'Overseer') return;
+
     const info = getLevelInfo(hero.xp);
     const availablePoints = info.points - (hero.spentPoints || 0);
 
@@ -1435,7 +1412,7 @@ export function drawXPStatus(ctxUI) {
 }
 
 export function drawAimIndicator(ctxUI) {
-    if (!inputState.aim.active) return;
+    if (!inputState.aim.active || hero.charClass === 'Overseer') return;
 
     const btns = getUIButtons();
     const cancel = btns.CANCEL;

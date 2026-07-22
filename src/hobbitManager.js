@@ -1,6 +1,7 @@
+// src/hobbitManager.js
 import { viewport } from './viewport.js';
 import { moveEntity, getTileData } from './physics.js'; 
-import { hero } from './entities.js'; 
+import { hero, getFocusCoordinates } from './entities.js'; // 🎯 Fetch focus coordinates dynamically
 import { worldTime } from './clock.js'; 
 import { plants } from './plants.js';
 import { ITEM_TYPES, createItem } from './items.js';
@@ -17,7 +18,6 @@ import {
     remotePlayers 
 } from './multiplayer.js';
 
-// Imports from divided modules
 import { 
     hobbits, 
     getHobbitVillage, 
@@ -48,7 +48,6 @@ if (typeof window !== 'undefined') {
     if (window.logStep) logStep("hobbitManager.js loaded");
 }
 
-// Trackers for off-screen wave spawners
 export let minionSpawnTimer = 10.0;
 export const macroTravelers = [];
 
@@ -92,7 +91,7 @@ export function spawnSquad(gx, gy, homeX, homeY) {
  * Orchestrates the active hobbit entity lifecycle loops across Tiers 1, 2, and 3.
  */
 export function updateHobbits(modifier, worldMatrix, roomMatrix) {
-    const focus = hero; // Camera focused tracking
+    const focus = getFocusCoordinates(); // 🎯 Promotes simulation boundaries to RTS viewport
     const heroCX = Math.floor(focus.x / 1600);
     const heroCY = Math.floor(focus.y / 1600);
     const now = Date.now();
@@ -1490,7 +1489,10 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                                             chestItems.splice(pmIdx, 1);
                                         }
                                         if (socket && socket.connected) {
-                                            socket.emit('updateChest', { chestId, items: chestItems });
+                                            socket.emit('updateChest', {
+                                                chestId,
+                                                items: chestItems
+                                            });
                                         }
 
                                         const keys = hobbit.inventory.filter(i => i.isKey);
@@ -1727,9 +1729,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             }
         }
 
-        // ==========================================
-        // 🏃 MOTOR EXECUTION & STEERING ENFORCEMENT
-        // ==========================================
         if (hobbit.state === 'attacking') {
             if (hobbit.attackTimer <= 0.25 && !hobbit.hasStruck) {
                 hobbit.hasStruck = true;
@@ -1781,7 +1780,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             hobbit.dir = directions[octant] || 'South';
 
             if (dist > 2) {
-                // separation forces to prevent overlapping
                 let separationX = 0;
                 let separationY = 0;
                 const separationRadius = 12; 
@@ -1818,7 +1816,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
             hobbit.animTimer += modifier * 8;
             hobbit.frame = Math.floor(hobbit.animTimer) % 4; 
         } else {
-            // Idle static resolution slide
             let separationX = 0;
             let separationY = 0;
             const separationRadius = 10;
