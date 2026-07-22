@@ -1,80 +1,68 @@
 // src/game.js
 
-// THIS SHOULD BE THE VERY FIRST LINE OF THIS FILE
-if (typeof window !== 'undefined') logStep("Modules Loaded & Parsed");
-// js/game.js
+if (typeof window !== 'undefined') {
+    logStep("Modules Loaded & Parsed");
+}
+
 import { images, loadAllImages } from './assetLoader.js';
 import { generateWorld, seededRandom } from './mapGenerator.js'; 
 import { drawHouse, drawTemple, drawGeneralStore, drawVillageHall, drawRootCellar, drawBarn, drawRanch, drawStorageRoom, planVillage, drawBarracks, drawTwoStoryHouse, drawInn, drawMilitaryQuarters, drawBlacksmith, drawForge, drawLargeBarn, drawTownHall,  populateWorld, drawMiningArea, planTown, drawCastle, decorateCell, linkVillages, ensureLocalCells, linkLakes, drawOreDeposit, planAllSettlements, drawPlannedRanchRoads, drawRingRoads, buildPlannedStructures, buildPlannedWells, clearBlueprints, generateGlobalShorelines, drawTownWalls } from './cellDecorator.js';
 import { applyShorelineRules } from './terrainRules.js';
 import { inputState, initInput, handleHeroUpdate } from './input.js';
 import { viewport } from './viewport.js';
-import { ctx2, ctx3, canvas2, canvas3, drawMap, drawStaticObjects, drawJoystick, drawProjectiles, drawTargetCircle, drawWorkingIndicator, drawHeroRange, drawHealthBar, drawEnergyBar, drawAbilityButtons, drawXPStatus, drawAimIndicator, initRenderer, clearAll, drawAnimals, drawPlants, drawHero, drawRemotePlayers, drawBobber, preRenderMinimap, drawDroppedItems, drawCanopy, drawNightTint } from './renderer.js';
+import { ctx2, ctx3, canvas2, canvas3, drawMap, drawStaticObjects, drawJoystick, drawProjectiles, drawTargetCircle, drawWorkingIndicator, drawHeroRange, drawHealthBar, drawEnergyBar, drawAbilityButtons, drawXPStatus, drawAimIndicator, initRenderer, clearAll, drawAnimals, drawPlants, drawHero, drawRemotePlayers, drawBobber, preRenderMinimap, drawDroppedItems, drawCanopy, drawNightTint, drawHobbits } from './renderer.js';
 import { hero, resetEntities, gameState, getFocusCoordinates } from './entities.js';
-import { CONFIG } from './config.js'
+import { CONFIG } from './config.js';
 import { checkCollision, getTileData } from './physics.js'; 
 import { updateBacteria, seedBacteria, getBacteriaData } from './bacteria.js'; 
 import { ITEM_TYPES, createItem } from './items.js';
 import { updatePlants, plants } from './plants.js'; 
 import { updateAnimals, animals, spawnChicken } from './animals.js';
 import { scanForTarget, currentTarget, validateTarget } from './combat.js';
-import { socket, initMultiplayer, playerWallet, remotePlayers, serverProjectiles, updateRemotePlayers } from './multiplayer.js';
+import { socket, initMultiplayer, playerWallet, remotePlayers, serverProjectiles, updateRemotePlayers, interpolateEntities } from './multiplayer.js';
 import { handleInteractions, updateHeroStats, handlePvPCombat, handleFinancialActions } from './interactionManager.js';
 import { initUI, updateHUD } from './uiManager.js';
 import { getMasterBalance } from './blockchainManager.js';
-import { worldTime } from './clock.js'; // 👈 ADD THIS IMPORT
+import { worldTime } from './clock.js'; 
 import { hobbits } from './hobbitCore.js';
 import { updateHobbits } from './hobbitManager.js';
-import { drawHobbits } from './renderer.js';
 
-// js/overworldGame.js
+if (typeof window !== 'undefined') {
+    logStep("overworldGame.js initialized");
+}
 
 const DEBUG_FLAGS = {
     ENABLE_PHYSICS_AND_INPUT: true,
-    ENABLE_COMBAT_AND_STATS: true, // Re-enabled for PC build
+    ENABLE_COMBAT_AND_STATS: true, 
     ENABLE_INTERACTIONS: true,
     ENABLE_WORLD_SIM: true, 
     ENABLE_MULTIPLAYER_EMIT: true,
 };
 
-// To this:
-if (typeof window !== 'undefined') {
-    logStep("overworldGame.js");
-}
-
-let tvlTimer = 0; // 🆕 Timer for TVL sync
+let tvlTimer = 0; 
 let isSyncingTVL = false; 
 
-
-// Create a variable to hold your map data globally
-if (window.updateDebug) window.updateDebug("2. JS PARSED. STARTING INIT...");
-
 let worldMap = [];
-
 export let worldMatrix = [];
 export let roomMatrix = []; 
 export let fertilityMatrix = [];
 
-let bacteriaTimer = 0; // Tracks time until the next tick
-
+let bacteriaTimer = 0; 
 let logicTick = 0; 
-let slowTickTimer = 0; // 👈 NEW: Tracks time for our 1 FPS loop
+let slowTickTimer = 0; 
 
-// ADD THESE THREE LINES FOR FPS COUNTING
 let frameCount = 0;
 let lastFpsUpdate = 0;
 let currentFps = 0;
 
 export let isGameRunning = true; 
 
-// 🚨 Reverted loadAllImages to async/await for PC build
 async function assetInit() {
     await loadAllImages();
     console.log("Hero is ready:", images.hero);
 }
 
 assetInit();
-console.log("hellowrold");
 
 function displayBootResults() {
     const resultsDiv = document.getElementById('boot-results');
@@ -84,7 +72,7 @@ function displayBootResults() {
 
     let html = '<strong>BOOT SEQUENCE:</strong><br>';
     window.debugLogSteps.forEach(step => {
-        html += `${step}<br>`;
+        html += step + "<br>";
     });
 
     const totalTime = window.debugLogSteps.reduce((acc, step) => {
@@ -92,17 +80,18 @@ function displayBootResults() {
         return acc + time;
     }, 0);
 
-    html += `<strong>TOTAL: ${totalTime.toFixed(2)}s</strong>`;
-
+    html += "<strong>TOTAL: " + totalTime.toFixed(2) + "s</strong>";
     resultsDiv.innerHTML = html;
 }
 
-// Reset the game
 var reset = function () {
 	resetEntities(worldMap);
 	console.log("Game Reset: Hero at 500,500");
 };
 
+/**
+ * ⚡ REAL-TIME UPDATE LOOP
+ */
 var update = function (modifier) {
     logicTick++;
 
@@ -115,35 +104,33 @@ var update = function (modifier) {
         return; 
     }
 
-    // 👇 NEW: Location Banner Tracker (Centers on Spectated Hobbit if active)
     const focus = getFocusCoordinates();
     const currentCX = Math.floor(focus.x / 1600);
     const currentCY = Math.floor(focus.y / 1600);
 
-    // If we just spawned in, or crossed the border into a new chunk
+    // Track when coordinates enter a new cell sector to trigger banner banners
     if (!gameState.lastLoggedCell || gameState.lastLoggedCell.cx !== currentCX || gameState.lastLoggedCell.cy !== currentCY) {
         gameState.lastLoggedCell = { cx: currentCX, cy: currentCY };
-        
-        // Grab the blueprint data for this chunk
         const globalIdx = currentCY * CONFIG.MAP_SIZE + currentCX;
         const cellType = worldMap[globalIdx];
-        
         import('./uiManager.js').then(m => m.triggerLocationBanner(currentCX, currentCY, cellType));
     }
 
     // ==========================================
-    // ⚡ REAL-TIME LOOP (Runs every frame)
+    // ⚡ HIGH-FREQUENCY LOOP (Runs on every frame / 60+ FPS)
     // ==========================================
     if (DEBUG_FLAGS.ENABLE_PHYSICS_AND_INPUT) {
         ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
         handleHeroUpdate(modifier, worldMatrix, roomMatrix);
     }
 
-    // 👇 NEW: Smoothly interpolate remote players!
-    updateRemotePlayers(modifier);
+    // 🎯 LERP INTERPOLATION ENGINE: Glides entities smoothly on every single frame
+    interpolateEntities(modifier);
     
+    // ==========================================
+    // 🐢 MEDIUM-FREQUENCY LOOP (Runs every 3 frames)
+    // ==========================================
     if (logicTick % 3 === 0) {
-        // Fast Combat & Interactions
         if (DEBUG_FLAGS.ENABLE_COMBAT_AND_STATS) {
             updateHeroStats(modifier * 3, hero);
             validateTarget(hero);
@@ -165,17 +152,14 @@ var update = function (modifier) {
                     animFrame: hero.frame,
                     isMoving: hero.isMoving,
                     isWindingUp: hero.isWindingUp,
-                    
-                    // 🎯 THE FIX: Send the active lunge state to the server
                     isLunge: (hero.attackTimer < 0 && hero.attackTimer < -1.5), 
-                    
                     currentTileID: tileInfo.tileID,
                     pet: hero.pet
                 });
             }
         }
         
-        // 👇 THE FIX: Let chickens and hobbits run smoothly here (Removed the 'false' arg)
+        // Logical background updates (no visual snapping math)
         if (DEBUG_FLAGS.ENABLE_WORLD_SIM) {
             updateAnimals(modifier * 3, worldMatrix, roomMatrix); 
             updateHobbits(modifier * 3, worldMatrix, roomMatrix); 
@@ -188,7 +172,6 @@ var update = function (modifier) {
     slowTickTimer += modifier;
     if (slowTickTimer >= 1.0) { 
 
-        // 🕰️ Central clock: 1 real second = 8 in-game minutes (180s per day)
         worldTime.minute += 8; 
         if (worldTime.minute >= 60) {
             worldTime.minute = 0;
@@ -197,36 +180,31 @@ var update = function (modifier) {
                 worldTime.hour = 0;
             }
         }
-        worldTime.isNight = (worldTime.hour >= 20 || worldTime.hour < 6); // Night is 8:00 PM to 6:00 AM
+        worldTime.isNight = (worldTime.hour >= 20 || worldTime.hour < 6); 
 
-        // 🎯 OPTIMIZATION: Shift low-frequency plant growth and rot spread to the 1Hz slow-tick loop
         if (DEBUG_FLAGS.ENABLE_WORLD_SIM) {
             updatePlants(1.0, fertilityMatrix, worldMatrix, roomMatrix); 
             updateBacteria(worldMatrix, fertilityMatrix);
         }
 
-        // 🐟 Replenish global fish population
         import('./fish.js').then(m => m.updateGlobalPopulation(1.0));
-                
-        // Reset slow tick timer
         slowTickTimer = 0; 
     }
 
     // UI Updates
-    handleFinancialActions();
     if (logicTick % 60 === 0) {
         updateHUD();
         if (!isSyncingTVL) syncTVL();
     }
 };
 
+/**
+ * 🏛️ Blockchain TVL Query Handshake
+ */
 async function syncTVL() {
-    /*
     if (isSyncingTVL) return;
     isSyncingTVL = true;
-    
     try {
-        // Fetch the real TVL from the blockchain!
         const balance = await getMasterBalance();
         gameState.tvl = balance; 
     } catch (e) {
@@ -234,86 +212,79 @@ async function syncTVL() {
     } finally {
         isSyncingTVL = false;
     }
-    */
 }
 
-
+/**
+ * ⚡ CANVAS DRAW PIPELINE
+ */
 var render = function () {
     clearAll(); 
     const focus = getFocusCoordinates();
     viewport.update(focus.x + 8, focus.y + 8);
 
+    // Pass 1: Draw Terrain Map
     drawMap(worldMatrix, roomMatrix); 
-
-    drawStaticObjects();                       // Pass 1.5: Draw Static Overlays (Wells & Trees) 👈 ADDED HERE
-
-
-    // 👇 PASS ROOM MATRIX HERE 👇
-    drawPlants(roomMatrix); 
-
-    // 👇 ADD THIS LINE: Draw poop, dead grass, and dropped items!
-    drawDroppedItems();
-
-
-    // 👇 ADD THIS LINE to actually draw the flock to the screen!
-    drawAnimals(); 
-
-
-    drawNightTint();                           // 👈 ADDED HERE to tint the screen!
-
-
-
-    // 👇 MOBA FIX: Only draw the red circle when we are locked onto an enemy!
-    if (hero.target) drawTargetCircle(ctx2, hero.target);
-
-    // 👇 NEW: Draw the pulsing red circle over an anvil/smelter if we are working it!
-    drawWorkingIndicator(ctx2, hero.workingObj);
     
-    // 👇 NEW: Draw Hero's Attack Range underneath the hero
+    // Pass 2: Draw Static Wells and Trees
+    drawStaticObjects();                       
+    
+    // Pass 3: Draw Agricultural Flora and Crops
+    drawPlants(roomMatrix); 
+    
+    // Pass 4: Draw Dropped Backpack items, Eggs, and Mulch
+    drawDroppedItems();
+    
+    // Pass 5: Draw Pasture Animals (Chickens)
+    drawAnimals(); 
+    
+    // Pass 6: Draw Environmental Night Mask
+    drawNightTint();                           
+
+    // Pass 7: Draw Targeted Highlights
+    if (hero.target) drawTargetCircle(ctx2, hero.target);
+    drawWorkingIndicator(ctx2, hero.workingObj);
     drawHeroRange(ctx2, hero);
-
-    // 👇 ADD THIS TO DRAW YOUR FLYING SKILLSHOTS!
+    
+    // Pass 8: Draw Projectile and Spell Animations
     drawProjectiles(ctx2, serverProjectiles);
-
-
-    // 🎯 THE FIX: Pass roomMatrix as the third parameter to drawRemotePlayers
+    
+    // Pass 9: Draw Remote players
     drawRemotePlayers(ctx2, remotePlayers, roomMatrix); 
-
-    drawHobbits(ctx2, hobbits, roomMatrix);    // 👈 🎯 THE FIX: Passed roomMatrix reference
-
-
+    
+    // Pass 10: Draw Settlement Hobbits
+    drawHobbits(ctx2, hobbits, roomMatrix);    
+    
+    // Pass 11: Draw Player Hero Sprite and held items
     drawHero(); 
+    
+    // Pass 12: Draw Fishing Bobbers and Lines
     drawBobber();
-    // 👇 ADD THIS LINE: Draw the leaves over the players' heads!
+    
+    // Pass 13: Draw Leafy Overhead Canopies
     drawCanopy(worldMatrix);
 
-    drawJoystick(ctx3); // Placeholder for touch/gamepad on PC
+    // Pass 14: Draw HUD Joystick overlays
+    drawJoystick(ctx3); 
     drawAbilityButtons(ctx3);
-
-    // 👇 ADD THIS TO DRAW THE BLUE AIM UI & CANCEL BUTTON!
     drawAimIndicator(ctx3);
-    
     drawXPStatus(ctx3);
     drawHealthBar(ctx3, hero, "#00FF00");
     drawEnergyBar(ctx3, hero, "#FFD700");
 
     ctx3.fillStyle = CONFIG.UI_COLOR;
     ctx3.font = CONFIG.FONT_STYLE;
-    
-    // 👈 Align right, underneath the Fish and TGV boxes
     ctx3.textAlign = "right"; 
     
     const tileX = Math.floor((hero.x + 8) / 16);
     const tileY = Math.floor((hero.y + 8) / 16);
     
-    // 👇 Nudged Y down to 65 so it sits right beneath the new HTML UI!
     ctx3.fillText(`PVP MODE | X: ${tileX}, Y: ${tileY}`, canvas3.width - 10, 65);
-    
-    // Reset text alignment so we don't mess up other UI elements
     ctx3.textAlign = "left";
 };
 
-// 🚨 Reverted mainInit to async/await for PC build
+/**
+ * ⚡ MAIN INITIALIZATION ROUTINE (Includes accurate performance markers)
+ */
 async function mainInit() {
     try {
         logStep("1. Init Input...");
@@ -338,41 +309,24 @@ async function mainInit() {
         roomMatrix = worldData.roomMatrix;
         fertilityMatrix = worldData.fertilityMatrix;
 
-        // 🎯 THE FIX: Injects worldMatrix reference to multiplayer module to enable door syncing
         import('./multiplayer.js').then(m => {
             m.setWorldMatrix(worldMatrix);
         });
 
-        // ==========================================
-        // ⏱️ PROFILING HELPER (With DOM Yielding)
-        // ==========================================
         const measureStep = async (name, fn) => {
-            // 1. Print the starting message
             logStep(name + "..."); 
-            
-            // 2. Force the browser to pause for 20ms to actually draw the text to the screen!
             await new Promise(resolve => setTimeout(resolve, 20)); 
-            
-            // 3. Run the heavy math
             const t0 = performance.now();
             await fn(); 
             const t1 = performance.now();
+            logStep("--> DONE [" + ((t1 - t0) / 1000).toFixed(2) + "s]"); 
             
-            // 4. Print the completion time
-            logStep(`--> DONE [${((t1 - t0) / 1000).toFixed(2)}s]`); 
-            
-            // Scroll the terminal to the bottom so we always see the newest text
             const term = document.getElementById('debug-terminal');
             if (term) term.scrollTop = term.scrollHeight;
         };
 
-        // ==========================================
-        // 👑 THE ULTIMATE GENERATION PIPELINE
-        // ==========================================
-
         logStep("Step 1: Continents & Biomes (Handled in populateWorld)");
 
-        // 🌊 Restored Step 2: Draw Global Shorelines to resolve missing beach textures
         await measureStep("Step 2: Drawing Global Shorelines", () => {
             generateGlobalShorelines(worldMatrix, roomMatrix, fertilityMatrix, worldMap);
         });
@@ -386,8 +340,7 @@ async function mainInit() {
             planAllSettlements(worldMap, worldMatrix, roomMatrix, fertilityMatrix);
         });
 
-
-        await measureStep("Step 9: Cleaning up Blueprints", () => {
+        await measureStep("Step 5: Cleaning up Blueprints", () => {
             clearBlueprints(roomMatrix);
         });
 
@@ -396,15 +349,14 @@ async function mainInit() {
         resetEntities(worldMap); 
         ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix, worldMap); 
 
-        // 👇 OPTIONAL DEBUG: Force a town exactly at spawn
+        // Set starting location coordinates safely inside our debug village
         const chunkX = Math.floor(hero.x / 1600);
         const chunkY = Math.floor(hero.y / 1600);
         const gridX = (chunkX * 100) + 50;
         const gridY = (chunkY * 100) + 50;
         
         hero.x = gridX * 16;
-        hero.y = (gridY + 10) * 16; // Start slightly south of the center
-        // 👆 ------------------------------------------- 👆
+        hero.y = (gridY + 10) * 16; 
 
         logStep("9. Init UI...");
         initUI(); 
@@ -415,7 +367,7 @@ async function mainInit() {
         if (term) term.style.display = 'none';
         
         isGameRunning = true;
-        main(); // Start the main game loop
+        main(); 
     } catch (err) {
         logStep("CRASH: " + err.message);
     }
@@ -426,7 +378,6 @@ window.addEventListener('resize', () => {
     const h = window.innerHeight;
     const zoom = CONFIG.ZOOM;
 
-    // 🎯 Only resize active Game World (canvas2) and UI (canvas3) layers
     [canvas2, canvas3].forEach(c => {
         c.width = Math.floor(w / zoom);
         c.height = Math.floor(h / zoom);
@@ -436,7 +387,6 @@ window.addEventListener('resize', () => {
 
     viewport.screen = [Math.floor(w / zoom), Math.floor(h / zoom)];
 
-    // 🎯 Set smoothing properties only on active contexts
     [ctx2, ctx3].forEach(c => {
         c.imageSmoothingEnabled = false;
         c.webkitImageSmoothingEnabled = false;
@@ -444,7 +394,6 @@ window.addEventListener('resize', () => {
     });
 });
 
-// The main game loop for PC (using requestAnimationFrame)
 function main() {
     const ts = Date.now();
     const delta = (ts - lastTimestamp) / 1000;
@@ -464,15 +413,13 @@ function main() {
 
     ctx3.fillStyle = "white";
     ctx3.font = "12px 'Press Start 2P'";
-    
-    // 👈 Top Middle Alignment
     ctx3.textAlign = "center";
     ctx3.fillText("FPS: " + currentFps, canvas3.width / 2, 20);
-    ctx3.textAlign = "left"; // Reset 
+    ctx3.textAlign = "left"; 
     
     window.requestAnimationFrame(main);
 }
 
 let lastTimestamp = Date.now();
 
-mainInit(); // Start the PC initialization
+mainInit();

@@ -12,14 +12,13 @@ export let playerWallet = null;
 export let serverProjectiles = [];
 export let globalUnlockedSystems = ["4_4"];
 
-export const doorStates = new Map(); // key: "gx_gy", value: { locked: boolean }
+export const doorStates = new Map(); 
 export const storeDbCache = new Map(); 
 export const hayStorageCache = new Map(); 
 export const chestCache = new Map(); 
 export const villageOwners = new Map();
 export const villageCriminals = new Map();
 
-// Bind the caches to the window to ensure they are accessible globally without circular imports
 if (typeof window !== 'undefined') {
     window.villageOwners = villageOwners;
     window.villageCriminals = villageCriminals;
@@ -29,13 +28,11 @@ if (typeof window !== 'undefined') {
     window.chestCache = chestCache;
 }
 
-// Track the chest actively requested by the player's GUI
 export let playerRequestedChestId = null;
 export function setPlayerRequestedChestId(id) {
     playerRequestedChestId = id;
 }
 
-// Dynamic dependency injection of worldMatrix to bypass circular dependency locks
 export let activeWorldMatrix = null;
 export function setWorldMatrix(matrix) {
     activeWorldMatrix = matrix;
@@ -231,7 +228,6 @@ export function initMultiplayer() {
             });
         });
 
-        // --- 📡 HIGH-FREQUENCY POSITION DESERIALIZATION (30 Hz) ---
         socket.on('position', (data) => {
             const { playerbase, projectiles } = data; 
 
@@ -270,7 +266,6 @@ export function initMultiplayer() {
             serverProjectiles = projectiles || []; 
         });
 
-        // --- 📡 LOW-FREQUENCY ANIMALS DESERIALIZATION (5 Hz) ---
         socket.on('animals', (data) => {
             const { animals: serverAnimals } = data;
 
@@ -334,10 +329,6 @@ export function sendChatMessage(msg) {
     if (socket) socket.emit('chatMessage', { message: msg });
 }
 
-export function initChatListener() {
-    // Left for backward compatibility if called elsewhere
-}
-
 export function syncInventoryWithServer() {
     if (socket && socket.connected) {
         socket.emit('syncInventory', {
@@ -347,11 +338,54 @@ export function syncInventoryWithServer() {
     }
 }
 
-export function updateRemotePlayers(delta) {
+/**
+ * 📡 UNIFIED CLIENT-SIDE INTERPOLATION ENGINE (LERP)
+ */
+export function interpolateEntities(delta) {
     remotePlayers.forEach(p => {
         if (p.targetX !== undefined && p.targetY !== undefined) {
-            p.x += (p.targetX - p.x) * 15 * delta;
-            p.y += (p.targetY - p.y) * 15 * delta;
+            const dx = p.targetX - p.x;
+            const dy = p.targetY - p.y;
+            const dist = Math.hypot(dx, dy);
+
+            if (dist > 250) {
+                p.x = p.targetX;
+                p.y = p.targetY;
+            } else if (dist > 0.1) {
+                p.x += dx * 15 * delta;
+                p.y += dy * 15 * delta;
+            } else {
+                p.x = p.targetX;
+                p.y = p.targetY;
+            }
         }
     });
+
+    import('./animals.js').then(m => {
+        m.animals.forEach(animal => {
+            if (saIsTargetValid(animal)) {
+                const dx = animal.targetX - animal.x;
+                const dy = animal.targetY - animal.y;
+                const dist = Math.hypot(dx, dy);
+
+                if (dist > 120) {
+                    animal.x = animal.targetX;
+                    animal.y = animal.targetY;
+                } else if (dist > 0.1) {
+                    animal.x += dx * 8 * delta;
+                    animal.y += dy * 8 * delta;
+                } else {
+                    animal.x = animal.targetX;
+                    animal.y = animal.targetY;
+                }
+            }
+        });
+    }).catch(() => {});
+}
+
+function saIsTargetValid(animal) {
+    return animal.targetX !== undefined && 
+           animal.targetX !== null && 
+           animal.targetY !== undefined && 
+           animal.targetY !== null;
 }
