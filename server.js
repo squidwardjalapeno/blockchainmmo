@@ -2146,22 +2146,45 @@ io.on('connection', (socket) => {
         socket.broadcast.emit('cellarUpdated', data);
     });
 
+    // server.js (Inside identifyWallet listener)
+
     socket.on('identifyWallet', (data) => {
         const rawAddress = (typeof data === 'object') ? data.address : data;
         if (!rawAddress) return;
         const address = (rawAddress.startsWith('0x')) ? ethers.getAddress(rawAddress) : rawAddress;
         socket.wallet = address;
 
-        if (userDb[address]) {
-            console.log(`💾 Restore: ${address} (${userDb[address].inventory?.length || 0} items)`);
-            
+        // 🎯 INTERCEPT OVERSEER LOGINS AND SKIP CHARACTER CREATION INSTANTLY
+        if (address.startsWith('Overseer_')) {
+            if (!userDb[address]) {
+                userDb[address] = {
+                    wallet: address,
+                    charClass: "Overseer",
+                    skills: [],
+                    x: 80800,
+                    y: 80800,
+                    hp: 100,
+                    maxHp: 100,
+                    energy: 100
+                };
+                fs.writeFileSync('persistence.json', JSON.stringify(userDb, null, 2));
+            }
+
             players[socket.id] = { 
                 ...players[socket.id], 
                 ...userDb[address], 
                 id: socket.id, 
                 isOffline: false 
             };
-            
+
+            socket.emit('restoreHero', players[socket.id]);
+            return;
+        }
+
+        // Standard wallet flows...
+        if (userDb[address]) {
+            console.log(`💾 Restore: ${address} (${userDb[address].inventory?.length || 0} items)`);
+            players[socket.id] = { ...players[socket.id], ...userDb[address], id: socket.id, isOffline: false };
             socket.emit('restoreHero', players[socket.id]);
         } else {
             socket.emit('needsCharacterCreation');

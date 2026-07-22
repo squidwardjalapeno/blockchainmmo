@@ -2,8 +2,8 @@
 import { viewport } from './viewport.js';
 import { hobbits } from './hobbitCore.js';
 import { socket, playerWallet } from './multiplayer.js';
-import { getTileData } from './physics.js';
 import { CONFIG } from './config.js';
+import { gameState } from './entities.js'; // 🎯 Import directly from entities
 
 if (typeof window !== 'undefined') {
     if (window.logStep) logStep("rtsControls.js loaded");
@@ -11,21 +11,20 @@ if (typeof window !== 'undefined') {
 
 export const rtsState = {
     enabled: false,
-    cameraX: 80800, 
-    cameraY: 80800,
     selectedHobbitIds: new Set(),
-    dragStart: null,     // { x, y } in screen coordinates
-    dragCurrent: null,   // { x, y } in screen coordinates
+    dragStart: null,     
+    dragCurrent: null,   
     isPanning: false,
     lastPanTouch: null
 };
 
 export function setRtsMode(enabled) {
     rtsState.enabled = enabled;
+    gameState.rtsEnabled = enabled; // 🎯 Sync to entities global state
+    
     if (enabled) {
-        import('./entities.js').then(m => {
-            m.hero.isMoving = false;
-        });
+        gameState.rtsCameraX = 80800;
+        gameState.rtsCameraY = 80800;
         console.log("👁️ Overseer RTS Mode enabled.");
     } else {
         rtsState.selectedHobbitIds.clear();
@@ -50,25 +49,19 @@ function isWithinSelectionBox(unitX, unitY, startScreen, endScreen) {
     return uScreenX >= minX && uScreenX <= maxX && uScreenY >= minY && uScreenY <= maxY;
 }
 
-// ==========================================
-// 📡 UNIFIED POINTER ENGINE (MOUSE & TOUCH)
-// ==========================================
-
-export function handleRtsPointerDown(clientX, clientY, isRightClick = false) {
+export function handleRtsPointerDown(clientX, clientY, isRightClick = false, isSpaceHeld = false) {
     if (!rtsState.enabled) return;
 
-    // Convert coordinates to account for current zoom level
     const rx = clientX / CONFIG.ZOOM;
     const ry = clientY / CONFIG.ZOOM;
 
     const worldPos = screenToWorld(rx, ry);
 
-    if (isRightClick) {
-        // Right click: start camera pan
+    // 🎯 Spacebar + Left Click or Right Click triggers panning
+    if (isRightClick || isSpaceHeld) {
         rtsState.isPanning = true;
         rtsState.lastPanTouch = { x: rx, y: ry };
     } else {
-        // Left Click: Check for single-unit tap select first
         let clickedUnit = null;
         for (let hob of hobbits) {
             const dist = Math.hypot((hob.x + 8) - worldPos.x, (hob.y + 8) - worldPos.y);
@@ -82,7 +75,6 @@ export function handleRtsPointerDown(clientX, clientY, isRightClick = false) {
             rtsState.selectedHobbitIds.clear();
             rtsState.selectedHobbitIds.add(clickedUnit.id);
         } else {
-            // Clicked empty ground: start drawing selection box
             rtsState.dragStart = { x: rx, y: ry };
             rtsState.dragCurrent = { x: rx, y: ry };
         }
@@ -99,8 +91,9 @@ export function handleRtsPointerMove(clientX, clientY) {
         const dx = rx - rtsState.lastPanTouch.x;
         const dy = ry - rtsState.lastPanTouch.y;
 
-        rtsState.cameraX -= dx;
-        rtsState.cameraY -= dy;
+        // 🎯 Direct updates to entities state
+        gameState.rtsCameraX -= dx;
+        gameState.rtsCameraY -= dy;
 
         rtsState.lastPanTouch = { x: rx, y: ry };
     } else if (rtsState.dragStart) {
@@ -111,11 +104,10 @@ export function handleRtsPointerMove(clientX, clientY) {
 export function handleRtsPointerUp(clientX, clientY, isRightClick = false) {
     if (!rtsState.enabled) return;
 
-    // A. Resolve box marquee selection
     if (rtsState.dragStart && rtsState.dragCurrent) {
         const dist = Math.hypot(rtsState.dragCurrent.x - rtsState.dragStart.x, rtsState.dragCurrent.y - rtsState.dragStart.y);
         
-        if (dist > 5) { // Only select if drag is larger than 5 pixels
+        if (dist > 5) { 
             rtsState.selectedHobbitIds.clear();
             hobbits.forEach(hob => {
                 if (isWithinSelectionBox(hob.x + 8, hob.y + 8, rtsState.dragStart, rtsState.dragCurrent)) {
@@ -128,14 +120,12 @@ export function handleRtsPointerUp(clientX, clientY, isRightClick = false) {
         return;
     }
 
-    // B. Resolve Camera panning
     if (rtsState.isPanning) {
         rtsState.isPanning = false;
         rtsState.lastPanTouch = null;
         return;
     }
 
-    // C. Issue unit commands (on Left Click ground Tap)
     if (!isRightClick && rtsState.selectedHobbitIds.size > 0) {
         const rx = clientX / CONFIG.ZOOM;
         const ry = clientY / CONFIG.ZOOM;
@@ -167,42 +157,31 @@ export function handleRtsPointerUp(clientX, clientY, isRightClick = false) {
             });
         }
     }
-}   
-
-// src/rtsControls.js (Add these functions to the end of the file)
-
-/**
- * 📡 MOBILE TOUCH-TO-POINTER BRIDGES
- * Translates mobile multitouch inputs into the unified pointer math
- */
-export function handleRtsTouchStart(e) {
-    if (!rtsState.enabled) return;
-    
-    if (e.touches.length === 1) {
-        const touch = e.touches[0];
-        handleRtsPointerDown(touch.clientX, touch.clientY, false);
-    } else if (e.touches.length === 2) {
-        // Map two-finger gestures to start a simulated Right-Click pan
-        const touch = e.touches[0];
-        handleRtsPointerDown(touch.clientX, touch.clientY, true);
-    }
 }
 
+// 🎯 Re-route old touch handlers to write to safe state variables
+export function handleRtsTouchStart(e) {
+    if (!rtsState.enabled) return;
+    if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        handleRtsPointerDown(touch.clientX, touch.clientY, false, false);
+    } else if (e.touches.length === 2) {
+        const touch = e.touches[0];
+        handleRtsPointerDown(touch.clientX, touch.clientY, true, false);
+    }
+}
 export function handleRtsTouchMove(e) {
     if (!rtsState.enabled) return;
-
     if (e.touches.length > 0) {
         const touch = e.touches[0];
         handleRtsPointerMove(touch.clientX, touch.clientY);
     }
 }
-
 export function handleRtsTouchEnd(e) {
     if (!rtsState.enabled) return;
-
     if (e.changedTouches.length > 0) {
         const touch = e.changedTouches[0];
-        const wasRightClick = (e.touches.length >= 1); // If fingers remain, resolve as pan end
+        const wasRightClick = (e.touches.length >= 1);
         handleRtsPointerUp(touch.clientX, touch.clientY, wasRightClick);
     }
 }

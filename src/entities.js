@@ -2,13 +2,13 @@
 import { CONFIG } from './config.js';
 import { setWorldSeed, seededRandom } from "./mapGenerator.js"
 
-// To this:
 if (typeof window !== 'undefined') {
     logStep("entities.js");
 }
 
-// --- Add to the TOP of src/entities.js ---
-
+// ==========================================
+// 🚨 CROWD CONTROL RESTRICTION MASKS
+// ==========================================
 export const CC_RESTRICT = {
     MOVE:              1 << 0, // 1 (00001)
     ATTACK:            1 << 1, // 2 (00010)
@@ -53,86 +53,64 @@ export const CC = {
     WRAP:       CC_RESTRICT.MOVE | CC_RESTRICT.CLEANSE
 };
 
-// ... Then ensure your hero object has the trackers: ...
-// export const hero = {
-//     activeCCs:[], 
-//     ccFlags: { canMove: true, canAttack: true, canCastMovement: true, canCastNonMovement: true, canCleanse: true },
-//     slowTimer: 0,
-//     // ...
-
-
-
+// ==========================================
+// 🛡️ HERO DATA PROFILE
+// ==========================================
 export const hero = {
-    // --- POSITION & MOVEMENT ---
     x: 500,
     y: 500,
-
-    floor: 1, // 1 for Ground, 2 for Upstairs
-    
+    floor: 1, 
     dir: 'South',
     animState: 'idle',
     animTimer: 0,
     frame: 0,
     isMoving: false,
 
-    energy: CONFIG.HERO_ENERGY,      // 🆕 Current Energy
-    maxEnergy: CONFIG.HERO_ENERGY,   // 🆕 Max Energy
+    energy: CONFIG.HERO_ENERGY,      
+    maxEnergy: CONFIG.HERO_ENERGY,   
 
-    // --- BASE STATS ---
     hp: CONFIG.HERO_HP,
     maxHp: CONFIG.HERO_HP,
-    shield: 0,   // 👈 NEW: Shield variable
+    shield: 0,   
 
-    baseAd: CONFIG.HERO_ATTACK,  // 👈 NEW: Your naked attack damage
-    ad: CONFIG.HERO_ATTACK,            // Attack Damage (Basic Attack)
+    baseAd: CONFIG.HERO_ATTACK,  
+    ad: CONFIG.HERO_ATTACK,            
     armor: CONFIG.HERO_ARMOR,
     magic: CONFIG.HERO_MAGIC,
     mr: CONFIG.HERO_MAGIC_RESISTANCE,
     speed: CONFIG.HERO_SPEED,
 
-
     xp: 0,
     level: 0,
     spentPoints: 0,
 
-    // In src/entities.js
     equipment: {
-        mainHand: null // 👈 Unified slot!
+        mainHand: null 
     },
-    // (Remove hero.activeSlot if you have it)
 
-    charClass: null,  // 🆕 ADD THIS
-    skills: [],       // 🆕 ADD THIS
-    cooldowns: [0, 0, 0, 0], // 🆕 Tracks the seconds remaining for each skill slot
+    charClass: null,  
+    skills: [],       
+    cooldowns: [0, 0, 0, 0], 
 
-    // 🆕 Dash Physics State
     dashTimer: 0,
     dashVector: { x: 0, y: 0 },
 
-    // 👈 NEW: Warp State
     warpTimer: 0,
     warpTarget: { x: 0, y: 0 },
 
-    // 🆕 Buff State
     buffs: {
         vaultEmpowered: false,
-        divineBubble: false,    // 👈 NEW: Tracks if the bubble is active
-        isAscended: false,     // 👈 NEW: Tracks Transformation
-        fluxShotEmpowered: false, // 👈 NEW: Tracks Flux Shot
-        isInvincible: false    // 👈 NEW: Tracks Heaven's Halo immunity
-
-
-
-
+        divineBubble: false,    
+        isAscended: false,     
+        fluxShotEmpowered: false, 
+        isInvincible: false    
     },
 
-    // 👈 NEW: Tells the server what passives we have equipped
     passives: {
         hasFever: false
     },
 
-    // --- CROWD CONTROL (Cleaned up!) ---
-    activeCCs: [], // Array of { mask: number, timer: number }
+    activeCCs: [], 
     ccFlags: {
         canMove: true,
         canAttack: true,
@@ -140,82 +118,85 @@ export const hero = {
         canCastNonMovement: true,
         canCleanse: true
     },
-    slowTimer: 0, // Slows are a separate soft-CC
+    slowTimer: 0, 
 
-    // 👈 NEW: P2 Stance Variables
-    p2_stance: 'blast', // Starts in Holy Blast mode
-    attackCount: 0,     // Tracks 1st, 2nd, and 3rd hits
+    p2_stance: 'blast', 
+    attackCount: 0,     
 
-    ascensionTimer: 0,        // 👈 NEW: Tracks Transformation duration
-    invincibleTimer: 0,        // 👈 NEW: Tracks duration of the Halo
-
+    ascensionTimer: 0,        
+    invincibleTimer: 0,        
     
-    projectiles: [],          // 👈 NEW: Active flying skillshots
-    aoeZones: [],             // 👈 NEW: Active healing fields on the ground
+    projectiles: [],          
+    aoeZones: [],             
 
     bulwarkTimer: 0,
     bulwarkArmorBonus: 0,
     bulwarkMrBonus: 0,
     bulwarkSpeedBonus: 0,
 
+    target: null,      
+    isAttacking: false,
+    isWindingUp: false,
+    attackTimer: 0,    
+    attackSpeed: 1.0,  
+    attackRange: 24,   
 
-
-
-    // --- ⚔️ PVP STATE MACHINE ---
-    target: null,      // The RemotePlayer object we are currently chasing/attacking
-    isAttacking: false,// Becomes true when we click an enemy
-    isWindingUp: false,// True during the 0.3s "pause" before a hit
-    attackTimer: 0,    // Tracks progress of the swing and the cooldown
-    attackSpeed: 1.0,  // Base: 1 attack per second
-    attackRange: 24,   // Distance (in pixels) needed to connect a punch
-
-    // --- SYSTEMS ---
     inventory: [],
     maxSlots: 10,
     selectedSlot: 0,
     
-    inGameUni: 0, // 🆕 REPLACES onChainPoints
+    inGameUni: 0, 
 
-    // --- REMOVED / UNUSED (Keeping keys for safety if referenced elsewhere) ---
     isFishing: false,
     hasBite: false,
 };
 
+// ==========================================
+// 🛡️ GLOBAL GAMESTATE & CIRCULAR-SAFE RTS STATE
+// ==========================================
 export const gameState = {
     lastLoggedCell: null,
-    tvl: 0, // 🆕 Store Total Value Locked here
-    spectatedHobbitId: null
+    tvl: 0, 
+    spectatedHobbitId: null,
 
+    // RTS States saved inside global gameState to eliminate circular imports
+    rtsEnabled: false,
+    rtsCameraX: 80800,
+    rtsCameraY: 80800
 };
 
 export function getFocusCoordinates() {
+    // If the RTS mode is toggled, force the viewport to center on the free rts camera
+    if (gameState.rtsEnabled) {
+        return { x: gameState.rtsCameraX, y: gameState.rtsCameraY, floor: 1 };
+    }
     if (gameState.spectatedHobbitId && typeof window !== 'undefined' && window.hobbits) {
         const hob = window.hobbits.find(h => h.id === gameState.spectatedHobbitId);
         if (hob) {
             return { x: hob.x, y: hob.y, floor: hob.floor || 1 };
         } else {
-            gameState.spectatedHobbitId = null; // Clear spectate if the hobbit died or is missing
+            gameState.spectatedHobbitId = null; 
         }
     }
     return { x: hero.x, y: hero.y, floor: hero.floor || 1 };
 }
 
-// --- Replace getLevelInfo in src/entities.js ---
-
+// ==========================================
+// 🛡️ LINEAR PROGRESSION & SPAWNING FORMULAS
+// ==========================================
 export function getLevelInfo(xp) {
     if (xp < 1000) return { level: 0, nextXp: 1000, points: 0 };
     
     let level = 1;
     let totalXpNeeded = 1000;
     let nextLevelChunk = 100;
-    let pointsAvailable = 10; // Big payoff for hitting Level 1
+    let pointsAvailable = 10; 
 
     while (xp >= (totalXpNeeded + nextLevelChunk)) {
         totalXpNeeded += nextLevelChunk;
-        // 🛡️ LINEAR SCALING: Adds 100 more XP required per level instead of multiplying
         nextLevelChunk += 100; 
         level++;
-        pointsAvailable += 1; // +1 point for every level after 1
+        pointsAvailable += 1; 
     }
 
     return { 
@@ -225,19 +206,14 @@ export function getLevelInfo(xp) {
     };
 }
 
-// src/entities.js
-
 export function resetEntities(worldMap) {
     const mapWidth = CONFIG.MAP_SIZE; 
     const mapHeight = CONFIG.MAP_SIZE;
 
-    // 1. RE-SYNC THE SEED
     setWorldSeed(window.worldSeed || 12345); 
 
-    // 2. FIND ALL NATURAL SETTLEMENTS
     const settlements = [];
     for (let i = 0; i < worldMap.length; i++) {
-        // 101 = Village, 102 = Town, 103 = Castle
         if (worldMap[i] === 101 || worldMap[i] === 102 || worldMap[i] === 103) {
             settlements.push(i);
         }
@@ -247,9 +223,7 @@ export function resetEntities(worldMap) {
     let finalCellX = 0;
     let finalCellY = 0;
 
-    // 3. SPAWN AT A SETTLEMENT (If any exist)
     if (settlements.length > 0) {
-        // Pick a random settlement
         const pick = settlements[Math.floor(seededRandom() * settlements.length)];
         finalCellX = pick % mapWidth;
         finalCellY = Math.floor(pick / mapWidth);
@@ -258,7 +232,6 @@ export function resetEntities(worldMap) {
         let offX = 50;
         let offY = 50;
 
-        // 👇 Apply the exact same deterministic hash if it's a village!
         if (cellType === 101) {
             const seed = window.worldSeed || 1;
             const hash = Math.abs(Math.sin((finalCellX + seed) * 12.9898 + (finalCellY + seed) * 78.233) * 43758.5453);
@@ -266,11 +239,9 @@ export function resetEntities(worldMap) {
             offY = Math.floor((hash * 10) * 60) % 60 + 20;
         }
 
-        // Calculate exact pixel coordinates (We add +4 to Y to not spawn IN the well)
         spawnX = ((finalCellX * 100) + offX) * 16; 
         spawnY = ((finalCellY * 100) + offY + 4) * 16; 
     }
-    // 4. FALLBACK: WILDERNESS SPAWN
     else {
         let foundLand = false;
         while (!foundLand) {
@@ -292,8 +263,7 @@ export function resetEntities(worldMap) {
     hero.y = spawnY;
     hero.hp = hero.maxHp;
     hero.target = null;
-    hero.energy = hero.maxEnergy; // Refill energy on spawn
+    hero.energy = hero.maxEnergy; 
     
     console.log(`🏠 Hero Spawned at Settlement Cell: [${finalCellX}, ${finalCellY}]`);
 }
-

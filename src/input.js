@@ -336,12 +336,18 @@ export function initInput(canvas) {
         if (rtsState.enabled) e.preventDefault();
     });
 
+    // src/input.js (Update inside initInput)
+
     canvas.addEventListener('mousedown', (e) => {
         if (rtsState.enabled) {
             e.preventDefault();
             const isRightClick = (e.button === 2);
+            
+            // Check if spacebar (KeySpace) is currently held down in keysDown
+            const isSpaceHeld = !!keysDown['Space'];
+            
             import('./rtsControls.js').then(rts => {
-                rts.handleRtsPointerDown(e.clientX, e.clientY, isRightClick);
+                rts.handleRtsPointerDown(e.clientX, e.clientY, isRightClick, isSpaceHeld);
             });
         }
     });
