@@ -1,58 +1,73 @@
 // src/input.js
 import { hero, getLevelInfo } from './entities.js';
-// Update import at the top
 import { checkCollision, moveEntity } from './physics.js';
 import { upgradeStat } from './interactionManager.js';
 import { toggleMenu, uiState } from './uiManager.js';
 import { executeAbility } from './abilities.js';
-import { CONFIG } from './config.js'; // 👈 Import config
+import { CONFIG } from './config.js';
+import { socket } from './multiplayer.js';
+import { rtsState, handleRtsTouchStart, handleRtsTouchMove, handleRtsTouchEnd } from './rtsControls.js';
 
-
-if (typeof window !== 'undefined') logStep("input.js loaded");
+if (typeof window !== 'undefined') {
+    logStep("input.js loaded");
+}
 
 const keysDown = {};
 
 export const inputState = {
     inputType: 'keyboard', 
-    uiMode: 'combat', // 👈 NEW: Default to combat mode
+    uiMode: 'combat', 
 
-    moveX: 0, moveY: 0,
-    action: false, interact: false, drop: false, keyB: false, keyP: false, keyC: false, keyV: false, keyF: false,
-    mainBtn: false, skill1: false, skill2: false, skill3: false, skill4: false,
+    moveX: 0, 
+    moveY: 0,
+    action: false, 
+    interact: false, 
+    drop: false, 
+    keyB: false, 
+    keyP: false, 
+    keyC: false, 
+    keyV: false, 
+    keyF: false,
+    mainBtn: false, 
+    skill1: false, 
+    skill2: false, 
+    skill3: false, 
+    skill4: false,
     leftJoystick: { active: false, startX: 0, startY: 0, currX: 0, currY: 0 },
-    aim: { active: false, index: -1, dx: 0, dy: 0, cancel: false, startX: 0, startY: 0 },
-    fireAim: false, fireAimIndex: -1 
+    aim: { active: false, index: -1, dx: 0, dy: 0, cancel: false, startX: 0, startY: 0, mag: 1.0 },
+    fireAim: false, 
+    fireAimIndex: -1 
 };
 
+/**
+ * 1. Define Tablet UI Layout coordinates based on Zoom configuration
+ */
 export function getUIButtons() {
     const W = Math.floor(window.innerWidth / CONFIG.ZOOM);
     const H = Math.floor(window.innerHeight / CONFIG.ZOOM);
     
     return {
-        // Combat UI
         MAIN:   { x: W - 28,  y: H - 28,  r: 20 },
         SKILL1: { x: W - 75,  y: H - 22,  r: 14, index: 0 },
         SKILL2: { x: W - 68,  y: H - 55,  r: 14, index: 1 },
         SKILL3: { x: W - 45,  y: H - 75,  r: 14, index: 2 },
         SKILL4: { x: W - 18,  y: H - 85,  r: 16, index: 3 },
         CANCEL: { x: W - 28,  y: H - 120, r: 16 },
-        
-        // 🔄 SWAP Toggle Button (Left of S1)
         SWAP:   { x: W - 115, y: H - 22,  r: 14 }, 
 
-        // 🎒 Normal Mode UI (2x3 Grid on the Right)
-        INV:      { x: W - 80, y: H - 120, r: 14 }, // Top Left
-        WORK:     { x: W - 30, y: H - 120, r: 14 }, // Top Right
-        DROP:     { x: W - 80, y: H - 75,  r: 14 }, // Mid Left
-        EAT:      { x: W - 30, y: H - 75,  r: 14 }, // Mid Right
-        PLANT:    { x: W - 80, y: H - 30,  r: 14 }, // Bot Left
-        INTERACT: { x: W - 30, y: H - 30,  r: 14 }  // Bot Right
+        INV:      { x: W - 80, y: H - 120, r: 14 }, 
+        WORK:     { x: W - 30, y: H - 120, r: 14 }, 
+        DROP:     { x: W - 80, y: H - 75,  r: 14 }, 
+        EAT:      { x: W - 30, y: H - 75,  r: 14 }, 
+        PLANT:    { x: W - 80, y: H - 30,  r: 14 }, 
+        INTERACT: { x: W - 30, y: H - 30,  r: 14 }  
     };
 }
 
+/**
+ * 2. Initialize Inputs (Keyboard, Touch, RTS Overrides)
+ */
 export function initInput(canvas) {
-
-    // 👇 NEW: Listen for the Chat "SEND" button being clicked/tapped
     const chatSendBtn = document.getElementById('chat-send-btn');
     const chatInput = document.getElementById('chat-input');
     
@@ -62,34 +77,32 @@ export function initInput(canvas) {
             if (msg.length > 0) {
                 import('./multiplayer.js').then(m => m.sendChatMessage(msg));
             }
-            chatInput.value = ''; // Clear box
-            chatInput.blur();     // Close virtual keyboard
+            chatInput.value = ''; 
+            chatInput.blur();     
         });
     }
 
+    // --- KEYBOARD LISTENERS ---
     window.addEventListener("keydown", (e) => {
-
-        // 👇 NEW: Check if Chat is focused
         if (document.activeElement && document.activeElement.id === 'chat-input') {
             if (e.code === 'Enter') {
                 const msg = document.activeElement.value.trim();
                 if (msg.length > 0) {
                     import('./multiplayer.js').then(m => m.sendChatMessage(msg));
                 }
-                document.activeElement.value = ''; // Clear box
-                document.activeElement.blur();     // Unfocus
+                document.activeElement.value = ''; 
+                document.activeElement.blur();     
             }
-            return; // 🛑 EXIT EARLY: Don't trigger game inputs!
+            return; 
         }
         
-        // Quick focus for chat if they hit Enter while playing
         if (e.code === 'Enter') {
             const chatInput = document.getElementById('chat-input');
             if (chatInput) chatInput.focus();
             return;
         }
                 
-        inputState.inputType = 'keyboard'; // 👈 Switch to PC Mode
+        inputState.inputType = 'keyboard'; 
         keysDown[e.code] = true;
         updateKeyboardVectors();
 
@@ -106,14 +119,10 @@ export function initInput(canvas) {
         if (e.code === 'Space') inputState.action = true;
         if (e.code === 'KeyE')  inputState.interact = true;
         if (e.code === 'KeyC')  inputState.keyC = true; 
-        // Inside keydown:
-        if (e.code === 'KeyG') inputState.drop = true;
-        if (e.code === 'KeyV') inputState.keyV = true;
-        if (e.code === 'KeyF') inputState.keyF = true;
+        if (e.code === 'KeyG')  inputState.drop = true;
+        if (e.code === 'KeyV')  inputState.keyV = true;
+        if (e.code === 'KeyF')  inputState.keyF = true;
 
-
-
-        // PC QUICK-CAST (Flag for the physics loop)
         if (e.code === 'KeyQ') inputState.skill1 = true;
         if (e.code === 'KeyW') inputState.skill2 = true;
         if (e.code === 'KeyE') inputState.skill3 = true;
@@ -129,15 +138,13 @@ export function initInput(canvas) {
         updateKeyboardVectors();
         if (e.code === 'Space') {
             inputState.action = false;
-            inputState.mainBtn = false; // 👈 Add this line to be safe!
+            inputState.mainBtn = false; 
         }
         if (e.code === 'KeyE')  inputState.interact = false;
         if (e.code === 'KeyC')  inputState.keyC = false; 
-        // Inside keyup:
-        if (e.code === 'KeyG') inputState.drop = false;
-        if (e.code === 'KeyV') inputState.keyV = false;
-        if (e.code === 'KeyF') inputState.keyF = false;
-
+        if (e.code === 'KeyG')  inputState.drop = false;
+        if (e.code === 'KeyV')  inputState.keyV = false;
+        if (e.code === 'KeyF')  inputState.keyF = false;
 
         if (e.code === 'KeyQ') inputState.skill1 = false;
         if (e.code === 'KeyW') inputState.skill2 = false;
@@ -157,6 +164,7 @@ export function initInput(canvas) {
         inputState.moveY = vy;
     }
 
+    // --- TOUCH / MOBILE LISTENERS ---
     const handleTouch = (e) => {
         e.preventDefault();
         inputState.inputType = 'touch'; 
@@ -170,7 +178,6 @@ export function initInput(canvas) {
             const ty = e.touches[i].clientY / CONFIG.ZOOM;
             const hit = (btn) => Math.hypot(tx - btn.x, ty - btn.y) < btn.r + 5;
 
-            // --- LEFT SIDE: PURE JOYSTICK ---
             if (tx < middleScreenX) {
                 leftSideActive = true;
                 if (!inputState.leftJoystick.active) {
@@ -194,15 +201,12 @@ export function initInput(canvas) {
                     inputState.leftJoystick.currX = tx; inputState.leftJoystick.currY = ty;
                 }
             } 
-            // --- RIGHT SIDE: MODE SWAPPING & BUTTONS ---
             else {
-                // 1. Check SWAP Button
                 if (e.type === 'touchstart' && hit(btns.SWAP)) {
                     inputState.uiMode = inputState.uiMode === 'combat' ? 'normal' : 'combat';
                     if (navigator.vibrate) navigator.vibrate(20);
                 }
 
-                // 2. NORMAL MODE BUTTONS
                 if (inputState.uiMode === 'normal') {
                     if (e.type === 'touchstart') {
                         if (hit(btns.INTERACT)) { inputState.interact = true; inputState.action = true; }
@@ -213,7 +217,6 @@ export function initInput(canvas) {
                         if (hit(btns.INV)) import('./uiManager.js').then(m => m.toggleMenu());
                     }
                 } 
-                // 3. COMBAT MODE BUTTONS
                 else {
                     if (Math.hypot(tx - btns.MAIN.x, ty - btns.MAIN.y) < btns.MAIN.r) {
                         if (!inputState.mainBtn) { inputState.mainBtn = true; inputState.action = true; }
@@ -257,10 +260,29 @@ export function initInput(canvas) {
         }
     };
 
+    // Routing inputs dynamically depending on whether the RTS mode is active
+    canvas.addEventListener('touchstart', (e) => {
+        if (rtsState.enabled) {
+            handleRtsTouchStart(e);
+            return;
+        }
+        handleTouch(e);
+    }, { passive: false });
 
-    canvas.addEventListener('touchstart', handleTouch);
-    canvas.addEventListener('touchmove', handleTouch);
+    canvas.addEventListener('touchmove', (e) => {
+        if (rtsState.enabled) {
+            handleRtsTouchMove(e);
+            return;
+        }
+        handleTouch(e);
+    }, { passive: false });
+
     canvas.addEventListener('touchend', (e) => {
+        if (rtsState.enabled) {
+            handleRtsTouchEnd(e);
+            return;
+        }
+        
         let leftStillActive = false;
         let rightStillActive = false;
 
@@ -274,24 +296,18 @@ export function initInput(canvas) {
             if (Object.keys(keysDown).length === 0) { inputState.moveX = 0; inputState.moveY = 0; }
         }
 
-        // ... inside canvas.addEventListener('touchend') in src/input.js ...
-
-        // If the right side was released, execute the aimed skill!
         if (!rightStillActive) {
             inputState.mainBtn = false;
             inputState.action = false;
             
             if (inputState.aim.active) {
                 if (!inputState.aim.cancel) {
-                    
-                    // 🎯 SMART TARGETING FOR SPELLS
-                    // Find an enemy near the end of our aim vector
                     inputState.aim.targetId = null;
                     const aimX = (hero.x + 8) + (inputState.aim.dx * 150);
                     const aimY = (hero.y + 8) + (inputState.aim.dy * 150);
                     
                     import('./multiplayer.js').then(m => {
-                        let bestDist = 50; // "Snap" radius of 50 pixels
+                        let bestDist = 50; 
                         m.remotePlayers.forEach((p, id) => {
                             if (p.hp <= 0) return;
                             const dist = Math.hypot((p.x + 8) - aimX, (p.y + 8) - aimY);
@@ -301,11 +317,9 @@ export function initInput(canvas) {
                             }
                         });
 
-                        // Now queue the spell to fire!
                         inputState.fireAim = true;
                         inputState.fireAimIndex = inputState.aim.index;
                     });
-
                 } else {
                     inputState.aim.active = false;
                     inputState.aim.index = -1;
@@ -315,15 +329,17 @@ export function initInput(canvas) {
     });
 }
 
-// --- Replace this entirely in src/input.js ---
-
+/**
+ * 3. Local predicted movement update + Authoritative server input emission
+ */
 export function handleHeroUpdate(modifier, worldMatrix, roomMatrix) {
     const hud = document.getElementById('hud');
     if (!hud || hud.style.display === 'none') return;
+    if (rtsState.enabled) return; // Freeze Hero input checks if player is in Overseer mode
 
     if (hero.isFishing) { hero.isMoving = false; hero.frame = 0; return; }
 
-    // 🌟 1. FIRE ABILITIES (Now passes world and room matrix!)
+    // Execute local abilities
     if (inputState.skill1) { executeAbility(hero, 0, inputState, worldMatrix, roomMatrix); inputState.skill1 = false; }
     if (inputState.skill2) { executeAbility(hero, 1, inputState, worldMatrix, roomMatrix); inputState.skill2 = false; }
     if (inputState.skill3) { executeAbility(hero, 2, inputState, worldMatrix, roomMatrix); inputState.skill3 = false; }
@@ -334,198 +350,78 @@ export function handleHeroUpdate(modifier, worldMatrix, roomMatrix) {
         inputState.fireAim = false; 
     }
 
-    const oldX = hero.x; const oldY = hero.y;
-    
-    // 16x16 HITBOX (Feet Only)
-    const left = 2, right = 13, top = 8, bottom = 15;
-
-    // 🌟 2. WARP PHYSICS (0.1s Cast Delay)
     if (hero.warpTimer > 0) {
         hero.warpTimer -= modifier;
         hero.isMoving = false;
         hero.animState = 'idle'; 
-        
         if (hero.warpTimer <= 0) {
             hero.x = hero.warpTarget.x;
             hero.y = hero.warpTarget.y;
-            console.log("🌌 Warped!");
-            
-            import('./multiplayer.js').then(m => {
-                if (m.socket) m.socket.emit('movement', {
-                    x: hero.x, y: hero.y, dir: hero.dir, 
-                    animFrame: hero.frame, isMoving: false, isWindingUp: false, currentTileID: 0
-                });
-            });
         }
         return; 
     }
 
-    // 🌟 3. GENERAL CASTING PHYSICS (e.g. Ring of Penance 0.3s Cast Time)
     if (hero.castTimer > 0) {
         hero.castTimer -= modifier;
-        
-        // Root the player while casting!
         hero.isMoving = false;
         hero.animState = 'idle'; 
-
-        // Did the cast finish this frame?
-        if (hero.castTimer <= 0) {
-            
-            // --- DETONATE p11: RING OF PENANCE ---
-            if (hero.castSpellId === 'p11') {
-                console.log("💥 Ring of Penance Detonated!");
-                const damage = hero.magic * 0.30; 
-
-                // Emit the AoE to the server
-                import('./multiplayer.js').then(module => {
-                    if (module.socket) {
-                        module.socket.emit('abilityAoE', {
-                            type: 'ringOfPenance',
-                            x: hero.x + 8,
-                            y: hero.y + 8,
-                            radius: 40,
-                            damage: damage
-                        });
-                    }
-                });
-                
-                // Spawn a local Hallowed Ground ring for the caster
-                hero.aoeZones.push({
-                    type: 'ringOfPenanceVis',
-                    x: hero.x + 8, y: hero.y + 8,
-                    radius: 40,
-                    life: 0.5 
-                });
-            }
-
-            // --- DETONATE p16: ZENITH GUARDIAN ---
-            else if (hero.castSpellId === 'p16') {
-                console.log("🤖 Zenith Guardian Crashes Down!");
-                
-                // Grab the coordinates we stored 1 second ago!
-                const dropX = hero.castSpellTarget.x;
-                const dropY = hero.castSpellTarget.y;
-                
-                // 1. AoE Explosion (Damage + BIND CC) AT THE DROP ZONE
-                import('./multiplayer.js').then(module => {
-                    if (module.socket) module.socket.emit('abilityAoE', {
-                        type: 'zenithGuardianSpawn',
-                        x: dropX, 
-                        y: dropY,
-                        radius: 64, // 4-tile radius
-                        damage: hero.magic * 0.25
-                    });
-                });
-
-                // 2. Create the Pet Object AT THE DROP ZONE
-                hero.pet = {
-                    active: true,
-                    x: dropX, 
-                    y: dropY,
-                    maxHp: hero.maxHp * 1.8,
-                    hp: hero.maxHp * 1.8,
-                    ad: hero.ad * 0.2, 
-                    speed: hero.speed * 0.8, 
-                    life: 40.0, 
-                    attackTimer: 0,
-                    healTimer: 5.0, 
-                    overrideTarget: null
-                };
-                
-                // Clean up the temporary targeting variable
-                hero.castSpellTarget = null;
-            }
-            
-            hero.castSpellId = null; // Clear the queue
-        }
-        return; // 🛑 EXIT EARLY: Cannot move while casting!
+        return; 
     }
 
-
-    // 🌟 4. DASH PHYSICS OVERRIDE
     if (hero.dashTimer > 0) {
         hero.dashTimer -= modifier;
         
         let moveX = hero.dashVector.x * modifier;
         let moveY = hero.dashVector.y * modifier;
 
-        if (moveX !== 0) {
-            const nextX = hero.x + moveX;
-            const sideToCheck = (moveX < 0) ? nextX + left : nextX + right;
-            if (checkCollision(sideToCheck, hero.y + top, worldMatrix, roomMatrix, hero) && 
-                checkCollision(sideToCheck, hero.y + bottom, worldMatrix, roomMatrix, hero)) {
-                hero.x = nextX;
-            }
-        }
-        if (moveY !== 0) {
-            const nextY = hero.y + moveY;
-            const sideToCheck = (moveY < 0) ? nextY + top : nextY + bottom;
-            if (checkCollision(hero.x + left, sideToCheck, worldMatrix, roomMatrix, hero) && 
-                checkCollision(hero.x + right, sideToCheck, worldMatrix, roomMatrix, hero)) {
-                hero.y = nextY;
-            }
-        }
+        moveEntity(hero, moveX, moveY, worldMatrix, roomMatrix);
 
         hero.isMoving = true;
         hero.animState = 'rolling';
         hero.animTimer += modifier * 30; 
         hero.frame = Math.floor(hero.animTimer) % 6; 
-        
-        if (hero.dashTimer <= 0) hero.animState = 'idle'; 
         return; 
     }
 
-    // 🌟 5. NORMAL WALKING & AUTO-CHASE PHYSICS
     if (hero.ccFlags && hero.ccFlags.canMove) { 
-        
         let velX = inputState.moveX * hero.speed;
         let velY = inputState.moveY * hero.speed;
 
-        // 👇 MOBA FIX: Detect manual movement instantly at 60 FPS
         const isManualMove = (inputState.moveX !== 0 || inputState.moveY !== 0);
 
-
-        // --- ⚔️ AAA AUTO-CHASE OVERRIDE ---
-        // If we are locked on, the Virtual Joystick takes over at 60 FPS!
+        // Auto-chase pathing offset
         if (hero.isAttacking && hero.target && !hero.isWindingUp && !isManualMove) {
             const hx = hero.x + 8;
             const hy = hero.y + 8;
             const tx = hero.target.x + 8;
             const ty = hero.target.y + 8;
-            
-            const dx = tx - hx;
-            const dy = ty - hy;
-            const dist = Math.hypot(dx, dy);
+            const dist = Math.hypot(tx - hx, ty - hy);
             const attackRange = hero.attackRange || 24;
 
             if (dist > attackRange) {
-                velX = (dx / dist) * hero.speed;
-                velY = (dy / dist) * hero.speed;
-                
-                // Anti-overshoot: Don't walk past the target boundary in a single frame
-                const maxMove = dist - attackRange;
-                if (Math.hypot(velX * modifier, velY * modifier) > maxMove) {
-                    velX = (dx / dist) * (maxMove / modifier);
-                    velY = (dy / dist) * (maxMove / modifier);
-                }
+                velX = ((tx - hx) / dist) * hero.speed;
+                velY = ((ty - hy) / dist) * hero.speed;
             } else {
-                velX = 0; velY = 0; // In range! Stop moving!
+                velX = 0; velY = 0; 
             }
         }
 
-        // Apply time modifier to final velocity
         let moveX = velX * modifier;
         let moveY = velY * modifier;
+
+        // --- 📡 PHASE 1: EMIT RAW INPUT TO SERVER FOR AUTHORITATIVE STEPS ---
+        if (socket && socket.connected && (inputState.moveX !== 0 || inputState.moveY !== 0)) {
+            socket.emit('player_input', { dx: inputState.moveX, dy: inputState.moveY });
+        }
 
         const oldX = hero.x; 
         const oldY = hero.y;
 
-        // 👇 ONE LINE handles all collision and sliding for the hero!
+        // Run local Client-Side Prediction to keep movement instant
         moveEntity(hero, moveX, moveY, worldMatrix, roomMatrix);
 
         hero.isMoving = (hero.x !== oldX || hero.y !== oldY);
 
-        // --- 🏃 ANIMATION HANDLER ---
         if (hero.isMoving) {
             hero.animState = 'walking';
             if (moveX > 0 && moveY < 0) hero.dir = 'NorthEast';
@@ -538,14 +434,13 @@ export function handleHeroUpdate(modifier, worldMatrix, roomMatrix) {
             else if (moveY < 0) hero.dir = 'North';
 
             hero.animTimer += modifier * 10; 
-            hero.frame = Math.floor(hero.animTimer) % 4; // Walking uses 4 frames
+            hero.frame = Math.floor(hero.animTimer) % 4; 
         } else {
             hero.animState = 'idle';
             hero.frame = 0;       
             hero.animTimer = 0;   
         }
     } else {
-        // If they cannot move (Rooted/Stunned)
         hero.isMoving = false;
         hero.animState = 'idle';
         hero.frame = 0;           

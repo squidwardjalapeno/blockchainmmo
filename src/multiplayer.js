@@ -69,7 +69,6 @@ export function initMultiplayer() {
 
         const socketIoFunc = typeof io !== 'undefined' ? io : window.io;
         
-        // 🎯 THE FIX: Force 'websocket' transport to bypass polling negotiations and load instantly
         socket = socketIoFunc(window.location.origin, {
             transports: ['websocket'] 
         });
@@ -90,7 +89,6 @@ export function initMultiplayer() {
             resolve();
         });
 
-        // 🎯 THE FIX: Register Chat listener directly on the active socket to guarantee messages are received
         socket.on('chatMessage', (data) => {
             const chatBox = document.getElementById('chat-messages');
             if (!chatBox) return;
@@ -105,14 +103,10 @@ export function initMultiplayer() {
             }
         });
 
-        // 🎯 THE FIX: Register UI listeners dynamically to break the circular import cycle entirely
         import('./uiManager.js').then(ui => {
             ui.setupMultiplayerListeners(socket);
         });
 
-        // ==========================================
-        // 🌍 CORE SIMULATION & COMBAT HARNESS LISTENERS
-        // ==========================================
         socket.on('forcedMovement', (data) => {
             const p = (data.id === myID) ? hero : remotePlayers.get(data.id);
             if (p) {
@@ -237,11 +231,9 @@ export function initMultiplayer() {
             });
         });
 
-        // ==========================================
-        // 🌍 CORE OVERWORLD POSITIONING & ENTITY SYNC
-        // ==========================================
+        // --- 📡 HIGH-FREQUENCY POSITION DESERIALIZATION (30 Hz) ---
         socket.on('position', (data) => {
-            const { playerbase, projectiles, animals: serverAnimals } = data; 
+            const { playerbase, projectiles } = data; 
 
             for (const localId of remotePlayers.keys()) {
                 if (!playerbase[localId]) {
@@ -276,6 +268,11 @@ export function initMultiplayer() {
                 }
             }
             serverProjectiles = projectiles || []; 
+        });
+
+        // --- 📡 LOW-FREQUENCY ANIMALS DESERIALIZATION (5 Hz) ---
+        socket.on('animals', (data) => {
+            const { animals: serverAnimals } = data;
 
             if (serverAnimals) {
                 import('./animals.js').then(m => {

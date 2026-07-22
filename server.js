@@ -3,7 +3,7 @@
 // 1. Modern Imports (ES Modules)
 import { CONFIG } from './src/config.js'; 
 import { createVoucher, getContractTVL   } from './src/voucherSystem.js'; 
-import { ITEM_TYPES, createItem } from './src/items.js'; // 👈 Loaded from items.js as the single source of truth
+import { ITEM_TYPES, createItem } from './src/items.js'; 
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -46,12 +46,7 @@ async function syncTVLWithBlockchain() {
 
     const effectiveTGV = Math.max(0, currentTVL - debt);
     
-    io.emit('position', { 
-        playerbase: players, 
-        projectiles: projectiles,
-        tgvOverride: effectiveTGV 
-    });
-
+    // Broadcast TGV adjustments inside low-frequency updates
     broadcastEffectiveTGV();
 
     console.log(`📊 ECONOMY SYNC | Raw: ${currentTVL.toFixed(8)} | Debt: ${debt.toFixed(8)} | Final TGV: ${effectiveTGV.toFixed(8)}`);
@@ -106,9 +101,6 @@ const SERVER_PLANT_DEFS = {
     'potato':    { growthRate: 0.15, stages: 5, window: 1 }
 };
 
-// ==========================================
-// 🏗️ UNIFIED WORKSTATION CONFIGURATIONS (SERVER)
-// ==========================================
 const WORKSTATION_CONFIGS = {
     smelter: {
         maxWork: 200,
@@ -205,10 +197,10 @@ const registeredServerRanches = new Set();
 const fishingStates = new Map(); 
 const chunkPlantsGenerated = new Set(); 
 const serverAnimals = [];              
-const activeJobs = new Map(); // Unified jobs DB
+const activeJobs = new Map(); 
 
 // 🏰 SERVER-SIDE VILLAGE REGISTRY STATE
-const serverVillages = new Map(); // key: "wellX_wellY", value: { x, y, owner, captureProgress, capturer, contested }
+const serverVillages = new Map(); 
 
 function getVillagePlayerCounts(wellX, wellY, owner) {
     let allies = 0;
@@ -219,7 +211,7 @@ function getVillagePlayerCounts(wellX, wellY, owner) {
         if (p.hp <= 0 || p.isOffline) continue;
 
         const dist = Math.hypot(p.x - (wellX * 16), p.y - (wellY * 16));
-        if (dist <= 2400) { // 150 tiles boundary radius inside the ring road
+        if (dist <= 2400) { 
             const pName = p.wallet || `Guest_${p.id.substring(0, 4)}`;
             if (pName === owner) {
                 allies++;
@@ -399,7 +391,6 @@ function applyMagicSpellDamage(attacker, victim, baseDamage) {
 
     victim.hp -= finalDamage;
 
-    // ⚖️ CRIME DETECTOR (Spells / AoE): If victim is a village owner, flag the attacker as a criminal
     const victimName = victim.wallet || `Guest_${victim.id.substring(0, 4)}`;
     for (let [key, village] of serverVillages) {
         if (village.owner === victimName) {
@@ -433,6 +424,341 @@ function getJobConfig(jobId, recipeName) {
     return baseConfig;
 }
 
+// ==========================================
+// 📡 PHASE 1: AUTHORITATIVE INPUT BUFFER SYSTEM
+// ==========================================
+const inputBuffers = new Map();
+
+function validateServerCollision(nextX, nextY) {
+    // Basic boundaries check on the server
+    if (nextX < 0 || nextX > 160000 || nextY < 0 || nextY > 160000) return false;
+    return true; 
+}
+
+/**
+ * 🎯 COMBAT LOOP (HOT - 30 Hz / 33.33ms)
+ * Simulates high-stakes real-time tasks (combat, projectiles, and client movements)
+ */
+function tickCombat() {
+    const delta = 0.0333; // Exactly 1/30th of a second
+
+    // A. Drain buffered client movement inputs and step positions authoritatively
+    for (const id in players) {
+        const p = players[id];
+        if (!p || p.hp <= 0 || p.isOffline) continue;
+
+        const buffer = inputBuffers.get(id) || [];
+        
+        while (buffer.length > 0) {
+            const input = buffer.shift();
+
+            // Guard against illegal inputs (speedhack validation)
+            const magnitude = Math.hypot(input.dx, input.dy);
+            if (magnitude > 1.05) continue; 
+
+            const speed = p.speed || CONFIG.HERO_SPEED;
+            const nextX = p.x + (input.dx * speed * delta);
+            const nextY = p.y + (input.dy * speed * delta);
+
+            if (validateServerCollision(nextX, nextY)) {
+                p.x = nextX;
+                p.y = nextY;
+            }
+        }
+    }
+
+    // B. Step Projectile Physics
+    for (let i = projectiles.length - 1; i >= 0; i--) {
+        let p = projectiles[i];
+
+        if (p.targetId) {
+            const target = players[p.targetId];
+            if (target && target.hp > 0) {
+                const tx = (target.x + 8) - p.x;
+                const ty = (target.y + 8) - p.y;
+                const dist = Math.sqrt(tx*tx + ty*ty);
+                if (dist > 0) { p.dx = tx/dist; p.dy = ty/dist; }
+            } else {
+                p.life = 0; 
+            }
+        }
+
+        p.x += p.dx * p.speed * delta;
+        p.y += p.dy * p.speed * delta;
+        p.life -= delta;
+
+        let hit = false;
+
+        for (let vid in players) {
+            if (vid === p.ownerId) continue; 
+            if (p.targetId && vid !== p.targetId) continue; 
+            
+            const victim = players[vid];
+            if (victim.hp <= 0) continue; 
+
+            const dx = (victim.x + 8) - p.x;
+            const dy = (victim.y + 8) - p.y;
+            const distSq = (dx * dx) + (dy * dy);
+            const hitRadius = p.radius || 16;
+
+            if (distSq <= hitRadius * hitRadius) {
+                hit = true;
+                const attacker = players[p.ownerId];
+                if (attacker) {
+                    if (p.type === 'zephyr') {
+                        if (victim.resonanceTimer > 0) {
+                            io.to(p.ownerId).emit('refundCooldown', { index: p.skillIndex, amount: 9.6 });
+                            if (!attacker.passives || !attacker.passives.hasFever) {
+                                victim.resonanceTimer = 0;
+                                io.emit('playerCC', { victimId: vid, ccType: 'resonanceFade' });
+                            }
+                        }
+                        applyMagicSpellDamage(attacker, victim, p.damage);
+                    }
+                    if (p.type === 'vanguard') {
+                        const RAPTURE_MASK = 1 | 2 | 8 | 16; 
+                        io.emit('playerCC', { victimId: vid, ccMask: RAPTURE_MASK, duration: 2.0 });
+                        applyMagicSpellDamage(attacker, victim, p.damage);
+                    }
+                    else if (p.type === 'flare') {
+                        applyMagicSpellDamage(attacker, victim, p.damage);
+                    }
+                }
+                break; 
+            }
+        }
+
+        if (hit || p.life <= 0) projectiles.splice(i, 1); 
+    }
+
+    // C. Broadcast the high-frequency state updates to all clients
+    io.emit('position', { 
+        playerbase: players,
+        projectiles: projectiles
+    });
+}
+
+/**
+ * 🚜 WORLD LOOP (WARM - 5 Hz / 200ms)
+ * Simulates slower parameters (agriculture, spatial checks, and animal state machines)
+ */
+function tickWorld() {
+    const delta = 0.200; // Exactly 1/5th of a second
+
+    // A. Update Active Village Capture State Machines
+    for (let [key, village] of serverVillages) {
+        if (village.owner === null) continue;
+
+        const counts = getVillagePlayerCounts(village.x, village.y, village.owner);
+
+        if (village.capturer) {
+            if (counts.enemies > counts.allies) {
+                village.captureProgress = Math.min(100, village.captureProgress + delta * 5);
+                if (village.captureProgress >= 100) {
+                    village.owner = village.capturer;
+                    village.captureProgress = 0;
+                    village.capturer = null;
+                    io.emit('villageOwnerUpdated', { wellX: village.x, wellY: village.y, owner: village.owner, progress: 0 });
+                    io.emit('chatMessage', { sender: "SYSTEM", message: `🏘️ Village at [${village.x}, ${village.y}] has been captured by ${village.owner}!` });
+                } else {
+                    io.emit('villageCaptureProgress', { wellX: village.x, wellY: village.y, progress: village.captureProgress, capturer: village.capturer });
+                }
+            } else if (counts.allies > counts.enemies) {
+                village.captureProgress = Math.max(0, village.captureProgress - delta * 5);
+                if (village.captureProgress === 0) {
+                    village.capturer = null; 
+                    io.emit('villageOwnerUpdated', { wellX: village.x, wellY: village.y, owner: village.owner, progress: 0 });
+                    io.emit('chatMessage', { sender: "SYSTEM", message: `🏘️ Village at [${village.x}, ${village.y}] has been secured by the defenders!` });
+                } else {
+                    io.emit('villageCaptureProgress', { wellX: village.x, wellY: village.y, progress: village.captureProgress, capturer: village.owner });
+                }
+            } else {
+                io.emit('villageCaptureProgress', { wellX: village.x, wellY: village.y, progress: village.captureProgress, contested: true });
+            }
+        }
+    }
+
+    // B. Process slow animal logic (wander, poop, hunger)
+    serverAnimals.forEach(a => {
+        if (a.eggTimer === undefined) a.eggTimer = 15;
+        if (a.poopTimer === undefined) a.poopTimer = 10;
+        if (a.energy === undefined) a.energy = 100;
+
+        a.eggTimer -= delta;
+        a.poopTimer -= delta;
+        a.energy = Math.max(0, a.energy - (delta * 1.5)); 
+
+        const tx = Math.floor(a.x / 16);
+        const ty = Math.floor(a.y / 16);
+
+        if (a.eggTimer <= 0 && a.energy > 30) {
+            a.eggTimer = 30 + Math.random() * 30;
+            const packedTraits = (1 & 0xFF) | ((16 & 0xFF) << 20); 
+            io.emit('syncTile', { gx: tx, gy: ty, traits: packedTraits });
+        }
+
+        if (a.poopTimer <= 0) {
+            a.poopTimer = 20 + Math.random() * 30;
+            const packedTraits = (3 & 0xFF) | ((12 & 0xFF) << 8) | ((4 & 0xFF) << 20); 
+            io.emit('syncTile', { gx: tx, gy: ty, traits: packedTraits });
+        }
+
+        if (a.energy < 50 && a.goal !== 'eating') {
+            let foundFood = false;
+
+            for (let ox = -5; ox <= 5; ox++) {
+                for (let oy = -5; oy <= 5; oy++) {
+                    const checkKey = `${tx + ox}_${ty + oy}`;
+                    
+                    if (serverBacteria.has(checkKey)) {
+                        const traits = serverBacteria.get(checkKey);
+                        const typeID = (traits >> 20) & 0xFF;
+                        
+                        if (typeID === 17) { 
+                            a.targetX = (tx + ox) * 16 + 8;
+                            a.targetY = (ty + oy) * 16 + 8;
+                            a.goal = 'eating';
+                            a.foodType = 'hay';
+                            a.foodKey = checkKey;
+                            foundFood = true;
+                            break;
+                        }
+                    }
+                }
+                if (foundFood) break;
+            }
+
+            if (!foundFood) {
+                let nearestPlant = null;
+                let nearestDist = Infinity;
+
+                for (let ox = -8; ox <= 8; ox++) {
+                    for (let oy = -8; oy <= 8; oy++) {
+                        const checkKey = `${tx + ox}_${ty + oy}`;
+                        if (serverPlants.has(checkKey)) {
+                            const plant = serverPlants.get(checkKey);
+                            const dist = Math.hypot((plant.gx * 16 + 8) - a.x, (plant.gy * 16 + 8) - a.y);
+                            
+                            if (dist < 120 && dist < nearestDist) {
+                                nearestDist = dist;
+                                nearestPlant = plant;
+                            }
+                        }
+                    }
+                }
+
+                if (nearestPlant) {
+                    a.targetX = nearestPlant.gx * 16 + 8;
+                    a.targetY = nearestPlant.gy * 16 + 8;
+                    a.goal = 'eating';
+                    a.foodType = 'crop';
+                    a.foodKey = `${nearestPlant.gx}_${nearestPlant.gy}`;
+                    foundFood = true;
+                }
+            }
+        }
+
+        a.moveTimer -= delta;
+        if (a.moveTimer <= 0 && a.goal !== 'eating') {
+            a.moveTimer = 2 + Math.random() * 3;
+            
+            let targetX, targetY;
+            if (a.ranchBounds) {
+                const rx = a.ranchBounds.maxX - a.ranchBounds.minX;
+                const ry = a.ranchBounds.maxY - a.ranchBounds.minY;
+                targetX = a.ranchBounds.minX + Math.random() * rx;
+                targetY = a.ranchBounds.minY + Math.random() * ry;
+            } else {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 30 + Math.random() * 50;
+                targetX = a.x + Math.cos(angle) * dist;
+                targetY = a.y + Math.sin(angle) * dist;
+            }
+
+            a.targetX = targetX;
+            a.targetY = targetY;
+            a.state = 'walking';
+            a.goal = 'wander';
+        }
+
+        if (a.targetX !== undefined) {
+            const dx = a.targetX - a.x;
+            const dy = a.targetY - a.y;
+            const dist = Math.hypot(dx, dy);
+            
+            if (dist > 4) {
+                a.x += (dx / dist) * a.speed * delta;
+                a.y += (dy / dist) * a.speed * delta;
+                a.dir = dx > 0 ? 'East' : 'West';
+                a.state = 'walking';
+            } else {
+                a.state = 'idle';
+                a.targetX = undefined;
+                a.targetY = undefined;
+
+                if (a.goal === 'eating') {
+                    if (a.foodType === 'hay') {
+                        const coords = a.foodKey.split('_');
+                        const hx = parseInt(coords[0]), hy = parseInt(coords[1]);
+
+                        if (serverBacteria.has(a.foodKey)) {
+                            let traits = serverBacteria.get(a.foodKey);
+                            
+                            let health = traits & 0xFF;
+                            health = Math.max(0, health - 10); 
+
+                            if (health <= 0) {
+                                serverBacteria.delete(a.foodKey); 
+                                io.emit('syncTile', { gx: hx, gy: hy, traits: 0 });
+                            } else {
+                                const typeID = (traits >> 20) & 0xFF;
+                                const newTraits = ((health & 0xFF) | ((typeID & 0xFF) << 20)) >>> 0;
+                                serverBacteria.set(a.foodKey, newTraits);
+                                io.emit('syncTile', { gx: hx, gy: hy, traits: newTraits });
+                            }
+                            a.energy = 100; 
+                            console.log(` 🌾 Chicken ate Hay at [${hx}, ${hy}]. Health remaining: ${health}`);
+                        }
+                    } 
+                    else if (a.foodType === 'crop') {
+                        if (serverPlants.has(a.foodKey)) {
+                            const plant = serverPlants.get(a.foodKey);
+                            serverPlants.delete(a.foodKey);
+                            io.emit('plantRemoved', { gx: plant.gx, gy: plant.gy });
+                            a.energy = 100; 
+                            console.log(`🌽 Chicken ate crop at [${a.foodKey}]`);
+                        }
+                    }
+                    a.goal = 'wander';
+                }
+            }
+        }
+    });
+
+    // C. Decrement CC states for players
+    for (let vid in players) {
+        const p = players[vid];
+        if (p.resonanceTimer > 0) {
+            p.resonanceTimer -= delta;
+            if (p.resonanceTimer <= 0) {
+                io.emit('playerCC', { victimId: vid, ccType: 'resonanceFade' });
+            }
+        }
+    }
+
+    // D. Low-Frequency Server Entity Updates (Broadcasting animals)
+    io.emit('animals', { animals: serverAnimals });
+}
+
+// 🕹️ Initialize the Dual Simulation Timers
+setInterval(tickCombat, 33.33); // 30Hz HOT Loop
+setInterval(tickWorld, 200.00); // 5Hz WARM Loop
+
+
+// ==========================================
+// 📡 CONNECTION LISTENERS
+// ==========================================
+
 io.on('connection', (socket) => {
     console.log(`✨ Player Connected: ${socket.id}`);
 
@@ -462,6 +788,17 @@ io.on('connection', (socket) => {
     };
 
     socket.emit('secret', { seed: worldSeed, myId: socket.id });
+
+    // --- ENQUEUE AUTHORITATIVE CLIENT INPUT VECTORS ---
+    socket.on('player_input', (data) => {
+        if (!inputBuffers.has(socket.id)) {
+            inputBuffers.set(socket.id, []);
+        }
+        const buffer = inputBuffers.get(socket.id);
+        if (buffer.length < 10) { 
+            buffer.push(data);
+        }
+    });
 
     socket.on('registerUser', (data) => {
         const { username, password } = data;
@@ -503,9 +840,6 @@ io.on('connection', (socket) => {
         syncPlayerAndSave(socket.id);
     });
 
-    // ==========================================
-    // 🎛️ MULTIPLAYER VILLAGE CORE CONTROL LISTENERS
-    // ==========================================
     socket.on('requestWellState', (data) => {
         const { wellX, wellY } = data;
         const key = `${wellX}_${wellY}`;
@@ -566,9 +900,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // ==========================================
-    // 🛠️ UNIFIED WORKSTATION SYSTEM (SERVER)
-    // ==========================================
     socket.on('request_job', (jobId) => {
         const config = getJobConfig(jobId);
         if (!activeJobs.has(jobId)) {
@@ -701,7 +1032,7 @@ io.on('connection', (socket) => {
         }
 
         const caughtFishTemplate = getRandomServerFish();
-        const fishItem = createItem(caughtFishTemplate); // 👈 Leverages main createItem factory
+        const fishItem = createItem(caughtFishTemplate); 
 
         if (giveItemToServerInventory(player, fishItem)) {
             globalFishCount = Math.max(0, globalFishCount - 1);
@@ -720,7 +1051,7 @@ io.on('connection', (socket) => {
         if (!chestDb[chestId]) {
             const pick = createItem(ITEM_TYPES.PICKAXE);
             const tomato = createItem(ITEM_TYPES.TOMATO_ITEM);
-            tomato.count = 8; // Give them a full starter stack!
+            tomato.count = 8; 
             chestDb[chestId] = [pick, tomato];
         }
         socket.emit('chestData', { chestId, items: chestDb[chestId] });
@@ -1005,7 +1336,7 @@ io.on('connection', (socket) => {
             };
 
             const itemTypeName = yieldMap[plant.type] || 'PLANT_MATTER';
-            const cropTemplate = ITEM_TYPES[itemTypeName]; // 👈 Single source lookup
+            const cropTemplate = ITEM_TYPES[itemTypeName]; 
             
             if (cropTemplate) {
                 giveItemToServerInventory(player, createItem(cropTemplate));
@@ -1111,20 +1442,6 @@ io.on('connection', (socket) => {
         io.emit('doorStateUpdated', { gx, gy, locked });
     });
 
-    socket.on('movement', (data) => {
-        if (players[socket.id]) {
-            players[socket.id].x = data.x;
-            players[socket.id].y = data.y;
-            players[socket.id].dir = data.dir;
-            players[socket.id].animFrame = data.animFrame;
-            players[socket.id].isMoving = data.isMoving;
-            players[socket.id].isWindingUp = data.isWindingUp;
-            players[socket.id].isLunge = data.isLunge; 
-            players[socket.id].currentTileID = data.currentTileID;
-            players[socket.id].pet = data.pet;
-        }
-    });
-
     socket.on('updateStats', (data) => {
         const p = players[socket.id];
         if (!p) return;
@@ -1210,7 +1527,7 @@ io.on('connection', (socket) => {
         if (Math.abs(px - itemData.tx) + Math.abs(py - itemData.ty) > 5) return;
 
         const seedTypeToKeyMap = {};
-        for (let key in ITEM_TYPES) { // 👈 Single source loop
+        for (let key in ITEM_TYPES) { 
             seedTypeToKeyMap[ITEM_TYPES[key].seedType] = key;
         }
         
@@ -1571,7 +1888,6 @@ io.on('connection', (socket) => {
 
             victim.hp -= finalDamage;
 
-            // ⚖️ CRIME DETECTOR (Melee / Basic Attacks): If victim is a village owner, flag the attacker as a criminal
             const victimName = victim.wallet || `Guest_${victim.id.substring(0, 4)}`;
             for (let [key, village] of serverVillages) {
                 if (village.owner === victimName) {
@@ -1923,287 +2239,11 @@ function broadcastEffectiveTGV() {
     io.emit('tgvUpdate', { tgv: effectiveTGV });
 }
 
-setInterval(() => {
-    const delta = 0.05; 
-
-    for (let vid in players) {
-        const p = players[vid];
-        if (p.resonanceTimer > 0) {
-            p.resonanceTimer -= delta;
-            if (p.resonanceTimer <= 0) {
-                io.emit('playerCC', { victimId: vid, ccType: 'resonanceFade' });
-            }
-        }
-    }
-
-    serverAnimals.forEach(a => {
-        if (a.eggTimer === undefined) a.eggTimer = 15;
-        if (a.poopTimer === undefined) a.poopTimer = 10;
-        if (a.energy === undefined) a.energy = 100;
-
-        a.eggTimer -= delta;
-        a.poopTimer -= delta;
-        a.energy = Math.max(0, a.energy - (delta * 1.5)); 
-
-        const tx = Math.floor(a.x / 16);
-        const ty = Math.floor(a.y / 16);
-        
-        const cx = Math.floor(tx / 100);
-        const cy = Math.floor(ty / 100);
-
-        if (a.eggTimer <= 0 && a.energy > 30) {
-            a.eggTimer = 30 + Math.random() * 30;
-            const packedTraits = (1 & 0xFF) | ((16 & 0xFF) << 20); 
-            io.emit('syncTile', { gx: tx, gy: ty, traits: packedTraits });
-        }
-
-        if (a.poopTimer <= 0) {
-            a.poopTimer = 20 + Math.random() * 30;
-            const packedTraits = (3 & 0xFF) | ((12 & 0xFF) << 8) | ((4 & 0xFF) << 20); 
-            io.emit('syncTile', { gx: tx, gy: ty, traits: packedTraits });
-        }
-
-        if (a.energy < 50 && a.goal !== 'eating') {
-            let foundFood = false;
-
-            for (let ox = -5; ox <= 5; ox++) {
-                for (let oy = -5; oy <= 5; oy++) {
-                    const checkKey = `${tx + ox}_${ty + oy}`;
-                    
-                    if (serverBacteria.has(checkKey)) {
-                        const traits = serverBacteria.get(checkKey);
-                        const typeID = (traits >> 20) & 0xFF;
-                        
-                        if (typeID === 17) { 
-                            a.targetX = (tx + ox) * 16 + 8;
-                            a.targetY = (ty + oy) * 16 + 8;
-                            a.goal = 'eating';
-                            a.foodType = 'hay';
-                            a.foodKey = checkKey;
-                            foundFood = true;
-                            break;
-                        }
-                    }
-                }
-                if (foundFood) break;
-            }
-
-            if (!foundFood) {
-                let nearestPlant = null;
-                let nearestDist = Infinity;
-
-                // ⚡ O(1) OPTIMIZATION: Scan localized coordinates in a 8-tile radius instead of iterating the entire server plants map
-                for (let ox = -8; ox <= 8; ox++) {
-                    for (let oy = -8; oy <= 8; oy++) {
-                        const checkKey = `${tx + ox}_${ty + oy}`;
-                        if (serverPlants.has(checkKey)) {
-                            const plant = serverPlants.get(checkKey);
-                            const dist = Math.hypot((plant.gx * 16 + 8) - a.x, (plant.gy * 16 + 8) - a.y);
-                            
-                            if (dist < 120 && dist < nearestDist) {
-                                nearestDist = dist;
-                                nearestPlant = plant;
-                            }
-                        }
-                    }
-                }
-
-                if (nearestPlant) {
-                    a.targetX = nearestPlant.gx * 16 + 8;
-                    a.targetY = nearestPlant.gy * 16 + 8;
-                    a.goal = 'eating';
-                    a.foodType = 'crop';
-                    a.foodKey = `${nearestPlant.gx}_${nearestPlant.gy}`;
-                    foundFood = true;
-                }
-            }
-        }
-
-        a.moveTimer -= delta;
-        if (a.moveTimer <= 0 && a.goal !== 'eating') {
-            a.moveTimer = 2 + Math.random() * 3;
-            
-            let targetX, targetY;
-            if (a.ranchBounds) {
-                const rx = a.ranchBounds.maxX - a.ranchBounds.minX;
-                const ry = a.ranchBounds.maxY - a.ranchBounds.minY;
-                targetX = a.ranchBounds.minX + Math.random() * rx;
-                targetY = a.ranchBounds.minY + Math.random() * ry;
-            } else {
-                const angle = Math.random() * Math.PI * 2;
-                const dist = 30 + Math.random() * 50;
-                targetX = a.x + Math.cos(angle) * dist;
-                targetY = a.y + Math.sin(angle) * dist;
-            }
-
-            a.targetX = targetX;
-            a.targetY = targetY;
-            a.state = 'walking';
-            a.goal = 'wander';
-        }
-
-        if (a.targetX !== undefined) {
-            const dx = a.targetX - a.x;
-            const dy = a.targetY - a.y;
-            const dist = Math.hypot(dx, dy);
-            
-            if (dist > 4) {
-                a.x += (dx / dist) * a.speed * delta;
-                a.y += (dy / dist) * a.speed * delta;
-                a.dir = dx > 0 ? 'East' : 'West';
-                a.state = 'walking';
-            } else {
-                a.state = 'idle';
-                a.targetX = undefined;
-                a.targetY = undefined;
-
-                if (a.goal === 'eating') {
-                    if (a.foodType === 'hay') {
-                        const coords = a.foodKey.split('_');
-                        const hx = parseInt(coords[0]), hy = parseInt(coords[1]);
-
-                        if (serverBacteria.has(a.foodKey)) {
-                            let traits = serverBacteria.get(a.foodKey);
-                            
-                            let health = traits & 0xFF;
-                            health = Math.max(0, health - 10); 
-
-                            if (health <= 0) {
-                                serverBacteria.delete(a.foodKey); 
-                                io.emit('syncTile', { gx: hx, gy: hy, traits: 0 });
-                            } else {
-                                const typeID = (traits >> 20) & 0xFF;
-                                const newTraits = ((health & 0xFF) | ((typeID & 0xFF) << 20)) >>> 0;
-                                serverBacteria.set(a.foodKey, newTraits);
-                                io.emit('syncTile', { gx: hx, gy: hy, traits: newTraits });
-                            }
-                            a.energy = 100; 
-                            console.log(` 🌾 Chicken ate Hay at [${hx}, ${hy}]. Health remaining: ${health}`);
-                        }
-                    } 
-                    else if (a.foodType === 'crop') {
-                        if (serverPlants.has(a.foodKey)) {
-                            const plant = serverPlants.get(a.foodKey);
-                            serverPlants.delete(a.foodKey);
-                            io.emit('plantRemoved', { gx: plant.gx, gy: plant.gy });
-                            a.energy = 100; 
-                            console.log(`🌽 Chicken ate crop at [${a.foodKey}]`);
-                        }
-                    }
-                    a.goal = 'wander';
-                }
-            }
-        }
-    });
-
-    for (let i = projectiles.length - 1; i >= 0; i--) {
-        let p = projectiles[i];
-
-        if (p.targetId) {
-            const target = players[p.targetId];
-            if (target && target.hp > 0) {
-                const tx = (target.x + 8) - p.x;
-                const ty = (target.y + 8) - p.y;
-                const dist = Math.sqrt(tx*tx + ty*ty);
-                if (dist > 0) { p.dx = tx/dist; p.dy = ty/dist; }
-            } else {
-                p.life = 0; 
-            }
-        }
-
-        p.x += p.dx * p.speed * delta;
-        p.y += p.dy * p.speed * delta;
-        p.life -= delta;
-
-        let hit = false;
-
-        for (let vid in players) {
-            if (vid === p.ownerId) continue; 
-            if (p.targetId && vid !== p.targetId) continue; 
-            
-            const victim = players[vid];
-            if (victim.hp <= 0) continue; 
-
-            const dx = (victim.x + 8) - p.x;
-            const dy = (victim.y + 8) - p.y;
-            const distSq = (dx * dx) + (dy * dy);
-            const hitRadius = p.radius || 16;
-
-            if (distSq <= hitRadius * hitRadius) {
-                hit = true;
-                const attacker = players[p.ownerId];
-                if (attacker) {
-                    if (p.type === 'zephyr') {
-                        if (victim.resonanceTimer > 0) {
-                            io.to(p.ownerId).emit('refundCooldown', { index: p.skillIndex, amount: 9.6 });
-                            if (!attacker.passives || !attacker.passives.hasFever) {
-                                victim.resonanceTimer = 0;
-                                io.emit('playerCC', { victimId: vid, ccType: 'resonanceFade' });
-                            }
-                        }
-                        applyMagicSpellDamage(attacker, victim, p.damage);
-                    }
-                    if (p.type === 'vanguard') {
-                        const RAPTURE_MASK = 1 | 2 | 8 | 16; 
-                        io.emit('playerCC', { victimId: vid, ccMask: RAPTURE_MASK, duration: 2.0 });
-                        applyMagicSpellDamage(attacker, victim, p.damage);
-                    }
-                    else if (p.type === 'flare') {
-                        applyMagicSpellDamage(attacker, victim, p.damage);
-                    }
-                }
-                break; 
-            }
-        }
-
-        if (hit || p.life <= 0) projectiles.splice(i, 1); 
-    }
-
-    // 🏰 UPDATE ACTIVE VILLAGE CAPTURE STATE MACHINES
-    for (let [key, village] of serverVillages) {
-        if (village.owner === null) continue;
-
-        const counts = getVillagePlayerCounts(village.x, village.y, village.owner);
-
-        if (village.capturer) {
-            if (counts.enemies > counts.allies) {
-                village.captureProgress = Math.min(100, village.captureProgress + delta * 5);
-                if (village.captureProgress >= 100) {
-                    village.owner = village.capturer;
-                    village.captureProgress = 0;
-                    village.capturer = null;
-                    io.emit('villageOwnerUpdated', { wellX: village.x, wellY: village.y, owner: village.owner, progress: 0 });
-                    io.emit('chatMessage', { sender: "SYSTEM", message: `🏘️ Village at [${village.x}, ${village.y}] has been captured by ${village.owner}!` });
-                } else {
-                    io.emit('villageCaptureProgress', { wellX: village.x, wellY: village.y, progress: village.captureProgress, capturer: village.capturer });
-                }
-            } else if (counts.allies > counts.enemies) {
-                village.captureProgress = Math.max(0, village.captureProgress - delta * 5);
-                if (village.captureProgress === 0) {
-                    village.capturer = null; // Secured!
-                    io.emit('villageOwnerUpdated', { wellX: village.x, wellY: village.y, owner: village.owner, progress: 0 });
-                    io.emit('chatMessage', { sender: "SYSTEM", message: `🏘️ Village at [${village.x}, ${village.y}] has been secured by the defenders!` });
-                } else {
-                    io.emit('villageCaptureProgress', { wellX: village.x, wellY: village.y, progress: village.captureProgress, capturer: village.owner });
-                }
-            } else {
-                io.emit('villageCaptureProgress', { wellX: village.x, wellY: village.y, progress: village.captureProgress, contested: true });
-            }
-        }
-    }
-
-    io.emit('position', { 
-        playerbase: players,
-        projectiles: projectiles,
-        animals: serverAnimals 
-    });
-}, 50);
-
 const PORT = process.env.PORT || 10000;
 http.listen(PORT, () => {
     console.log(`
-    🎮 MOBA Ecosystem Server Active!
+    🎮 MOBA Ecosystem Server Active (Phase 1 Decoupled Authoritative Dual-Loops Loaded)!
     🔗 URL: http://localhost:${PORT}
-    🛠️  Press Ctrl+C to stop
+    🛠  Press Ctrl+C to stop
     `);
 });

@@ -14,6 +14,8 @@ import { roomMetadata } from './cellDecorator.js';
 import { PALADIN_SKILLS } from './abilities.js';
 import { getHeroAnimationData, getPetAnimationData, getAnimalAnimationData, getHobbitAnimationData } from './animations.js';
 import { worldTime } from './clock.js'; // 👈 ADD THIS IMPORT
+import { rtsState } from './rtsControls.js';
+
 
 if (typeof window !== 'undefined') {
     logStep("renderer.js loaded");
@@ -958,6 +960,7 @@ export function drawHobbits(ctx2, activeHobbits, roomMatrix) {
         const pCol = roomMatrix[Math.floor(pTX / 100)]?.[Math.floor(pTY / 100)];
         const hobbitRoomId = pCol ? pCol[((pTY % 100 + 100) % 100 * 100) + ((pTX % 100 + 100) % 100)] : 0;
 
+        // Hide units inside separate buildings to enforce the visual indoor/outdoor divide
         if (heroHouseId !== 0 && heroHouseId !== 9999) {
             if (hobbitRoomId !== heroHouseId) return;
         } else {
@@ -968,6 +971,17 @@ export function drawHobbits(ctx2, activeHobbits, roomMatrix) {
         const screenY = Math.floor(hobbit.y + viewport.offset[1]);
 
         if (screenX < -32 || screenX > w + 32 || screenY < -32 || screenY > h + 32) return;
+
+        // --- 📡 DRAW RTS SELECTION RINGS BELOW ACTIVE HOBBIT ---
+        if (rtsState.enabled && rtsState.selectedHobbitIds.has(hobbit.id)) {
+            ctx2.save();
+            ctx2.strokeStyle = "rgba(0, 255, 120, 0.85)";
+            ctx2.lineWidth = 1.5;
+            ctx2.beginPath();
+            ctx2.ellipse(screenX + 8, screenY + 14, 8, 4, 0, 0, Math.PI * 2);
+            ctx2.stroke();
+            ctx2.restore();
+        }
 
         const animData = getHobbitAnimationData(hobbit, images);
 
@@ -991,9 +1005,26 @@ export function drawHobbits(ctx2, activeHobbits, roomMatrix) {
         const energyPct = (hobbit.energy !== undefined ? hobbit.energy : 100) / 100;
         ctx2.fillStyle = "black";
         ctx2.fillRect(screenX + 2, screenY - 2, 12, 1);
-        ctx2.fillStyle = "#FFD700"; // Stamina Yellow
+        ctx2.fillStyle = "#FFD700"; 
         ctx2.fillRect(screenX + 2, screenY - 2, 12 * Math.max(0, energyPct), 1);
     });
+
+    // --- 📡 DRAW RTS BOX SELECTION MARQUEE OVERLAY ---
+    if (rtsState.enabled && rtsState.dragStart && rtsState.dragCurrent) {
+        ctx2.save();
+        ctx2.strokeStyle = "rgba(0, 255, 120, 0.7)";
+        ctx2.fillStyle = "rgba(0, 255, 120, 0.15)";
+        ctx2.lineWidth = 1.5;
+        
+        const x = rtsState.dragStart.x;
+        const y = rtsState.dragStart.y;
+        const wBox = rtsState.dragCurrent.x - x;
+        const hBox = rtsState.dragCurrent.y - y;
+
+        ctx2.fillRect(x, y, wBox, hBox);
+        ctx2.strokeRect(x, y, wBox, hBox);
+        ctx2.restore();
+    }
 }
 
 export function drawBobber() {
