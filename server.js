@@ -304,8 +304,8 @@ function initServerAnimals() {
     for (let i = 0; i < 15; i++) {
         serverAnimals.push({
             id: 'animal_' + Math.random().toString(36).substr(2, 9),
-            x: 1550 + Math.random() * 100, 
-            y: 1550 + Math.random() * 100,
+            x: 82000 + Math.random() * 200, 
+            y: 82000 + Math.random() * 200,
             speed: 35,
             hp: 30,
             maxHp: 30,
@@ -764,8 +764,8 @@ io.on('connection', (socket) => {
 
     players[socket.id] = {
         id: socket.id,
-        x: 1600,
-        y: 1600,
+        x: 80800,
+        y: 80800,
         hp: CONFIG.HERO_HP,
         maxHp: CONFIG.HERO_HP,
         shield: 0,
