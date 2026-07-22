@@ -19,7 +19,7 @@ import { ITEM_TYPES, createItem } from './items.js';
 import { updatePlants, plants } from './plants.js'; 
 import { updateAnimals, animals, spawnChicken } from './animals.js';
 import { scanForTarget, currentTarget, validateTarget } from './combat.js';
-import { socket, initMultiplayer, playerWallet, remotePlayers, serverProjectiles, updateRemotePlayers, interpolateEntities } from './multiplayer.js';
+import { socket, initMultiplayer, playerWallet, remotePlayers, serverProjectiles, interpolateEntities } from './multiplayer.js'; // 🎯 Removed updateRemotePlayers import
 import { handleInteractions, updateHeroStats, handlePvPCombat, handleFinancialActions } from './interactionManager.js';
 import { initUI, updateHUD } from './uiManager.js';
 import { getMasterBalance } from './blockchainManager.js';
