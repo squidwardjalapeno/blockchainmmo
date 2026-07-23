@@ -42,7 +42,8 @@ export function generateASCIIMap() {
     const endCY = Math.min(99, startCY + size - 1);
 
     for (let cy = startCY; cy <= endCY; cy++) {
-        let row = "";
+        // Wrap each row in a block-level div to prevent horizontal stretching
+        let row = `<div class="term-map-row" style="display: block; text-align: center; white-space: pre; margin-bottom: 2px;">`;
         for (let cx = startCX; cx <= endCX; cx++) {
             const idx = cy * 100 + cx;
             const cellType = window.worldMap ? window.worldMap[idx] : 0;
@@ -60,7 +61,8 @@ export function generateASCIIMap() {
 
             row += `<span onclick="window.selectTerminalCell(${cx}, ${cy})" style="color: ${glyphColor}; ${bgStyle} cursor:pointer; font-weight:${symbol !== '.' ? 'bold' : 'normal'};">[${symbol}]</span> `;
         }
-        mapHTML += row + "\n";
+        row += `</div>`;
+        mapHTML += row;
     }
     return mapHTML;
 }
