@@ -225,7 +225,10 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         if (!isInsideActiveChunks) {
             if (hob.job === 'Military') {
                 if (hob.squadId) {
-                    squadsToPack.add(hob.squadId);
+                    // Only the Sergeant triggers squad-wide packing to avoid boundary chatter
+                    if (hob.squadRole === 'Sergeant') {
+                        squadsToPack.add(hob.squadId);
+                    }
                 } else {
                     soloToPack.add(hob.id);
                 }
@@ -236,23 +239,31 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
     }
 
     squadsToPack.forEach(squadId => {
-        const representative = hobbits.find(h => h.squadId === squadId);
+        const representative = hobbits.find(h => h.squadId === squadId && h.squadRole === 'Sergeant') || hobbits.find(h => h.squadId === squadId);
         if (representative) {
             const destinationWell = plannedWells.find(well => well.x !== representative.homeX || well.y !== representative.homeY);
             if (destinationWell) {
-                const travelDist = Math.hypot(destinationWell.x - (representative.x / 16), destinationWell.y - (representative.y / 16));
+                const currentTX = Math.floor(representative.x / 16);
+                const currentTY = Math.floor(representative.y / 16);
+
+                // Preserve fractional progress along path to prevent teleporting home
+                const totalDist = Math.hypot(destinationWell.x - representative.homeX, destinationWell.y - representative.homeY);
+                const traveledDist = Math.hypot(currentTX - representative.homeX, currentTY - representative.homeY);
+                
+                const ratio = totalDist > 0 ? Math.min(1.0, traveledDist / totalDist) : 0;
                 const totalTicksNeeded = travelDist / 2;
+                const progressTicks = ratio * totalTicksNeeded;
 
                 macroTravelers.push({
                     id: squadId,
                     isSquad: true,
-                    homeX: representative.homeX || Math.floor(representative.x / 16),
-                    homeY: representative.homeY || Math.floor(representative.y / 16),
+                    homeX: representative.homeX || currentTX,
+                    homeY: representative.homeY || currentTY,
                     targetX: destinationWell.x,
                     targetY: destinationWell.y,
-                    currentTileX: Math.floor(representative.x / 16),
-                    currentTileY: Math.floor(representative.y / 16),
-                    progressTicks: 0,
+                    currentTileX: currentTX,
+                    currentTileY: currentTY,
+                    progressTicks: progressTicks,
                     totalTicksNeeded: totalTicksNeeded > 0 ? totalTicksNeeded : 1
                 });
             }
@@ -269,19 +280,26 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         if (hobbit) {
             const destinationWell = plannedWells.find(well => well.x !== hobbit.homeX || well.y !== hobbit.homeY);
             if (destinationWell) {
-                const travelDist = Math.hypot(destinationWell.x - (hobbit.x / 16), destinationWell.y - (hobbit.y / 16));
-                const totalTicksNeeded = travelDist / 2;
+                const currentTX = Math.floor(hobbit.x / 16);
+                const currentTY = Math.floor(hobbit.y / 16);
+
+                const totalDist = Math.hypot(destinationWell.x - hobbit.homeX, destinationWell.y - hobbit.homeY);
+                const traveledDist = Math.hypot(currentTX - hobbit.homeX, currentTY - hobbit.homeY);
+                
+                const ratio = totalDist > 0 ? Math.min(1.0, traveledDist / totalDist) : 0;
+                const totalTicksNeeded = totalDist / 2;
+                const progressTicks = ratio * totalTicksNeeded;
 
                 macroTravelers.push({
                     id: 'squad_' + Math.random().toString(36).substr(2, 9),
                     isSquad: false,
-                    homeX: hobbit.homeX || Math.floor(hobbit.x / 16),
-                    homeY: hobbit.homeY || Math.floor(hobbit.y / 16),
+                    homeX: hobbit.homeX || currentTX,
+                    homeY: hobbit.homeY || currentTY,
                     targetX: destinationWell.x,
                     targetY: destinationWell.y,
-                    currentTileX: Math.floor(hobbit.x / 16),
-                    currentTileY: Math.floor(hobbit.y / 16),
-                    progressTicks: 0,
+                    currentTileX: currentTX,
+                    currentTileY: currentTY,
+                    progressTicks: progressTicks,
                     totalTicksNeeded: totalTicksNeeded > 0 ? totalTicksNeeded : 1
                 });
             }
@@ -296,7 +314,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
     }
 
     // ==========================================
-    // ⚙️ MAIN AI BEHAVIOR LOGIC Ticks
+    // ⚙️ ACTIVE HOBBIT AI BEHAVIOR LOGIC
     // ==========================================
     hobbits.forEach(hobbit => {
         if (!hobbit.lastUpdated) hobbit.lastUpdated = now;
@@ -1067,8 +1085,6 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                         if (livePlant && livePlant.growth >= 100) {
                             const dist = Math.hypot((livePlant.gx * 16 + 8) - (hobbit.x + 8), (livePlant.gy * 16 + 8) - (hobbit.y + 8));
                             if (dist <= 24) {
-                                hobbit.state = 'idle';
-                                hobbit.path = [];
                                 const keyName = YIELD_MAP[livePlant.type];
                                 if (keyName && ITEM_TYPES[keyName]) {
                                     const harvestedItem = createItem(ITEM_TYPES[keyName]);
