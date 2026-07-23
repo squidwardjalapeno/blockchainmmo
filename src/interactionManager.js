@@ -596,6 +596,13 @@ function processPickup(tx, ty) {
 }
 
 export function updateHeroStats(modifier, hero) {
+    // Prevent Overseer starvation, vital depletion, and input freezes
+    if (hero.charClass === 'Overseer') {
+        hero.hp = hero.maxHp;
+        hero.energy = hero.maxEnergy;
+        return;
+    }
+
     for (let i = 0; i < 4; i++) {
         if (hero.cooldowns[i] > 0) {
             hero.cooldowns[i] = Math.max(0, hero.cooldowns[i] - modifier);
@@ -697,6 +704,7 @@ export function updateHeroStats(modifier, hero) {
         updatePetAI(modifier, hero.pet);
     }
 }
+
 
 export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remotePlayers) {
     if (hero.target) {

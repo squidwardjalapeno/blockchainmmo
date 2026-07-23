@@ -1,7 +1,7 @@
 // src/hobbitManager.js
 import { viewport } from './viewport.js';
 import { moveEntity, getTileData } from './physics.js'; 
-import { hero, getFocusCoordinates } from './entities.js'; // 🎯 Fetch focus coordinates dynamically
+import { hero, getFocusCoordinates } from './entities.js'; 
 import { worldTime } from './clock.js'; 
 import { plants } from './plants.js';
 import { ITEM_TYPES, createItem } from './items.js';
@@ -91,7 +91,7 @@ export function spawnSquad(gx, gy, homeX, homeY) {
  * Orchestrates the active hobbit entity lifecycle loops across Tiers 1, 2, and 3.
  */
 export function updateHobbits(modifier, worldMatrix, roomMatrix) {
-    const focus = getFocusCoordinates(); // 🎯 Promotes simulation boundaries to RTS viewport
+    const focus = getFocusCoordinates(); 
     const heroCX = Math.floor(focus.x / 1600);
     const heroCY = Math.floor(focus.y / 1600);
     const now = Date.now();
@@ -211,43 +211,94 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
     }
 
     // ==========================================
-    // ⚙️ MAIN AI BEHAVIOR ORCHESTRATOR
+    // ⚙️ OUT-OF-BOUNDS PACKING PRE-PASS
+    // ==========================================
+    const squadsToPack = new Set();
+    const soloToPack = new Set();
+
+    for (let i = 0; i < hobbits.length; i++) {
+        const hob = hobbits[i];
+        const hobbitCX = Math.floor(hob.x / 1600);
+        const hobbitCY = Math.floor(hob.y / 1600);
+        const isInsideActiveChunks = Math.abs(hobbitCX - heroCX) <= 1 && Math.abs(hobbitCY - heroCY) <= 1;
+
+        if (!isInsideActiveChunks) {
+            if (hob.job === 'Military') {
+                if (hob.squadId) {
+                    squadsToPack.add(hob.squadId);
+                } else {
+                    soloToPack.add(hob.id);
+                }
+            } else {
+                hob.toRemove = true;
+            }
+        }
+    }
+
+    squadsToPack.forEach(squadId => {
+        const representative = hobbits.find(h => h.squadId === squadId);
+        if (representative) {
+            const destinationWell = plannedWells.find(well => well.x !== representative.homeX || well.y !== representative.homeY);
+            if (destinationWell) {
+                const travelDist = Math.hypot(destinationWell.x - (representative.x / 16), destinationWell.y - (representative.y / 16));
+                const totalTicksNeeded = travelDist / 2;
+
+                macroTravelers.push({
+                    id: squadId,
+                    isSquad: true,
+                    homeX: representative.homeX || Math.floor(representative.x / 16),
+                    homeY: representative.homeY || Math.floor(representative.y / 16),
+                    targetX: destinationWell.x,
+                    targetY: destinationWell.y,
+                    currentTileX: Math.floor(representative.x / 16),
+                    currentTileY: Math.floor(representative.y / 16),
+                    progressTicks: 0,
+                    totalTicksNeeded: totalTicksNeeded > 0 ? totalTicksNeeded : 1
+                });
+            }
+        }
+        hobbits.forEach(h => {
+            if (h.squadId === squadId) {
+                h.toRemove = true;
+            }
+        });
+    });
+
+    soloToPack.forEach(id => {
+        const hobbit = hobbits.find(h => h.id === id);
+        if (hobbit) {
+            const destinationWell = plannedWells.find(well => well.x !== hobbit.homeX || well.y !== hobbit.homeY);
+            if (destinationWell) {
+                const travelDist = Math.hypot(destinationWell.x - (hobbit.x / 16), destinationWell.y - (hobbit.y / 16));
+                const totalTicksNeeded = travelDist / 2;
+
+                macroTravelers.push({
+                    id: 'squad_' + Math.random().toString(36).substr(2, 9),
+                    isSquad: false,
+                    homeX: hobbit.homeX || Math.floor(hobbit.x / 16),
+                    homeY: hobbit.homeY || Math.floor(hobbit.y / 16),
+                    targetX: destinationWell.x,
+                    targetY: destinationWell.y,
+                    currentTileX: Math.floor(hobbit.x / 16),
+                    currentTileY: Math.floor(hobbit.y / 16),
+                    progressTicks: 0,
+                    totalTicksNeeded: totalTicksNeeded > 0 ? totalTicksNeeded : 1
+                });
+            }
+            hobbit.toRemove = true;
+        }
+    });
+
+    for (let i = hobbits.length - 1; i >= 0; i--) {
+        if (hobbits[i].toRemove) {
+            hobbits.splice(i, 1);
+        }
+    }
+
+    // ==========================================
+    // ⚙️ MAIN AI BEHAVIOR LOGIC Ticks
     // ==========================================
     hobbits.forEach(hobbit => {
-        const hobbitCX = Math.floor(hobbit.x / 1600);
-        const hobbitCY = Math.floor(hobbit.y / 1600);
-        const isInsideActiveChunks = Math.abs(hobbitCX - heroCX) <= 1 && Math.abs(hobbitCY - heroCY) <= 1;
-        
-        // Unload far on-screen entities back to macro spawner models
-        if (!isInsideActiveChunks) {
-            if (hobbit.job === 'Military') {
-                const destinationWell = plannedWells.find(well => {
-                    return well.x !== hobbit.homeX || well.y !== hobbit.homeY;
-                });
-                
-                if (destinationWell) {
-                    const travelDist = Math.hypot(destinationWell.x - (hobbit.x / 16), destinationWell.y - (hobbit.y / 16));
-                    const totalTicksNeeded = travelDist / 2;
-
-                    macroTravelers.push({
-                        id: hobbit.squadId || 'squad_' + Math.random().toString(36).substr(2, 9),
-                        isSquad: !!hobbit.squadId,
-                        homeX: hobbit.homeX || Math.floor(hobbit.x / 16),
-                        homeY: hobbit.homeY || Math.floor(hobbit.y / 16),
-                        targetX: destinationWell.x,
-                        targetY: destinationWell.y,
-                        currentTileX: Math.floor(hobbit.x / 16),
-                        currentTileY: Math.floor(hobbit.y / 16),
-                        progressTicks: 0,
-                        totalTicksNeeded: totalTicksNeeded > 0 ? totalTicksNeeded : 1
-                    });
-                }
-            }
-            const physicalIndex = hobbits.indexOf(hobbit);
-            if (physicalIndex !== -1) hobbits.splice(physicalIndex, 1);
-            return;
-        }
-
         if (!hobbit.lastUpdated) hobbit.lastUpdated = now;
         let deltaSeconds = (now - hobbit.lastUpdated) / 1000;
         if (deltaSeconds < 0) deltaSeconds = 0;

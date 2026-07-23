@@ -272,8 +272,10 @@ var render = function () {
     drawAbilityButtons(ctx3);
     drawAimIndicator(ctx3);
     drawXPStatus(ctx3);
-    drawHealthBar(ctx3, hero, "#00FF00");
-    drawEnergyBar(ctx3, hero, "#FFD700");
+    if (hero.charClass !== 'Overseer') {
+        drawHealthBar(ctx3, hero, "#00FF00");
+        drawEnergyBar(ctx3, hero, "#FFD700");
+    }
 
     ctx3.fillStyle = CONFIG.UI_COLOR;
     ctx3.font = CONFIG.FONT_STYLE;
