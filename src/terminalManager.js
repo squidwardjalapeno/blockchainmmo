@@ -25,6 +25,14 @@ export function setTerminalMode(enabled) {
         hero.charClass = "Overseer"; 
         
         console.log("📟 Terminal Strategic Command Deck online.");
+        
+        // Enforce the standard block layout dynamically to override flex rules
+        const mapGrid = document.getElementById('term-map-grid');
+        if (mapGrid) {
+            mapGrid.style.display = 'block';
+            mapGrid.style.textAlign = 'center';
+        }
+
         renderASCIIElements();
         initTerminalCLI();
     }
@@ -42,7 +50,7 @@ export function generateASCIIMap() {
     const endCY = Math.min(99, startCY + size - 1);
 
     for (let cy = startCY; cy <= endCY; cy++) {
-        // Wrap each row in a block-level div to prevent horizontal stretching
+        // Enforce block-level division rows so the grid stacks vertically
         let row = `<div class="term-map-row" style="display: block; text-align: center; white-space: pre; margin-bottom: 2px;">`;
         for (let cx = startCX; cx <= endCX; cx++) {
             const idx = cy * 100 + cx;
