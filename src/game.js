@@ -222,6 +222,11 @@ async function syncTVL() {
  * ⚡ CANVAS DRAW PIPELINE
  */
 var render = function () {
+    // If Terminal mode is active, completely skip 2D canvas draw sweeps!
+    if (window.terminalActive) {
+        return;
+    }
+
     clearAll(); 
     const focus = getFocusCoordinates();
     viewport.update(focus.x + 8, focus.y + 8);

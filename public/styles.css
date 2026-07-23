@@ -257,8 +257,6 @@ canvas {
     width: 100%;
 }
 
-/* ... keep your existing css ... */
-
 /* =========================================
    9. CHARACTER CREATION UI
    ========================================= */
@@ -339,4 +337,28 @@ canvas {
         width: 250px !important;
         bottom: 80px !important; 
     }
+}
+
+/* =========================================
+   11. RETRO TERMINAL (CRT SCANLINES)
+   ========================================= */
+#terminal-overlay input::placeholder {
+    color: rgba(0, 255, 0, 0.4);
+}
+.crt-screen {
+    position: relative;
+    height: 100%;
+}
+.crt-screen::before {
+    content: " ";
+    display: block;
+    position: absolute;
+    top: 0; left: 0; bottom: 0; right: 0;
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+    z-index: 10;
+    background-size: 100% 3px, 3px 100%;
+    pointer-events: none;
+}
+.terminal-panel {
+    box-shadow: 0 0 10px rgba(0, 255, 0, 0.15);
 }

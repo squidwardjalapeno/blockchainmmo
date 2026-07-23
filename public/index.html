@@ -12,33 +12,85 @@
         <canvas id="myCanvas2"></canvas>
         <canvas id="myCanvas3"></canvas>
 
-        <!-- index.html (Updated Main Menu overlay) -->
-<div id="main-menu" class="menu-overlay">
-    <div class="menu-content pixel-panel" style="width: 500px; text-align: center;">
-        <h1 style="color: var(--banana); font-size: 2.5em; margin-bottom: 10px; text-shadow: 4px 4px 0px var(--bg-dark);">Seeds & Bones</h1>
-        <p style="color: var(--text-dark); margin-bottom: 30px; font-size: 10px;">A RETRO SURVIVAL MOBA</p>
-        
-        <!-- Web3 Login -->
-        <button id="main-connect-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 15px;">CONNECT WALLET</button>
-        
-        <div style="font-size: 8px; color: #555; margin-bottom: 15px;">--- OR ---</div>
+        <!-- MAIN MENU OVERLAY -->
+        <div id="main-menu" class="menu-overlay">
+            <div class="menu-content pixel-panel" style="width: 500px; text-align: center;">
+                <h1 style="color: var(--banana); font-size: 2.5em; margin-bottom: 10px; text-shadow: 4px 4px 0px var(--bg-dark);">Seeds & Bones</h1>
+                <p style="color: var(--text-dark); margin-bottom: 30px; font-size: 10px;">A RETRO SURVIVAL MOBA</p>
+                
+                <!-- Web3 Login -->
+                <button id="main-connect-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 15px;">CONNECT WALLET</button>
+                
+                <div style="font-size: 8px; color: #555; margin-bottom: 15px;">--- OR ---</div>
 
-        <!-- Web2 Login / Register -->
-        <input type="text" id="login-username" class="pixel-input" placeholder="Username" style="width: 100%; margin-bottom: 10px; text-align: center;">
-        <input type="password" id="login-password" class="pixel-input" placeholder="Password" style="width: 100%; margin-bottom: 15px; text-align: center;">
-        
-        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-            <button id="login-btn" class="pixel-btn" style="flex: 1;">LOGIN</button>
-            <button id="register-btn" class="pixel-btn" style="flex: 1;">REGISTER</button>
+                <!-- Web2 Login / Register -->
+                <input type="text" id="login-username" class="pixel-input" placeholder="Username" style="width: 100%; margin-bottom: 10px; text-align: center;">
+                <input type="password" id="login-password" class="pixel-input" placeholder="Password" style="width: 100%; margin-bottom: 15px; text-align: center;">
+                
+                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                    <button id="login-btn" class="pixel-btn" style="flex: 1;">LOGIN</button>
+                    <button id="register-btn" class="pixel-btn" style="flex: 1;">REGISTER</button>
+                </div>
+
+                <!-- Role Choices (RTS vs Guest Hero vs Terminal) -->
+                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 15px; border-top: 4px dashed var(--bg-dark); padding-top: 15px;">
+                    <button id="guest-btn" class="pixel-btn" style="width: 100%; font-size: 10px; background-color: var(--banana); color: var(--bg-dark);">PLAY AS HERO (GUEST)</button>
+                    <button id="menu-rts-btn" class="pixel-btn safe" style="width: 100%; font-size: 10px;">PLAY AS OVERSEER (RTS)</button>
+                    <button id="menu-terminal-btn" class="pixel-btn" style="width: 100%; font-size: 10px; background-color: #00FF00; color: black; border: 4px solid #005500;">PLAY AS STRATEGIST (TERMINAL)</button>
+                </div>
+            </div>
         </div>
 
-        <!-- Role Choices (RTS vs Guest Hero) -->
-        <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 15px; border-top: 4px dashed var(--bg-dark); padding-top: 15px;">
-            <button id="guest-btn" class="pixel-btn" style="width: 100%; font-size: 10px; background-color: var(--banana); color: var(--bg-dark);">PLAY AS HERO (GUEST)</button>
-            <button id="menu-rts-btn" class="pixel-btn safe" style="width: 100%; font-size: 10px;">PLAY AS OVERSEER (RTS)</button>
+        <!-- TERMINAL MODE OVERLAY (Text-based Command Console) -->
+        <div id="terminal-overlay" class="hidden" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: black; color: #00FF00; font-family: monospace; z-index: 5000; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 15px; overflow: hidden; font-size: 11px; line-height: 1.3;">
+            <div class="crt-screen" style="flex: 1; display: flex; flex-direction: column; gap: 15px; height: 100%;">
+                <!-- Upper half: ASCII Map and Sector Details -->
+                <div style="display: flex; gap: 20px; flex: 1.2; min-height: 0;">
+                    <!-- Left: ASCII Map Grid -->
+                    <div class="terminal-panel" style="flex: 1.2; display: flex; flex-direction: column; border: 2px solid #00FF00; padding: 10px; background: rgba(0,20,0,0.5);">
+                        <div class="terminal-header" style="text-align: center; border-bottom: 2px dashed #00FF00; margin-bottom: 8px; font-weight: bold; padding-bottom: 4px;">[ REGIONAL ASCII SURVEILLANCE MAP ]</div>
+                        <div id="term-map-grid" style="flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; white-space: pre; line-height: 1.1; letter-spacing: 2px; font-size: 9px; cursor: default; font-family: monospace;">
+                            <!-- ASCII Map rendered dynamically -->
+                        </div>
+                    </div>
+                    <!-- Right: Sector Details -->
+                    <div class="terminal-panel" style="flex: 0.8; border: 2px solid #00FF00; padding: 10px; background: rgba(0,20,0,0.5); display: flex; flex-direction: column;">
+                        <div class="terminal-header" style="text-align: center; border-bottom: 2px dashed #00FF00; margin-bottom: 8px; font-weight: bold; padding-bottom: 4px;">[ SECTOR DETAILS ]</div>
+                        <div id="term-sector-info" style="flex: 1; overflow-y: auto; line-height: 1.6;">
+                            SELECT A SECTOR MAP GLYPH TO POLL DATA DECK...
+                        </div>
+                    </div>
+                </div>
+                <!-- Lower half: Workforce Ledger and Shell CLI Command Input -->
+                <div style="display: flex; gap: 20px; flex: 0.8; min-height: 0;">
+                    <!-- Left: Workforce list -->
+                    <div class="terminal-panel" style="flex: 1.2; border: 2px solid #00FF00; padding: 10px; background: rgba(0,20,0,0.5); display: flex; flex-direction: column;">
+                        <div class="terminal-header" style="text-align: center; border-bottom: 2px dashed #00FF00; margin-bottom: 8px; font-weight: bold; padding-bottom: 4px;">[ ACTIVE WORKFORCE LEDGER ]</div>
+                        <div id="term-workforce-list" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;">
+                            <!-- Workforce listed dynamically -->
+                        </div>
+                    </div>
+                    <!-- Right: Command Shell CLI Console -->
+                    <div class="terminal-panel" style="flex: 0.8; border: 2px solid #00FF00; padding: 10px; background: rgba(0,20,0,0.5); display: flex; flex-direction: column; justify-content: space-between;">
+                        <div style="display: flex; flex-direction: column; height: 100%; min-height: 0;">
+                            <div class="terminal-header" style="text-align: center; border-bottom: 2px dashed #00FF00; margin-bottom: 8px; font-weight: bold; padding-bottom: 4px;">[ COMMAND CLI SYSTEM ]</div>
+                            <div id="term-instructions" style="flex: 1; overflow-y: auto; color: #88FF88; font-size: 10px; margin-bottom: 5px; line-height: 1.4;">
+                                COMMAND LIST:<br>
+                                > <strong>help</strong> - Show commands list<br>
+                                > <strong>reassign &lt;workerName&gt; &lt;job&gt;</strong> - Swap job (Farmer, Forager, Trader, Military, Idle)<br>
+                                > <strong>toggle &lt;wellX&gt; &lt;wellY&gt;</strong> - Lock well spawning<br>
+                                > <strong>spectate &lt;workerName&gt;</strong> - Target visual spectate<br>
+                                > <strong>exit</strong> - Return to Main Menu
+                            </div>
+                        </div>
+                        <div style="display: flex; border-top: 1px solid #00FF00; padding-top: 8px; gap: 5px;">
+                            <span style="font-weight: bold; align-self: center;">$</span>
+                            <input type="text" id="term-cli-input" style="flex: 1; background: transparent; border: none; outline: none; color: #00FF00; font-family: monospace; font-size: 11px;" placeholder="enter command...">
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
-    </div>
-</div>
 
         <!-- CHARACTER CREATION MENU -->
         <div id="character-creation-menu" class="menu-overlay hidden">
@@ -323,7 +375,7 @@
                 </div>
 
                 <div class="chest-controls">
-                    <button id="close-temple-btn" class="pixel-btn cancel" style="width: 100%;">STEP AWAY</button>
+                    <button id="close-temple-btn" class="pixel-btn cancel" style="width: 100%;">CLOSE</button>
                 </div>
             </div>
         </div>
@@ -457,31 +509,30 @@
         </div>
     </div>
 
-    <!-- index.html -->
-<!-- VILLAGE OWNERSHIP / CAPTURE MODAL -->
-<div id="village-menu" class="hidden menu-modal" style="z-index: 3000;">
-    <div class="pixel-panel" style="width: 380px; text-align: center;">
-        <h2 id="village-title" style="color: var(--banana-dark); margin-top: 0;">VILLAGE CORE</h2>
-        <p id="village-subtitle" style="font-size: 8px; margin-bottom: 20px; color:#555;">Review and claim regional territory.</p>
-        
-        <div style="background: #fff; padding: 15px; border: 4px solid var(--bg-dark); margin-bottom: 20px;">
-            <div style="font-size: 10px; margin-bottom: 10px;">CURRENT OWNER</div>
-            <div id="village-owner-label" style="font-size: 12px; color: var(--highlight); font-weight: bold; margin-bottom: 15px;">UNCLAIMED</div>
+    <!-- VILLAGE OWNERSHIP / CAPTURE MODAL -->
+    <div id="village-menu" class="hidden menu-modal" style="z-index: 3000;">
+        <div class="pixel-panel" style="width: 380px; text-align: center;">
+            <h2 id="village-title" style="color: var(--banana-dark); margin-top: 0;">VILLAGE CORE</h2>
+            <p id="village-subtitle" style="font-size: 8px; margin-bottom: 20px; color:#555;">Review and claim regional territory.</p>
             
-            <div id="village-progress-section" class="hidden">
-                <div style="font-size: 10px; margin-bottom: 5px;">CAPTURE PROGRESS</div>
-                <div style="width: 100%; background: #ccc; height: 16px; border: 2px solid #000; position: relative;">
-                    <div id="village-progress-bar" style="width: 0%; height: 100%; background: #d95757;"></div>
-                    <div id="village-progress-text" style="position: absolute; width: 100%; top: 2px; font-size: 8px; text-align: center; color: #000;">0%</div>
+            <div style="background: #fff; padding: 15px; border: 4px solid var(--bg-dark); margin-bottom: 20px;">
+                <div style="font-size: 10px; margin-bottom: 10px;">CURRENT OWNER</div>
+                <div id="village-owner-label" style="font-size: 12px; color: var(--highlight); font-weight: bold; margin-bottom: 15px;">UNCLAIMED</div>
+                
+                <div id="village-progress-section" class="hidden">
+                    <div style="font-size: 10px; margin-bottom: 5px;">CAPTURE PROGRESS</div>
+                    <div style="width: 100%; background: #ccc; height: 16px; border: 2px solid #000; position: relative;">
+                        <div id="village-progress-bar" style="width: 0%; height: 100%; background: #d95757;"></div>
+                        <div id="village-progress-text" style="position: absolute; width: 100%; top: 2px; font-size: 8px; text-align: center; color: #000;">0%</div>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <button id="village-claim-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 10px;">CLAIM TERRITORY</button>
-        <button id="village-toggle-spawning-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 10px;">SPAWNING: ENABLED</button>
-        <button id="close-village-btn" class="pixel-btn cancel" style="width: 100%;">Step Away</button>
+            <button id="village-claim-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 10px;">CLAIM TERRITORY</button>
+            <button id="village-toggle-spawning-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 10px;">SPAWNING: ENABLED</button>
+            <button id="close-village-btn" class="pixel-btn cancel" style="width: 100%;">Step Away</button>
+        </div>
     </div>
-</div>
 
     <!-- 🪧 ITEM TOOLTIP -->
     <div id="item-tooltip" style="position: fixed; display: none; background: rgba(0, 0, 0, 0.85); color: white; border: 4px solid var(--bg-dark); padding: 10px; z-index: 10000; width: 160px; pointer-events: none; font-size: 8px; line-height: 1.4; box-shadow: 4px 4px 0px rgba(0,0,0,0.5);">

@@ -202,10 +202,6 @@ export function initUI() {
         closeHelpBtn.onclick = () => document.getElementById('help-menu').classList.add('hidden');
     }
 
-    // src/uiManager.js (Inside initUI function)
-
-    // src/uiManager.js (Inside initUI() function)
-
     const menuRtsBtn = document.getElementById('menu-rts-btn');
     if (menuRtsBtn) {
         menuRtsBtn.onclick = () => {
@@ -213,20 +209,35 @@ export function initUI() {
             setPlayerWallet(overseerID);
             
             if (socket) {
-                // Connect to socket to sync background coordinates and entities
                 socket.emit('identifyWallet', overseerID);
             }
 
             import('./rtsControls.js').then(rts => {
                 rts.setRtsMode(true);
                 
-                // Position camera directly over the debug village center
-                rts.rtsState.cameraX = 80800;
-                rts.rtsState.cameraY = 80800;
+                gameState.rtsCameraX = 80800;
+                gameState.rtsCameraY = 80800;
 
-                // Close menu overlay and show HUD
                 document.getElementById('main-menu').classList.add('hidden');
                 document.getElementById('hud').style.display = 'block';
+            });
+        };
+    }
+
+    // Strategist (Terminal) click handler
+    const menuTerminalBtn = document.getElementById('menu-terminal-btn');
+    if (menuTerminalBtn) {
+        menuTerminalBtn.onclick = () => {
+            const strategistID = "Strategist_" + Math.floor(Math.random() * 999999);
+            setPlayerWallet(strategistID);
+            
+            if (socket) {
+                socket.emit('identifyWallet', strategistID);
+            }
+
+            import('./terminalManager.js').then(term => {
+                term.setTerminalMode(true);
+                document.getElementById('main-menu').classList.add('hidden');
             });
         };
     }
@@ -1398,8 +1409,6 @@ export function updateDoorControlUI(gx, gy, locked) {
         }
     }
 }
-
-// src/uiManager.js
 
 export function openVillageMenu(wellX, wellY, villageData) {
     document.getElementById('village-menu').classList.remove('hidden');
