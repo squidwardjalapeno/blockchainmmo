@@ -251,7 +251,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
                 const traveledDist = Math.hypot(currentTX - representative.homeX, currentTY - representative.homeY);
                 
                 const ratio = totalDist > 0 ? Math.min(1.0, traveledDist / totalDist) : 0;
-                const totalTicksNeeded = travelDist / 2;
+                const totalTicksNeeded = totalDist / 2;
                 const progressTicks = ratio * totalTicksNeeded;
 
                 macroTravelers.push({
@@ -314,7 +314,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
     }
 
     // ==========================================
-    // ⚙️ ACTIVE HOBBIT AI BEHAVIOR LOGIC
+    // ⚙️ MAIN AI BEHAVIOR LOGIC
     // ==========================================
     hobbits.forEach(hobbit => {
         if (!hobbit.lastUpdated) hobbit.lastUpdated = now;
