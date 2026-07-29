@@ -1400,24 +1400,24 @@ window.toggleSpectateHobbit = (id) => {
     updateHUD();
 };
 
-/**
- * Initializes the Two-Tier Login Menu in-game.
- * Tier 1: Select Interface (MOBA / RTS / Terminal)
- * Tier 2: Connect MetaMask & Verify Sovereignty on Unichain
- */
+// client/uiManager.js - Master Two-Tier Login Controller (Audited)
+
 export function initTwoTierMenu(socketInstance) {
     const tier1 = document.getElementById('menu-tier-1');
     const tier2 = document.getElementById('menu-tier-2');
     const authTitle = document.getElementById('auth-title-label');
 
-    // UI Buttons
     const selectMobaBtn = document.getElementById('select-moba-btn');
     const selectRtsBtn = document.getElementById('select-rts-btn');
     const selectTerminalBtn = document.getElementById('select-terminal-btn');
     const backBtn = document.getElementById('back-to-tier-1-btn');
     const connectWalletBtn = document.getElementById('main-connect-btn');
 
-    if (!tier1 || !tier2) return;
+    if (!tier1 || !tier2 || !connectWalletBtn) return;
+
+    // 🎯 THE STRIP: Clone the button to permanently strip all legacy addEventListener listeners!
+    const newConnectWalletBtn = connectWalletBtn.cloneNode(true);
+    connectWalletBtn.parentNode.replaceChild(newConnectWalletBtn, connectWalletBtn);
 
     // --- Tier 1 Transitions ---
     selectMobaBtn.onclick = () => {
@@ -1448,7 +1448,7 @@ export function initTwoTierMenu(socketInstance) {
     };
 
     // --- Tier 2 MetaMask Handshake ---
-    connectWalletBtn.onclick = async () => {
+    newConnectWalletBtn.onclick = async () => {
         if (!window.ethereum) {
             alert("MetaMask is not installed! Defaulting to Guest Mode.");
             socketInstance.emit('identifyWallet', `Guest_${Math.floor(Math.random() * 999999)}`);
@@ -1456,8 +1456,8 @@ export function initTwoTierMenu(socketInstance) {
         }
 
         try {
-            connectWalletBtn.innerText = "CONNECTING...";
-            connectWalletBtn.disabled = true;
+            newConnectWalletBtn.innerText = "CONNECTING...";
+            newConnectWalletBtn.disabled = true;
 
             const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
             const walletAddress = accounts[0];
@@ -1472,10 +1472,38 @@ export function initTwoTierMenu(socketInstance) {
 
         } catch (err) {
             console.error("Wallet connection failed:", err);
-            connectWalletBtn.innerText = "CONNECT METAMASK";
-            connectWalletBtn.disabled = false;
+            newConnectWalletBtn.innerText = "CONNECT METAMASK";
+            newConnectWalletBtn.disabled = false;
         }
     };
+
+    // --- Strict Client-Side Routing ---
+    socketInstance.off('sovereigntyVerified'); // Prevent duplicate listener registrations
+    socketInstance.on('sovereigntyVerified', (data) => {
+        newConnectWalletBtn.disabled = false;
+        newConnectWalletBtn.innerText = "CONNECT METAMASK";
+
+        if (data.success) {
+            console.log(`🏰 Handshake Confirmed! Mode: ${data.mode}`);
+            document.getElementById('main-menu').classList.add('hidden');
+            document.getElementById('hud').style.display = 'block';
+
+            // Launch the respective mode
+            if (data.mode === 'RTS') {
+                import('./rtsControls.js').then(rts => rts.setRtsMode(true));
+            } else if (data.mode === 'TERMINAL') {
+                import('./terminalManager.js').then(term => term.setTerminalMode(true));
+            } else {
+                // Launch standard MOBA Hero mode
+                import('./rtsControls.js').then(rts => rts.setRtsMode(false));
+            }
+        } else {
+            // 🎯 THE BLOCK: Enforce restriction, alert the player, and kick them back to Tier 1
+            alert(data.message);
+            tier2.classList.add('hidden');
+            tier1.classList.remove('hidden');
+        }
+    });
 }
 
 // client/uiManager.js - Update your spawner button handler
