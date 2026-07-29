@@ -65,6 +65,11 @@ async function syncTVLWithBlockchain() {
 syncTVLWithBlockchain();
 setInterval(syncTVLWithBlockchain, 60000);
 
+// server.js - Decodes the dynamic spawner event and initializes the database
+const spawnerInterface = new ethers.Interface([
+    "event VillageSpunIntact(address indexed owner, uint256 indexed deedTokenId, address indexed tbaAddress, uint256 hobbitCount)"
+]);
+
 const POINT_VALUES = {
     "grass_seed": 1, "rose_seed": 1, "violet_seed": 1, "sunflower_seed": 1,
     "turnip_seed": 1, "tomato_seed": 1, "eggplant_seed": 1, "strawberry_seed": 1,
@@ -215,6 +220,21 @@ const activeExtractionQueues = new Map();
 // 🏰 SERVER-SIDE VILLAGE REGISTRY STATE
 const serverVillages = new Map(); 
 
+// server.js - Global Hobbit Workforce State
+const serverHobbits = []; // 🧝 Global array tracking all active server-side Hobbits
+
+const HOBBIT_FIRST_NAMES = ["Bilbo", "Frodo", "Samwise", "Merry", "Pippin", "Bango", "Bungo", "Drogo", "Hamfast", "Longo", "Olo", "Paladin", "Rufus", "Sancho", "Tobold", "Wilibald"];
+const HOBBIT_LAST_NAMES = ["Baggins", "Gamgee", "Brandybuck", "Took", "Gardner", "Greenhand", "Grubb", "Chubb", "Proudfoot", "Bolger", "Boffin", "Sandyman", "Cotton", "Twofoot", "Underhill", "Hornblower"];
+
+/**
+ * Procedurally generates an authentic, randomized Hobbit name.
+ */
+function getRandomHobbitName() {
+    const first = HOBBIT_FIRST_NAMES[Math.floor(Math.random() * HOBBIT_FIRST_NAMES.length)];
+    const last = HOBBIT_LAST_NAMES[Math.floor(Math.random() * HOBBIT_LAST_NAMES.length)];
+    return `${first} ${last}`;
+}
+
 function getVillagePlayerCounts(wellX, wellY, owner) {
     let allies = 0;
     let enemies = 0;
@@ -335,6 +355,51 @@ function initServerAnimals() {
     }
 }
 initServerAnimals(); 
+
+// server.js - Server-Side Hobbit Spawner
+/**
+ * Instantiates a virtual Hobbit in the server database and broadcasts it to all clients.
+ */
+function spawnDatabaseHobbit(x, y, villageId, jobType) {
+    const hobbitId = 'hobbit_' + Math.random().toString(36).substr(2, 9);
+    const proceduralName = getRandomHobbitName();
+
+    const newHobbit = {
+        id: hobbitId,
+        name: proceduralName,
+        job: jobType,
+        isHobbit: true,
+        x: x,
+        y: y,
+        floor: 1,
+        speed: 35,
+        hp: 40,
+        maxHp: 40,
+        ad: 2,
+        energy: 100,
+        maxEnergy: 100,
+        inventory: [],
+        villageId: villageId,
+        
+        state: 'idle',
+        goal: 'wander',
+        dir: 'South',
+        frame: 0,
+        animTimer: 0,
+        moveTimer: Math.random() * 3,
+        pathTimer: 0,
+        attackTimer: 0,
+        path: []
+    };
+
+    serverHobbits.push(newHobbit);
+    
+    // Broadcast the new worker to all connected clients in real-time
+    io.emit('hobbitSpawned', newHobbit);
+    console.log(`🧝 Database Hobbit Initialized: ${proceduralName} (ID: ${hobbitId}) in Village: ${villageId}`);
+    
+    return newHobbit;
+}
 
 function generateServerFloraForChunk(cx, cy) {
     const density = 0.50; 
@@ -824,6 +889,8 @@ function tickWorld() {
     }
 
     io.emit('animals', { animals: serverAnimals });
+    io.emit('hobbits_update', { hobbits: serverHobbits }); // 🆕 Added: Synchronizes your Hobbits
+
 }
 
 setInterval(tickCombat, 33.33); 
@@ -979,26 +1046,23 @@ io.on('connection', (socket) => {
         activeOverseers.delete(socket.id);
     });
 
+    // server.js - Inside requestWellState listener:
     socket.on('requestWellState', (data) => {
-        const { wellX, wellY } = data;
-        const key = `${wellX}_${wellY}`;
-        
+        const key = `${data.wellX}_${data.wellY}`;
         if (!serverVillages.has(key)) {
-            serverVillages.set(key, {
-                x: wellX,
-                y: wellY,
-                owner: null,
-                captureProgress: 0,
-                capturer: null,
-                contested: false
-            });
+            serverVillages.set(key, { x: data.wellX, y: data.wellY, owner: null, captureProgress: 0, capturer: null });
         }
-        const village = serverVillages.get(key);
-        socket.emit('wellStateResponse', {
-            wellX,
-            wellY,
-            owner: village.owner,
-            progress: village.captureProgress
+        const v = serverVillages.get(key);
+
+        // 🎯 DYNAMIC WORKFORCE CALCULATION
+        const dynamicCount = calculateProportionalHobbits(data.wellX, data.wellY);
+
+        socket.emit('wellStateResponse', { 
+            wellX: data.wellX, 
+            wellY: data.wellY, 
+            owner: v.owner, 
+            progress: v.captureProgress,
+            hobbitCount: dynamicCount // 🆕 Transmits the exact structural count to client
         });
     });
 
@@ -1036,6 +1100,75 @@ io.on('connection', (socket) => {
             } else {
                 socket.emit('wellInteractionMessage', { message: "The village is secured by defenders! Defeat them to capture." });
             }
+        }
+    });
+
+    // server.js - Inside io.on('connection', (socket) => { ... })
+    // Place this directly below your existing socket.on('requestWellInteraction') listener:
+
+    socket.on('villageClaimed', async (data) => {
+        const { txHash, wellX, wellY, buyerAddress } = data;
+        const key = `${wellX}_${wellY}`;
+
+        try {
+            console.log(`🔍 Verifying claim transaction on-chain: ${txHash}...`);
+            
+            // Query Unichain Mainnet for the transaction receipt
+            const receipt = await provider.getTransactionReceipt(txHash);
+
+            if (receipt && receipt.status === 1) {
+                let tbaAddress = null;
+                let onChainHobbitCount = 0;
+
+                // Decode the event logs from the receipt to extract the deployed TBA and Hobbit Count
+                for (let log of receipt.logs) {
+                    try {
+                        const parsed = spawnerInterface.parseLog(log);
+                        if (parsed && parsed.name === "VillageSpunIntact") {
+                            tbaAddress = parsed.args.tbaAddress;
+                            onChainHobbitCount = parseInt(parsed.args.hobbitCount.toString());
+                            break;
+                        }
+                    } catch (e) {}
+                }
+
+                if (!tbaAddress) {
+                    throw new Error("Failed to decode Spawner Event from transaction logs.");
+                }
+
+                const cleanBuyer = ethers.getAddress(buyerAddress);
+
+                // 1. Initialize the Village in the server database
+                serverVillages.set(key, {
+                    x: wellX,
+                    y: wellY,
+                    owner: cleanBuyer,
+                    tbaAddress: tbaAddress,
+                    captureProgress: 0,
+                    capturer: null
+                });
+
+                // 2. 🎯 DYNAMIC WORKFORCE INITIALIZATION
+                // Spawn exactly the number of virtual Hobbits matching the on-chain spawner transaction
+                for (let i = 0; i < onChainHobbitCount; i++) {
+                    const jobType = (i === 0) ? 'Forager' : (i === 1) ? 'Farmer' : 'Guard';
+                    spawnDatabaseHobbit(wellX + 2, wellY + 2, key, jobType);
+                }
+
+                // 3. Broadcast updated village owner state to all clients
+                io.emit('villageOwnerUpdated', {
+                    wellX: wellX,
+                    wellY: wellY,
+                    owner: cleanBuyer,
+                    progress: 0
+                });
+
+                console.log(`🏰 Village at [${wellX}, ${wellY}] claimed! Owner: ${cleanBuyer} | TBA: ${tbaAddress} | Workforce: ${onChainHobbitCount}`);
+            } else {
+                console.log("❌ Claim verification failed: Transaction reverted or not found.");
+            }
+        } catch (err) {
+            console.error("Failed to process village claim verification:", err);
         }
     });
 
@@ -2392,6 +2525,37 @@ function syncPlayerAndSave(socketId) {
     fs.writeFileSync('persistence.json', JSON.stringify(userDb, null, 2));
 }
 
+
+// server.js - Calculate Proportional Hobbit Count for a Settlement
+
+/**
+ * Scans the database structures (houses, cellars) within a 4-chunk radius of the well
+ * and calculates the exact proportionate number of Hobbits.
+ */
+function calculateProportionalHobbits(wellX, wellY) {
+    const wellTX = Math.floor(wellX / 16);
+    const wellTY = Math.floor(wellY / 16);
+    let totalHobbitCount = 0;
+
+    // Loop through your database chest/house records to find matches
+    for (let key in chestDb) {
+        const coords = key.split('_'); // Format: "chest_tx_ty"
+        const tx = parseInt(coords[1]);
+        const ty = parseInt(coords[2]);
+
+        // If the structure is within the village boundaries (e.g., 40 tiles/640px)
+        const dist = Math.hypot(tx - wellTX, ty - wellTY);
+        if (dist <= 40) {
+            // Standard Rule: 
+            // - Houses (containing chest/bedrolls) spawn 2 Hobbits (Farmer/Forager)
+            // - Root cellars spawn 1 Hobbit (Trader/Cellar guard)
+            totalHobbitCount += 2; 
+        }
+    }
+
+    // Enforce a minimum baseline of 3 starter Hobbits if the area is empty
+    return Math.max(3, totalHobbitCount);
+}
 // === HELPER FUNCTIONS FOR SPATIAL VISION CULLING ===
 
 /**

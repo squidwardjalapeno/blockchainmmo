@@ -110,6 +110,40 @@ export function initMultiplayer() {
             ui.setupMultiplayerListeners(socket);
         });
 
+        // client/multiplayer.js - Add these inside initMultiplayer() or setupMultiplayerListeners()
+
+    // 🆕 1. Listen for new Hobbits spawned during "Claim Peacefully"
+    socket.on('hobbitSpawned', (data) => {
+        // Dynamically imports hobbitCore to locally instantiate the new worker
+        import('./hobbitCore.js').then(m => {
+            m.spawnHobbit(
+                Math.floor(data.x / 16), 
+                Math.floor(data.y / 16), 
+                null, // No house id needed
+                data.homeX, 
+                data.homeY, 
+                data.job
+            );
+        });
+    });
+
+    // 🆕 2. Listen for the WARM loop coordinate and state updates
+    socket.on('hobbits_update', (data) => {
+        if (window.hobbits) {
+            data.hobbits.forEach(serverHobbit => {
+                const localHobbit = window.hobbits.find(h => h.id === serverHobbit.id);
+                if (localHobbit) {
+                    // Smoothly update local coordinates and states based on server truth
+                    localHobbit.x = serverHobbit.x;
+                    localHobbit.y = serverHobbit.y;
+                    localHobbit.job = serverHobbit.job;
+                    localHobbit.energy = serverHobbit.energy;
+                    localHobbit.state = serverHobbit.state;
+                }
+            });
+        }
+    });
+
         socket.on('forcedMovement', (data) => {
             const p = (data.id === myID) ? hero : remotePlayers.get(data.id);
             if (p) {
@@ -121,6 +155,8 @@ export function initMultiplayer() {
                 }
             }
         });
+
+
 
         socket.on('playerHit', (data) => {
             const victim = (data.victimId === myID) ? hero : remotePlayers.get(data.victimId);

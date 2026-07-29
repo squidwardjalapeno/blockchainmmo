@@ -23,6 +23,11 @@ export let activeDoorCoords = null;
 let selectedSkills = []; 
 let selectedMode = 'MOBA'; // Default fallback
 
+// ABI required to call the SovereignSpawner on-chain
+const spawnerAbi = [
+    "function claimVillagePeacefully(bytes32 salt, uint256 hobbitCount) external returns (uint256, address)"
+];
+
 
 // ==========================================
 // 🏗️ UNIFIED WORKSTATION CONFIGURATIONS
@@ -575,102 +580,6 @@ export function handleRemoteStorageUpdate(id, items, type) {
     }
 }
 
-export function initTwoTierMenu(socket) {
-    const tier1 = document.getElementById('menu-tier-1');
-    const tier2 = document.getElementById('menu-tier-2');
-    const authTitle = document.getElementById('auth-title-label');
-
-    // Button Selectors
-    const selectMobaBtn = document.getElementById('select-moba-btn');
-    const selectRtsBtn = document.getElementById('select-rts-btn');
-    const selectTerminalBtn = document.getElementById('select-terminal-btn');
-    const backBtn = document.getElementById('back-to-tier-1-btn');
-    const connectWalletBtn = document.getElementById('main-connect-btn');
-
-    // Step 1: Mode Selections (Tier 1 -> Tier 2 Transition)
-    selectMobaBtn.onclick = () => {
-        selectedMode = 'MOBA';
-        authTitle.innerText = "Hero Authentication";
-        tier1.classList.add('hidden');
-        tier2.classList.remove('hidden');
-    };
-
-    selectRtsBtn.onclick = () => {
-        selectedMode = 'RTS';
-        authTitle.innerText = "Overseer Authentication";
-        tier1.classList.add('hidden');
-        tier2.classList.remove('hidden');
-    };
-
-    selectTerminalBtn.onclick = () => {
-        selectedMode = 'TERMINAL';
-        authTitle.innerText = "Strategist Authentication";
-        tier1.classList.add('hidden');
-        tier2.classList.remove('hidden');
-    };
-
-    // Step 2: Back Navigation
-    backBtn.onclick = () => {
-        tier2.classList.add('hidden');
-        tier1.classList.remove('hidden');
-    };
-
-    // Step 3: MetaMask Connection & Handshake Trigger
-    connectWalletBtn.onclick = async () => {
-        if (!window.ethereum) {
-            alert("MetaMask is not installed! Defaulting to Guest Mode.");
-            // Enforce fallback login immediately
-            socket.emit('identifyWallet', `Guest_${Math.floor(Math.random() * 999999)}`);
-            return;
-        }
-
-        try {
-            connectWalletBtn.innerText = "CONNECTING...";
-            connectWalletBtn.disabled = true;
-
-            // Request account access
-            const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-            const walletAddress = accounts[0];
-
-            console.log(`🔌 Wallet Connected: ${walletAddress}. Requesting sovereignty handshake...`);
-
-            // Send verification payload to server
-            socket.emit('verifySovereignty', {
-                address: walletAddress,
-                requestedMode: selectedMode
-            });
-
-        } catch (err) {
-            console.error("Wallet connection failed:", err);
-            connectWalletBtn.innerText = "CONNECT METAMASK";
-            connectWalletBtn.disabled = false;
-        }
-    };
-
-    // Step 4: Handle Server Response
-    socket.on('sovereigntyVerified', (data) => {
-        connectWalletBtn.disabled = false;
-        connectWalletBtn.innerText = "CONNECT METAMASK";
-
-        if (data.success) {
-            console.log(`🏰 Handshake Confirmed! Mode: ${data.mode}`);
-            document.getElementById('main-menu').classList.add('hidden');
-            document.getElementById('hud').style.display = 'block';
-
-            // Launch the respective mode
-            if (data.mode === 'RTS') {
-                import('./rtsControls.js').then(rts => rts.setRtsMode(true));
-            } else if (data.mode === 'TERMINAL') {
-                import('./terminalManager.js').then(term => term.setTerminalMode(true));
-            } else {
-                // Launch standard MOBA Hero mode
-                import('./rtsControls.js').then(rts => rts.setRtsMode(false));
-            }
-        } else {
-            alert(data.message); // Enforce restriction alert
-        }
-    });
-}
 
 export function renderStorageUI() {
     if (!activeStorageContext.id) return;
@@ -1491,6 +1400,136 @@ window.toggleSpectateHobbit = (id) => {
     updateHUD();
 };
 
+/**
+ * Initializes the Two-Tier Login Menu in-game.
+ * Tier 1: Select Interface (MOBA / RTS / Terminal)
+ * Tier 2: Connect MetaMask & Verify Sovereignty on Unichain
+ */
+export function initTwoTierMenu(socketInstance) {
+    const tier1 = document.getElementById('menu-tier-1');
+    const tier2 = document.getElementById('menu-tier-2');
+    const authTitle = document.getElementById('auth-title-label');
+
+    // UI Buttons
+    const selectMobaBtn = document.getElementById('select-moba-btn');
+    const selectRtsBtn = document.getElementById('select-rts-btn');
+    const selectTerminalBtn = document.getElementById('select-terminal-btn');
+    const backBtn = document.getElementById('back-to-tier-1-btn');
+    const connectWalletBtn = document.getElementById('main-connect-btn');
+
+    if (!tier1 || !tier2) return;
+
+    // --- Tier 1 Transitions ---
+    selectMobaBtn.onclick = () => {
+        selectedMode = 'MOBA';
+        authTitle.innerText = "Hero Authentication";
+        tier1.classList.add('hidden');
+        tier2.classList.remove('hidden');
+    };
+
+    selectRtsBtn.onclick = () => {
+        selectedMode = 'RTS';
+        authTitle.innerText = "Overseer Authentication";
+        tier1.classList.add('hidden');
+        tier2.classList.remove('hidden');
+    };
+
+    selectTerminalBtn.onclick = () => {
+        selectedMode = 'TERMINAL';
+        authTitle.innerText = "Strategist Authentication";
+        tier1.classList.add('hidden');
+        tier2.classList.remove('hidden');
+    };
+
+    // Back Button
+    backBtn.onclick = () => {
+        tier2.classList.add('hidden');
+        tier1.classList.remove('hidden');
+    };
+
+    // --- Tier 2 MetaMask Handshake ---
+    connectWalletBtn.onclick = async () => {
+        if (!window.ethereum) {
+            alert("MetaMask is not installed! Defaulting to Guest Mode.");
+            socketInstance.emit('identifyWallet', `Guest_${Math.floor(Math.random() * 999999)}`);
+            return;
+        }
+
+        try {
+            connectWalletBtn.innerText = "CONNECTING...";
+            connectWalletBtn.disabled = true;
+
+            const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+            const walletAddress = accounts[0];
+
+            console.log(`🔌 Wallet Connected: ${walletAddress}. Verifying sovereignty on-chain...`);
+
+            // Send verification payload to server
+            socketInstance.emit('verifySovereignty', {
+                address: walletAddress,
+                requestedMode: selectedMode
+            });
+
+        } catch (err) {
+            console.error("Wallet connection failed:", err);
+            connectWalletBtn.innerText = "CONNECT METAMASK";
+            connectWalletBtn.disabled = false;
+        }
+    };
+}
+
+// client/uiManager.js - Update your spawner button handler
+
+// Update the parameter list to accept the server-provided "hobbitCount"
+export function setupClaimPeacefullyButton(socketInstance, wellX, wellY, hobbitCount) {
+    const claimBtn = document.getElementById('village-claim-btn');
+    if (!claimBtn) return;
+
+    const newClaimBtn = claimBtn.cloneNode(true);
+    claimBtn.parentNode.replaceChild(newClaimBtn, claimBtn);
+
+    newClaimBtn.onclick = async () => {
+        if (!window.ethereum) {
+            alert("MetaMask is required to claim a village peacefully!");
+            return;
+        }
+
+        try {
+            newClaimBtn.innerText = "SIGNING...";
+            newClaimBtn.disabled = true;
+
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const signer = await provider.getSigner();
+            const spawner = new ethers.Contract("0x7732217f107D0CC74dd91901FD794d019bB10B52", spawnerAbi, signer);
+
+            const salt = ethers.solidityPackedKeccak256(["uint256", "uint256"], [wellX, wellY]);
+
+            console.log(`🛰️ Sending claim for well [${wellX}, ${wellY}] with ${hobbitCount} Hobbits...`);
+            
+            // 🎯 PASS DYNAMIC HOBBIT COUNT TO THE METAMASK TRANSACTION
+            const tx = await spawner.claimVillagePeacefully(salt, hobbitCount);
+            
+            alert("Transaction sent! Mining... please wait.");
+            const receipt = await tx.wait();
+
+            socketInstance.emit('villageClaimed', {
+                txHash: receipt.hash,
+                wellX: wellX,
+                wellY: wellY,
+                buyerAddress: await signer.getAddress()
+            });
+
+            document.getElementById('village-menu').classList.add('hidden');
+
+        } catch (err) {
+            console.error("Claim transaction failed:", err);
+            alert("Transaction failed or was rejected.");
+            newClaimBtn.innerText = "CLAIM TERRITORY";
+            newClaimBtn.disabled = false;
+        }
+    };
+}
+
 export function openDoorControlMenu(gx, gy, roomID) {
     activeDoorCoords = { gx, gy, roomID };
     document.getElementById('door-menu-title').innerText = `🚪 ROOM #${roomID}`;
@@ -1512,6 +1551,9 @@ export function updateDoorControlUI(gx, gy, locked) {
 }
 
 export function openVillageMenu(wellX, wellY, villageData) {
+
+    setupClaimPeacefullyButton(socket, wellX, wellY);
+
     document.getElementById('village-menu').classList.remove('hidden');
     
     const ownerLabel = document.getElementById('village-owner-label');
@@ -2366,6 +2408,8 @@ export function setupMultiplayerListeners(s) {
             capturer: null
         });
         openVillageMenu(data.wellX, data.wellY, data);
+        // 🆕 Bind the MetaMask spawner with the exact, proportional workforce count
+    setupClaimPeacefullyButton(socket, data.wellX, data.wellY, data.hobbitCount);   
     });
 
     s.on('villageIntruderAggro', (data) => {
