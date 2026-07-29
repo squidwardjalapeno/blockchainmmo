@@ -21,6 +21,8 @@ if (typeof window !== 'undefined') {
 
 export let activeDoorCoords = null;
 let selectedSkills = []; 
+let selectedMode = 'MOBA'; // Default fallback
+
 
 // ==========================================
 // 🏗️ UNIFIED WORKSTATION CONFIGURATIONS
@@ -571,6 +573,103 @@ export function handleRemoteStorageUpdate(id, items, type) {
         activeStorageContext.items = items;
         renderStorageUI();
     }
+}
+
+export function initTwoTierMenu(socket) {
+    const tier1 = document.getElementById('menu-tier-1');
+    const tier2 = document.getElementById('menu-tier-2');
+    const authTitle = document.getElementById('auth-title-label');
+
+    // Button Selectors
+    const selectMobaBtn = document.getElementById('select-moba-btn');
+    const selectRtsBtn = document.getElementById('select-rts-btn');
+    const selectTerminalBtn = document.getElementById('select-terminal-btn');
+    const backBtn = document.getElementById('back-to-tier-1-btn');
+    const connectWalletBtn = document.getElementById('main-connect-btn');
+
+    // Step 1: Mode Selections (Tier 1 -> Tier 2 Transition)
+    selectMobaBtn.onclick = () => {
+        selectedMode = 'MOBA';
+        authTitle.innerText = "Hero Authentication";
+        tier1.classList.add('hidden');
+        tier2.classList.remove('hidden');
+    };
+
+    selectRtsBtn.onclick = () => {
+        selectedMode = 'RTS';
+        authTitle.innerText = "Overseer Authentication";
+        tier1.classList.add('hidden');
+        tier2.classList.remove('hidden');
+    };
+
+    selectTerminalBtn.onclick = () => {
+        selectedMode = 'TERMINAL';
+        authTitle.innerText = "Strategist Authentication";
+        tier1.classList.add('hidden');
+        tier2.classList.remove('hidden');
+    };
+
+    // Step 2: Back Navigation
+    backBtn.onclick = () => {
+        tier2.classList.add('hidden');
+        tier1.classList.remove('hidden');
+    };
+
+    // Step 3: MetaMask Connection & Handshake Trigger
+    connectWalletBtn.onclick = async () => {
+        if (!window.ethereum) {
+            alert("MetaMask is not installed! Defaulting to Guest Mode.");
+            // Enforce fallback login immediately
+            socket.emit('identifyWallet', `Guest_${Math.floor(Math.random() * 999999)}`);
+            return;
+        }
+
+        try {
+            connectWalletBtn.innerText = "CONNECTING...";
+            connectWalletBtn.disabled = true;
+
+            // Request account access
+            const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+            const walletAddress = accounts[0];
+
+            console.log(`🔌 Wallet Connected: ${walletAddress}. Requesting sovereignty handshake...`);
+
+            // Send verification payload to server
+            socket.emit('verifySovereignty', {
+                address: walletAddress,
+                requestedMode: selectedMode
+            });
+
+        } catch (err) {
+            console.error("Wallet connection failed:", err);
+            connectWalletBtn.innerText = "CONNECT METAMASK";
+            connectWalletBtn.disabled = false;
+        }
+    };
+
+    // Step 4: Handle Server Response
+    socket.on('sovereigntyVerified', (data) => {
+        connectWalletBtn.disabled = false;
+        connectWalletBtn.innerText = "CONNECT METAMASK";
+
+        if (data.success) {
+            console.log(`🏰 Handshake Confirmed! Mode: ${data.mode}`);
+            document.getElementById('main-menu').classList.add('hidden');
+            document.getElementById('hud').style.display = 'block';
+
+            // Launch the respective mode
+            if (data.mode === 'RTS') {
+                import('./rtsControls.js').then(rts => rts.setRtsMode(true));
+            } else if (data.mode === 'TERMINAL') {
+                import('./terminalManager.js').then(term => term.setTerminalMode(true));
+            } else {
+                // Launch standard MOBA Hero mode
+                import('./rtsControls.js').then(rts => rts.setRtsMode(false));
+            }
+        } else {
+            alert(data.message); // Enforce restriction alert
+        }
+    });
 }
 
 export function renderStorageUI() {
@@ -1227,6 +1326,8 @@ function transferTempleItem(index, source) {
     renderTempleUI();
     syncInventoryWithServer();
 }
+
+
 
 // ==========================================
 // CARTOGRAPHY (Map Table) & WITHDRAWAL
@@ -2099,6 +2200,10 @@ function renderActivityLog(logData) {
 // 🎨 MULTIPLAYER PORTAL LOGIC & HUDS
 // ==========================================
 export function setupMultiplayerListeners(s) {
+
+    // 🆕 Initialize the Two-Tier Login Menu immediately upon connection
+    initTwoTierMenu(s); 
+    
     s.on('needsCharacterCreation', () => {
         document.getElementById('main-menu').classList.add('hidden');
         document.getElementById('character-creation-menu').classList.remove('hidden');

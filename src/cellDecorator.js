@@ -218,7 +218,11 @@ export function drawGeneralStore(gx, gy, worldMatrix, roomMatrix, fertilityMatri
     const currentId = stampBuildingFoundation(gx, gy, 4, 4, worldMatrix, roomMatrix, fertilityMatrix, worldMap, 'STANDARD');
     stampExteriorWalls(gx, gy, 4, 4, 3, 49, 1, currentId, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
 
-    registerObject(gx + 2, gy - 2, 'STORE_COUNTER', { houseId: currentId });
+    // Inside drawGeneralStore()
+    // Register our three interior counter objects side-by-side
+    registerObject(gx + 1, gy - 2, 'HOBBIT_EXCHANGE', { houseId: currentId }); // 🧝 Hobbit NFA Terminal
+    registerObject(gx + 2, gy - 2, 'STORE_COUNTER', { houseId: currentId });   // 🏪 Merchant Counter
+    registerObject(gx + 3, gy - 2, 'GRAND_EXCHANGE', { houseId: currentId });   // 🏦 Item NFT Terminal    
     // Inside drawGeneralStore()
 import('./hobbitCore.js').then(m => m.spawnHobbit(gx + 2, gy + 1, currentId, gx + 2, gy - 1, 'Trader'));
 }

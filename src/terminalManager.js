@@ -3,6 +3,11 @@ import { gameState, hero } from './entities.js';
 import { plannedWells } from './cellDecorator.js';
 import { hobbits } from './hobbitCore.js';
 import { setRtsMode } from './rtsControls.js';
+import { socket, playerWallet, villageOwners, doorStates } from './multiplayer.js';
+
+if (typeof window !== 'undefined') {
+    if (window.logStep) window.logStep("terminalManager.js loaded");
+}
 
 export const terminalState = {
     active: false,
@@ -10,6 +15,19 @@ export const terminalState = {
     selectedCellY: 50
 };
 
+// Backwards compatibility for global window calls
+if (typeof window !== 'undefined') {
+    window.terminalState = terminalState;
+    window.selectTerminalCell = (cx, cy) => {
+        terminalState.selectedCellX = cx;
+        terminalState.selectedCellY = cy;
+        renderASCIIElements();
+    };
+}
+
+/**
+ * Toggles the visibility of the strategist terminal CLI console.
+ */
 export function setTerminalMode(enabled) {
     terminalState.active = enabled;
     window.terminalActive = enabled;
@@ -22,11 +40,10 @@ export function setTerminalMode(enabled) {
     if (enabled) {
         setRtsMode(false); 
         gameState.spectatedHobbitId = null; 
-        hero.charClass = "Overseer"; 
+        hero.charClass = "Overseer"; // Sets role to spectator/overseer
         
         console.log("📟 Terminal Strategic Command Deck online.");
         
-        // Enforce the standard block layout dynamically to override flex rules
         const mapGrid = document.getElementById('term-map-grid');
         if (mapGrid) {
             mapGrid.style.display = 'block';
@@ -38,6 +55,10 @@ export function setTerminalMode(enabled) {
     }
 }
 
+/**
+ * Generates the ASCII sub-grid around selected coordinates.
+ * Stmaps owned village wells with bright green [V] glyphs.
+ */
 export function generateASCIIMap() {
     let mapHTML = "";
     const size = 15; 
@@ -50,7 +71,6 @@ export function generateASCIIMap() {
     const endCY = Math.min(99, startCY + size - 1);
 
     for (let cy = startCY; cy <= endCY; cy++) {
-        // Enforce block-level division rows so the grid stacks vertically
         let row = `<div class="term-map-row" style="display: block; text-align: center; white-space: pre; margin-bottom: 2px;">`;
         for (let cx = startCX; cx <= endCX; cx++) {
             const idx = cy * 100 + cx;
@@ -64,7 +84,23 @@ export function generateASCIIMap() {
             else if (cellType === 103) symbol = "C"; 
             else if (cellType === 107) symbol = "M"; 
 
-            const glyphColor = isSelected ? '#FFFFFF' : (symbol !== '.' ? '#FFD700' : '#00AA00');
+            // --- THE SOVEREIGN GLYPH CHECK ---
+            let isMyVillage = false;
+            if (symbol === "V" && villageOwners) {
+                const well = plannedWells?.find(w => Math.floor(w.x / 100) === cx && Math.floor(w.y / 100) === cy);
+                if (well) {
+                    const data = villageOwners.get(`${well.x}_${well.y}`);
+                    if (data && data.owner === playerWallet) {
+                        isMyVillage = true;
+                    }
+                }
+            }
+
+            // Green if owned, yellow if standard settlement, white if selected
+            const glyphColor = isSelected ? '#FFFFFF' : 
+                               isMyVillage ? '#00FF00' : 
+                               symbol !== '.' ? '#FFD700' : '#00AA00';
+                               
             const bgStyle = isSelected ? 'background:#005500;' : '';
 
             row += `<span onclick="window.selectTerminalCell(${cx}, ${cy})" style="color: ${glyphColor}; ${bgStyle} cursor:pointer; font-weight:${symbol !== '.' ? 'bold' : 'normal'};">[${symbol}]</span> `;
@@ -75,6 +111,9 @@ export function generateASCIIMap() {
     return mapHTML;
 }
 
+/**
+ * Updates the maps and metadata panels.
+ */
 export function renderASCIIElements() {
     if (!terminalState.active) return;
 
@@ -104,10 +143,10 @@ export function renderASCIIElements() {
         const well = plannedWells.find(w => Math.floor(w.x / 100) === cx && Math.floor(w.y / 100) === cy);
         if (well) {
             spawningStr = well.spawningDisabled ? "DISABLED" : "ENABLED";
-            if (window.villageOwners) {
-                const data = window.villageOwners.get(`${well.x}_${well.y}`);
+            if (villageOwners) {
+                const data = villageOwners.get(`${well.x}_${well.y}`);
                 if (data && data.owner) {
-                    ownerStr = data.owner;
+                    ownerStr = (data.owner === playerWallet) ? "YOU (OWNER)" : data.owner.substring(0, 8) + "...";
                 }
             }
         }
@@ -126,6 +165,9 @@ export function renderASCIIElements() {
     }
 }
 
+/**
+ * Populates the workforce table.
+ */
 function renderWorkforceLedger(well) {
     const ledger = document.getElementById('term-workforce-list');
     if (!ledger) return;
@@ -154,17 +196,13 @@ function renderWorkforceLedger(well) {
     `).join('');
 }
 
-window.selectTerminalCell = (cx, cy) => {
-    terminalState.selectedCellX = cx;
-    terminalState.selectedCellY = cy;
-    renderASCIIElements();
-};
-
+/**
+ * Initializes listeners for the command line input.
+ */
 export function initTerminalCLI() {
     const input = document.getElementById('term-cli-input');
     if (!input) return;
 
-    // Remove any previously bound listeners
     const newInput = input.cloneNode(true);
     input.parentNode.replaceChild(newInput, input);
 
@@ -179,6 +217,9 @@ export function initTerminalCLI() {
     });
 }
 
+/**
+ * Evaluates strategist commands.
+ */
 function processCommand(rawLine) {
     const parts = rawLine.split(' ');
     const cmd = parts[0].toLowerCase();
@@ -189,7 +230,7 @@ function processCommand(rawLine) {
         document.getElementById('hud').style.display = 'none';
     } 
     else if (cmd === 'help') {
-        alert(`COMMAND LIST:\n- reassign <workerName> <job>\n- toggle <wellX> <wellY>\n- spectate <workerName>\n- exit`);
+        alert(`COMMAND LIST:\n- reassign <workerName> <job>\n- toggle <wellX> <wellY>\n- lock <doorX> <doorY>\n- unlock <doorX> <doorY>\n- spectate <workerName>\n- exit`);
     } 
     else if (cmd === 'toggle') {
         const wx = parseInt(parts[1]);
@@ -227,6 +268,20 @@ function processCommand(rawLine) {
             renderASCIIElements();
         } else {
             alert(`Worker with name segment "${targetName}" not resolved.`);
+        }
+    }
+    else if (cmd === 'lock' || cmd === 'unlock') {
+        const dx = parseInt(parts[1]);
+        const dy = parseInt(parts[2]);
+        if (isNaN(dx) || isNaN(dy)) {
+            alert("Usage: lock/unlock <doorX> <doorY>");
+            return;
+        }
+
+        const isLocked = (cmd === 'lock');
+        if (socket && socket.connected) {
+            socket.emit('setDoorLock', { gx: dx, gy: dy, locked: isLocked });
+            alert(`Door at [${dx}, ${dy}] updated on-chain to: ${isLocked ? 'LOCKED' : 'UNLOCKED'}`);
         }
     }
     else if (cmd === 'spectate') {

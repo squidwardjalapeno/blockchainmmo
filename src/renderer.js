@@ -316,33 +316,41 @@ export function drawMap(worldMatrix, roomMatrix) {
                     ctx2.drawImage(tileImg, (base % 8) * 16, Math.floor(base / 8) * 16, 16, 16, sX, sY, 16, 16);
 
                     const obj = getObjectAt(k, l);
-                    if (obj) {
-                        const transMap = {
-                            'CHEST_STORAGE': 2, 'HAY_TABLE': 3, 'HAY_STORAGE': 4,
-                            'STORE_COUNTER': 5, 'TEMPLE_ALTAR': 6, 'STAIRS_TOGGLE': 7,
-                            'KITCHEN': 8, 'MAP_TABLE': 9, 'ARMORY': 10,
-                            'MILITARY_STORAGE': 10, 'FOOD_STORAGE': 11,
-                            'HOBBIT_MANAGER': 12
-                        };
-                        const oldMap = { 'SMELTER': 53, 'BEDROLL': 61, 'INT_WALL': 41, 'ANVIL': 54 }; 
+if (obj) {
+    const transMap = {
+        'CHEST_STORAGE': 2, 
+        'HAY_TABLE': 3, 
+        'HAY_STORAGE': 4,
+        'STORE_COUNTER': 5, 
+        'TEMPLE_ALTAR': 6, 
+        'STAIRS_TOGGLE': 7,
+        'KITCHEN': 8, 
+        'MAP_TABLE': 9, 
+        'ARMORY': 10,
+        'MILITARY_STORAGE': 10, 
+        'FOOD_STORAGE': 11,
+        'HOBBIT_MANAGER': 12,
+        'GRAND_EXCHANGE': 13, // 👈 Added: Maps to Tile 13 in the transparentTileset
+        'HOBBIT_EXCHANGE': 14 // 👈 Added: Maps to Tile 14 of the transparentTileset
+    };
+    const oldMap = { 'SMELTER': 53, 'BEDROLL': 61, 'INT_WALL': 41, 'ANVIL': 54 }; 
 
-                        if (transMap[obj.type] !== undefined) {
-                            const tImg = images.transparentTileset;
-                            const tid = transMap[obj.type];
-                            if (tImg && tImg.complete) {
-                                ctx2.drawImage(tImg, (tid % 10) * 16, Math.floor(tid / 10) * 16, 16, 16, sX, sY, 16, 16);
-                            }
-                        } else if (oldMap[obj.type] !== undefined) {
-                            const oid = oldMap[obj.type];
-                            ctx2.drawImage(tileImg, (oid % 8) * 16, Math.floor(oid / 8) * 16, 16, 16, sX, sY, 16, 16);
-                        }
-                        else if (obj.type === 'CRAFTING_TABLE') {
-                            const kImg = images.keyTileset;
-                            if (kImg && kImg.complete) {
-                                ctx2.drawImage(kImg, (100 % 16) * 16, Math.floor(100 / 16) * 16, 16, 16, sX, sY, 16, 16);
-                            }
-                        }
-                    }
+    if (transMap[obj.type] !== undefined) {
+        const tImg = images.transparentTileset;
+        const tid = transMap[obj.type];
+        if (tImg && tImg.complete) {
+            ctx2.drawImage(tImg, (tid % 10) * 16, Math.floor(tid / 10) * 16, 16, 16, sX, sY, 16, 16);
+        }
+    } else if (oldMap[obj.type] !== undefined) {
+        const oid = oldMap[obj.type];
+        ctx2.drawImage(tileImg, (oid % 8) * 16, Math.floor(oid / 8) * 16, 16, 16, sX, sY, 16, 16);
+    } else if (obj.type === 'CRAFTING_TABLE') {
+        const kImg = images.keyTileset;
+        if (kImg && kImg.complete) {
+            ctx2.drawImage(kImg, (100 % 16) * 16, Math.floor(100 / 16) * 16, 16, 16, sX, sY, 16, 16);
+        }
+    }
+}
                 }
             }
         }

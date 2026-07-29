@@ -154,6 +154,30 @@ export function handleInteractions(modifier, worldMatrix, roomMatrix, fertilityM
                 inputState.interact = false; return;
             }
 
+            // Inside handleInteractions()
+if (obj.type === 'GRAND_EXCHANGE') {
+    // Open the Grand Exchange UI Modal
+    document.getElementById('exchange-menu').classList.remove('hidden');
+    // Trigger inventory and queue timer rendering
+    renderExchangeUI(); 
+    
+    inputState.interact = false;
+    inputState.action = false;
+    return;
+}
+
+// Inside handleInteractions() of interactionManager.js:
+if (obj.type === 'HOBBIT_EXCHANGE') {
+    // Open the Hobbit Exchange UI Modal
+    document.getElementById('hobbit-exchange-menu').classList.remove('hidden');
+    // Trigger the dynamic workforce and vault item listings
+    renderHobbitExchangeUI();
+    
+    inputState.interact = false;
+    inputState.action = false;
+    return;
+}
+
             if (obj.type === 'BEDROLL') {
                 if (confirm("🛌 Do you want to sleep here and safely log out?")) {
                     if (socket) {

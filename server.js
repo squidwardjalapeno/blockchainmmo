@@ -17,6 +17,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const serverBacteria = new Map(); 
+const activeHobbitQueues = new Map(); // key: queueId, value: { owner, hobbitData, packedItems, endTime, villageId, status }
 
 // 3. Initialize App & Socket
 const app = express();
@@ -30,6 +31,16 @@ const io = new Server(http, {
         methods: ["GET", "POST"]
     }
 });
+
+// Initialize contract instance
+const provider = new ethers.JsonRpcProvider(process.env.UNICHAIN_MAINNET_RPC);
+const deedAbi = ["function balanceOf(address owner) view returns (uint256)"];
+const deedContract = new ethers.Contract(process.env.SOVEREIGN_DEED_ADDRESS, deedAbi, provider);
+
+const EXTRACTION_DELAY_MS = 2 * 60 * 60 * 1000; // 🎯 2-Hour Processing Window
+const HOBBIT_EXPORT_DELAY = 2 * 60 * 60 * 1000; // 🎯 2-Hour Processing Window
+
+
 
 let currentTVL = 0.0;
 
@@ -196,7 +207,10 @@ const registeredServerRanches = new Set();
 const fishingStates = new Map(); 
 const chunkPlantsGenerated = new Set(); 
 const serverAnimals = [];              
-const activeJobs = new Map(); 
+const activeJobs = new Map();
+const activeOverseers = new Map(); // key: socketId, value: walletAddress 
+const activeExtractionQueues = new Map(); 
+
 
 // 🏰 SERVER-SIDE VILLAGE REGISTRY STATE
 const serverVillages = new Map(); 
@@ -535,9 +549,13 @@ function tickCombat() {
         if (hit || p.life <= 0) projectiles.splice(i, 1); 
     }
 
-    io.emit('position', { 
-        playerbase: players,
-        projectiles: projectiles
+    // WITH THIS PER-SOCKET BROADCAST:
+    io.sockets.sockets.forEach((socket) => {
+        const filteredData = filterEntitiesByVision(socket, players, projectiles);
+        socket.emit('position', {
+            playerbase: filteredData.players,
+            projectiles: filteredData.projectiles
+        });
     });
 }
 
@@ -581,6 +599,8 @@ function tickWorld() {
 
     // Update active spatial temperatures across the map cells
     updateSimulationTemperatures();
+
+    
 
     for (let [key, village] of serverVillages) {
         if (village.owner === null) continue;
@@ -899,6 +919,64 @@ io.on('connection', (socket) => {
         player.equipment = data.equipment || { mainHand: null };
 
         syncPlayerAndSave(socket.id);
+    });
+
+    // Triggered after MetaMask or Web2 auth is completed
+    socket.on('verifySovereignty', async (data) => {
+        const { address, requestedMode } = data;
+        if (!address) return;
+
+        try {
+            const cleanAddress = ethers.getAddress(address);
+            
+            // Query the Parent Deed contract on Unichain Mainnet
+            const deedBalance = await deedContract.balanceOf(cleanAddress);
+            const ownedCount = parseInt(deedBalance.toString());
+
+            // Check if address is the owner of at least one deed, or the master game admin
+            const isOwner = (ownedCount > 0) || (cleanAddress.toLowerCase() === process.env.ADMIN_ADDRESS.toLowerCase());
+
+            if (isOwner) {
+                // Handshake Succeeded
+                socket.wallet = cleanAddress;
+                activeOverseers.set(socket.id, cleanAddress);
+
+                socket.emit('sovereigntyVerified', {
+                    success: true,
+                    address: cleanAddress,
+                    mode: requestedMode
+                });
+                
+                console.log(`🏰 Sovereign Session Authorized: ${cleanAddress} entered ${requestedMode} mode.`);
+            } else {
+                // Handshake Failed (Restrict if trying to access RTS/Terminal)
+                if (requestedMode === 'RTS' || requestedMode === 'TERMINAL') {
+                    socket.emit('sovereigntyVerified', {
+                        success: false,
+                        message: "ACCESS DENIED: You do not own a Sovereign Deed! Restricting to Hero Mode."
+                    });
+                    console.log(`🔒 Unauthorized attempt blocked: ${cleanAddress} tried to access ${requestedMode}.`);
+                } else {
+                    // MOBA mode allows guest/landless players standardly
+                    socket.wallet = cleanAddress;
+                    socket.emit('sovereigntyVerified', {
+                        success: true,
+                        address: cleanAddress,
+                        mode: 'MOBA'
+                    });
+                }
+            }
+        } catch (err) {
+            console.error("❌ On-chain sovereignty handshake failed:", err);
+            socket.emit('sovereigntyVerified', {
+                success: false,
+                message: "Blockchain synchronization error. Please try again."
+            });
+        }
+    });
+
+    socket.on('disconnect', () => {
+        activeOverseers.delete(socket.id);
     });
 
     socket.on('requestWellState', (data) => {
@@ -2312,6 +2390,264 @@ function syncPlayerAndSave(socketId) {
     };
 
     fs.writeFileSync('persistence.json', JSON.stringify(userDb, null, 2));
+}
+
+// === HELPER FUNCTIONS FOR SPATIAL VISION CULLING ===
+
+/**
+ * Compiles all active vision sources for a given village owner's estate.
+ */
+function getVillageVisionSources(ownerWalletAddress) {
+    const sources = [];
+    
+    // 1. Add static well/village vision (Range: 400px / 25 tiles)
+    for (let [key, village] of serverVillages) {
+        if (village.owner === ownerWalletAddress) {
+            sources.push({ x: village.x * 16 + 8, y: village.y * 16 + 8, radius: 400 });
+        }
+    }
+    
+    // 2. Add dynamic worker/scout vision (Range: 96px / 6 tiles)
+    // (If you have active server-side hobbit objects, loop through them here)
+    
+    return sources;
+}
+
+/**
+ * Filters the global entities map based on what a specific strategist/overseer can see.
+ */
+function filterEntitiesByVision(socket, originalPlayers, originalProjectiles) {
+    const wallet = socket.wallet || "";
+    const isStrategistOrOverseer = wallet.startsWith('Overseer_') || wallet.startsWith('Strategist_') || wallet.startsWith('User_strategist') || wallet.startsWith('User_overseer');
+
+    // If standard MOBA hero or admin, bypass spatial filtering
+    if (!isStrategistOrOverseer) {
+        return { players: originalPlayers, projectiles: originalProjectiles };
+    }
+
+    const filteredPlayers = {};
+    const filteredProjectiles = [];
+    const myVisionSources = getVillageVisionSources(wallet);
+
+    // Filter Players
+    for (let id in originalPlayers) {
+        const p = originalPlayers[id];
+        if (p.isOffline || p.hp <= 0) continue;
+
+        let isVisible = false;
+        for (let src of myVisionSources) {
+            const dist = Math.hypot(p.x - src.x, p.y - src.y);
+            if (dist <= src.radius) {
+                isVisible = true;
+                break;
+            }
+        }
+        if (isVisible || id === socket.id) {
+            filteredPlayers[id] = p;
+        }
+    }
+
+    // Filter Projectiles
+    for (let proj of originalProjectiles) {
+        let isVisible = false;
+        for (let src of myVisionSources) {
+            const dist = Math.hypot(proj.x - src.x, proj.y - src.y);
+            if (dist <= src.radius) {
+                isVisible = true;
+                break;
+            }
+        }
+        if (isVisible) {
+            filteredProjectiles.push(proj);
+        }
+    }
+
+    return { players: filteredPlayers, projectiles: filteredProjectiles };
+}
+
+/**
+ * Initiates the extraction (minting) queue at the Grand Exchange.
+ */
+function startItemExtraction(socket, itemType, count, villageId) {
+    const playerWalletAddress = socket.wallet;
+    if (!playerWalletAddress) return;
+
+    // Remove the physical items from the player's database inventory immediately
+    const success = removeDatabaseItems(playerWalletAddress, itemType, count);
+    if (!success) {
+        socket.emit('extractionError', "Insufficient items in inventory!");
+        return;
+    }
+
+    const queueId = 'queue_' + Math.random().toString(36).substr(2, 9);
+    const now = Date.now();
+
+    activeExtractionQueues.set(queueId, {
+        id: queueId,
+        owner: playerWalletAddress,
+        itemType: itemType,
+        count: count,
+        startTime: now,
+        endTime: now + EXTRACTION_DELAY_MS,
+        villageId: villageId,
+        status: 'PROCESSING'
+    });
+
+    io.emit('extractionStarted', { queueId, villageId, endTime: now + EXTRACTION_DELAY_MS });
+    console.log(`📦 Extraction Started: ${count}x ${itemType} locked in ${villageId} queue.`);
+}
+
+/**
+ * Sweeps the active queues. If the timer has concluded, it triggers the on-chain mint.
+ */
+async function tickExtractionQueues() {
+    const now = Date.now();
+
+    for (let [queueId, queue] of activeExtractionQueues) {
+        if (queue.status === 'PROCESSING' && now >= queue.endTime) {
+            queue.status = 'COMPLETED';
+            
+            try {
+                // Call your deployed StakedStorage smart contract on Unichain
+                const tx = await stakedStorageContract.mint(
+                    queue.owner, 
+                    getItemTypeId(queue.itemType), 
+                    queue.count, 
+                    "0x"
+                );
+                await tx.wait();
+                
+                activeExtractionQueues.delete(queueId);
+                io.emit('extractionCompleted', { queueId, owner: queue.owner });
+                console.log(`✅ On-Chain Mint Complete: ${queue.count}x ${queue.itemType} delivered to ${queue.owner}.`);
+            } catch (err) {
+                console.error("Failed to mint extracted NFT:", err);
+                queue.status = 'FAILED'; // Retried on next pass
+            }
+        }
+    }
+}
+setInterval(tickExtractionQueues, 15000); // Check every 15 seconds
+
+/**
+ * === THE CONQUEST HIJACK ===
+ * If a village well is captured, this function reassigns all active extraction
+ * queues associated with that village to the new conqueror.
+ */
+function handleVillageConquestQueues(villageId, newOwnerWalletAddress) {
+    activeExtractionQueues.forEach((queue) => {
+        if (queue.villageId === villageId && queue.status === 'PROCESSING') {
+            console.log(`🎯 HIJACKED! ${queue.owner} lost pending queue ${queue.id} to new conqueror: ${newOwnerWalletAddress}`);
+            queue.owner = newOwnerWalletAddress; // New owner gets the minted NFT!
+        }
+    });
+}
+
+/**
+ * Initiates the packaging and export queue at the Hobbit Exchange.
+ */
+function startHobbitPackaging(socket, hobbitId, packedItemTypes, villageId) {
+    const playerWalletAddress = socket.wallet;
+    if (!playerWalletAddress) return;
+
+    const dbHobbit = getDatabaseHobbit(hobbitId);
+    if (!dbHobbit) return;
+
+    // Verify and remove packed items from the village vault database
+    const removedItems = [];
+    for (let itemType of packedItemTypes) {
+        const success = removeVaultItem(villageId, itemType, 1);
+        if (success) {
+            removedItems.push(itemType);
+        }
+    }
+
+    // Delete the Hobbit from the active database workforce session
+    deleteDatabaseHobbit(hobbitId);
+
+    const queueId = 'hqueue_' + Math.random().toString(36).substr(2, 9);
+    const now = Date.now();
+
+    activeHobbitQueues.set(queueId, {
+        id: queueId,
+        owner: playerWalletAddress,
+        hobbitData: dbHobbit,
+        packedItems: removedItems,
+        startTime: now,
+        endTime: now + HOBBIT_EXPORT_DELAY,
+        villageId: villageId,
+        status: 'PROCESSING'
+    });
+
+    io.emit('hobbitExportStarted', { queueId, villageId, endTime: now + HOBBIT_EXPORT_DELAY });
+    console.log(`📦 Hobbit NFA Packaging Started: ${dbHobbit.name} queued with ${removedItems.length} items.`);
+}
+
+/**
+ * Sweeps the active Hobbit packaging queues.
+ * Atomically mints the Hobbit NFT and nests their gear inside their TBA.
+ */
+async function tickHobbitQueues() {
+    const now = Date.now();
+
+    for (let [queueId, queue] of activeHobbitQueues) {
+        if (queue.status === 'PROCESSING' && now >= queue.endTime) {
+            queue.status = 'COMPLETED';
+
+            try {
+                console.log(`⏳ Minting Hobbit NFT for ${queue.owner}...`);
+                
+                // 1. Mint the Hobbit NFT directly to the owner's personal wallet
+                const tx = await hobbitContract.mintHobbit(queue.owner);
+                const receipt = await tx.wait();
+                
+                const hobbitTokenId = extractTokenIdFromReceipt(receipt);
+
+                // 2. Calculate the newly deployed Hobbit's TBA address
+                const hobbitTBAAddress = await registryContract.account(
+                    process.env.TBA_BLUEPRINT_ADDRESS,
+                    ethers.zeroPadValue("0x00", 32),
+                    130, // Unichain Mainnet
+                    process.env.SOVEREIGN_HOBBIT_ADDRESS,
+                    hobbitTokenId
+                );
+
+                // 3. Nest the packed items directly into the Hobbit's TBA wallet
+                for (let itemType of queue.packedItems) {
+                    console.log(`⏳ Nesting ${itemType} NFT into Hobbit TBA: ${hobbitTBAAddress}...`);
+                    const gearTx = await stakedStorageContract.mint(
+                        hobbitTBAAddress,
+                        getItemTypeId(itemType),
+                        1,
+                        "0x"
+                    );
+                    await gearTx.wait();
+                }
+
+                activeHobbitQueues.delete(queueId);
+                io.emit('hobbitExportCompleted', { queueId, owner: queue.owner, tokenId: hobbitTokenId });
+                console.log(`🎉 Web4 NFA Fully Packaged: Hobbit #${hobbitTokenId} delivered with ${queue.packedItems.length} items.`);
+            } catch (err) {
+                console.error("Failed to complete on-chain Hobbit packaging:", err);
+                queue.status = 'FAILED'; // Retried on next pass
+            }
+        }
+    }
+}
+setInterval(tickHobbitQueues, 15000); // Check every 15 seconds
+
+/**
+ * === THE CONQUEST HIJACK ===
+ * If a village well is captured, this function reassigns all active Hobbit packaging
+ * queues associated with that village to the new conqueror.
+ */
+function handleVillageConquestHobbitQueues(villageId, newOwnerWalletAddress) {
+    activeHobbitQueues.forEach((queue) => {
+        if (queue.villageId === villageId && queue.status === 'PROCESSING') {
+            console.log(`🎯 HIJACKED! Pending Hobbit NFA ${queue.hobbitData.name} transferred to: ${newOwnerWalletAddress}`);
+            queue.owner = newOwnerWalletAddress; // Conqueror receives the minted NFA!
+        }
+    });
 }
 
 function broadcastEffectiveTGV() {

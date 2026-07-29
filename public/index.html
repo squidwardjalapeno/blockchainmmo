@@ -13,33 +13,41 @@
         <canvas id="myCanvas3"></canvas>
 
         <!-- MAIN MENU OVERLAY -->
-        <div id="main-menu" class="menu-overlay">
-            <div class="menu-content pixel-panel" style="width: 500px; text-align: center;">
-                <h1 style="color: var(--banana); font-size: 2.5em; margin-bottom: 10px; text-shadow: 4px 4px 0px var(--bg-dark);">Seeds & Bones</h1>
-                <p style="color: var(--text-dark); margin-bottom: 30px; font-size: 10px;">A RETRO SURVIVAL MOBA</p>
-                
-                <!-- Web3 Login -->
-                <button id="main-connect-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 15px;">CONNECT WALLET</button>
-                
-                <div style="font-size: 8px; color: #555; margin-bottom: 15px;">--- OR ---</div>
+<div id="main-menu" class="menu-overlay">
+    <div class="menu-content pixel-panel" style="width: 500px; text-align: center;">
+        <h1 style="color: var(--banana); font-size: 2.5em; margin-bottom: 10px; text-shadow: 4px 4px 0px var(--bg-dark);">Seeds & Bones</h1>
+        <p style="color: var(--text-dark); margin-bottom: 30px; font-size: 10px;">A RETRO SURVIVAL MOBA</p>
+        
+        <!-- TIER 1: MODE SELECTION -->
+        <div id="menu-tier-1" style="display: flex; flex-direction: column; gap: 12px;">
+            <p style="font-size: 8px; color: #555; margin-bottom: 10px;">--- CHOOSE YOUR PATHWAY ---</p>
+            <button id="select-moba-btn" class="pixel-btn safe" style="width: 100%;">PLAY AS HERO (MOBA)</button>
+            <button id="select-rts-btn" class="pixel-btn" style="width: 100%; background-color: var(--banana);">PLAY AS OVERSEER (RTS)</button>
+            <button id="select-terminal-btn" class="pixel-btn" style="width: 100%; background-color: #00FF00; color: black; border: 4px solid #005500;">PLAY AS STRATEGIST (TERMINAL)</button>
+        </div>
 
-                <!-- Web2 Login / Register -->
-                <input type="text" id="login-username" class="pixel-input" placeholder="Username" style="width: 100%; margin-bottom: 10px; text-align: center;">
-                <input type="password" id="login-password" class="pixel-input" placeholder="Password" style="width: 100%; margin-bottom: 15px; text-align: center;">
-                
-                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                    <button id="login-btn" class="pixel-btn" style="flex: 1;">LOGIN</button>
-                    <button id="register-btn" class="pixel-btn" style="flex: 1;">REGISTER</button>
-                </div>
+        <!-- TIER 2: SOVEREIGN AUTHENTICATION (Initially Hidden) -->
+        <div id="menu-tier-2" class="hidden" style="display: flex; flex-direction: column; gap: 10px; margin-top: 15px;">
+            <button id="back-to-tier-1-btn" class="pixel-btn cancel" style="font-size: 8px; padding: 6px; width: 80px; align-self: flex-start; margin-bottom: 10px;"><- BACK</button>
+            
+            <p id="auth-title-label" style="font-size: 10px; color: var(--text-dark); margin-bottom: 10px; text-transform: uppercase;">SOVEREIGN AUTHENTICATION</p>
 
-                <!-- Role Choices (RTS vs Guest Hero vs Terminal) -->
-                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 15px; border-top: 4px dashed var(--bg-dark); padding-top: 15px;">
-                    <button id="guest-btn" class="pixel-btn" style="width: 100%; font-size: 10px; background-color: var(--banana); color: var(--bg-dark);">PLAY AS HERO (GUEST)</button>
-                    <button id="menu-rts-btn" class="pixel-btn safe" style="width: 100%; font-size: 10px;">PLAY AS OVERSEER (RTS)</button>
-                    <button id="menu-terminal-btn" class="pixel-btn" style="width: 100%; font-size: 10px; background-color: #00FF00; color: black; border: 4px solid #005500;">PLAY AS STRATEGIST (TERMINAL)</button>
-                </div>
+            <!-- Web3 Login -->
+            <button id="main-connect-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 10px;">CONNECT METAMASK</button>
+            
+            <div style="font-size: 8px; color: #555; margin-bottom: 10px;">--- OR ---</div>
+
+            <!-- Web2 Login -->
+            <input type="text" id="login-username" class="pixel-input" placeholder="Username" style="width: 100%; margin-bottom: 10px; text-align: center;">
+            <input type="password" id="login-password" class="pixel-input" placeholder="Password" style="width: 100%; margin-bottom: 10px; text-align: center;">
+            
+            <div style="display: flex; gap: 10px;">
+                <button id="login-btn" class="pixel-btn" style="flex: 1;">LOGIN</button>
+                <button id="register-btn" class="pixel-btn" style="flex: 1;">REGISTER</button>
             </div>
         </div>
+    </div>
+</div>
 
         <!-- TERMINAL MODE OVERLAY (Text-based Command Console) -->
         <div id="terminal-overlay" class="hidden" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: black; color: #00FF00; font-family: monospace; z-index: 5000; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 15px; overflow: hidden; font-size: 11px; line-height: 1.3;">
@@ -252,6 +260,74 @@
                 <button id="close-activity-btn" class="pixel-btn cancel" style="width: 100%;">CLOSE LEDGER</button>
             </div>
         </div>
+
+        <!-- GRAND EXCHANGE (MINT & MELT CONSOLE) -->
+<div id="exchange-menu" class="hidden menu-modal">
+    <div class="pixel-panel chest-modal" style="width: 650px;">
+        <h2 style="color: var(--text-dark); margin-top: 0; text-align: center;">🏦 GRAND EXCHANGE</h2>
+        <p style="font-size: 8px; text-align: center; margin-bottom: 20px; color: #555;">Convert database items into secure NFTs. Items are vulnerable during processing!</p>
+        
+        <div class="chest-layout">
+            <!-- Left: Player Inventory -->
+            <div class="chest-pane">
+                <h3>YOUR BACKPACK</h3>
+                <div id="exchange-hero-inv" class="inv-grid" style="height: 180px;"></div>
+            </div>
+            
+            <!-- Right: Active Processing Queues -->
+            <div class="chest-pane">
+                <h3>PROCESSING VAULT</h3>
+                <div id="exchange-vault-list" style="background: rgba(255,255,255,0.5); border: 4px solid var(--bg-dark); height: 180px; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px;">
+                    <!-- Processing queues injected here dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <div class="chest-controls" style="margin-top: 15px;">
+            <button id="close-exchange-btn" class="pixel-btn cancel" style="width: 100%;">STEP AWAY</button>
+        </div>
+    </div>
+</div>
+
+<!-- HOBBIT EXCHANGE (NFA PACKAGING CONSOLE) -->
+<div id="hobbit-exchange-menu" class="hidden menu-modal" style="z-index: 3000;">
+    <div class="pixel-panel chest-modal" style="width: 700px;">
+        <h2 style="color: var(--text-dark); margin-top: 0; text-align: center;">🎛️ HOBBIT PACKAGING CONSOLE</h2>
+        <p style="font-size: 8px; text-align: center; margin-bottom: 20px; color: #555;">Select a worker and package them with tools/UNI into a portable NFA. Processing takes 2 hours!</p>
+        
+        <div class="chest-layout" style="gap: 15px;">
+            <!-- Left: Select Hobbit -->
+            <div class="chest-pane" style="flex: 1;">
+                <h3>SELECT WORKER</h3>
+                <div id="hex-hobbit-list" style="background: rgba(255,255,255,0.5); border: 4px solid var(--bg-dark); height: 180px; overflow-y: auto; padding: 5px; display: flex; flex-direction: column; gap: 5px;">
+                    <!-- Village Hobbits injected here -->
+                </div>
+            </div>
+            
+            <!-- Center: Pack items into Hobbit's Backpack -->
+            <div class="chest-pane" style="flex: 1.2; border-left: 2px dashed #888; border-right: 2px dashed #888; padding: 0 10px;">
+                <h3 id="hex-packing-title">LOAD BACKPACK</h3>
+                <p style="font-size: 6px; text-align: center; color: var(--banana-dark); margin-top: -5px; margin-bottom: 5px;">Select up to 4 items from the vault to package.</p>
+                <div id="hex-vault-items" class="inv-grid" style="height: 140px; grid-template-columns: repeat(3, 1fr);">
+                    <!-- Vault items available for packing -->
+                </div>
+            </div>
+
+            <!-- Right: Active Hobbit Export Queues -->
+            <div class="chest-pane" style="flex: 1;">
+                <h3>EXPORT VAULT</h3>
+                <div id="hex-export-list" style="background: rgba(255,255,255,0.5); border: 4px solid var(--bg-dark); height: 180px; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 8px;">
+                    <!-- Active Hobbit minting queues with timers -->
+                </div>
+            </div>
+        </div>
+
+        <div class="chest-controls" style="margin-top: 15px;">
+            <button id="hex-start-btn" class="pixel-btn safe" style="flex: 1;" disabled>INITIATE PACKAGING</button>
+            <button id="close-hex-btn" class="pixel-btn cancel" style="flex: 1;">DISMISS</button>
+        </div>
+    </div>
+</div>
 
         <!-- WORKSHOP MENU -->
         <div id="workshop-menu" class="hidden menu-modal">
