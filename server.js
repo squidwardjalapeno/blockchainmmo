@@ -988,57 +988,61 @@ io.on('connection', (socket) => {
         syncPlayerAndSave(socket.id);
     });
 
-    // Triggered after MetaMask or Web2 auth is completed
+    // server.js - Updated verifySovereignty listener
     socket.on('verifySovereignty', async (data) => {
         const { address, requestedMode } = data;
         if (!address) return;
 
         try {
             const cleanAddress = ethers.getAddress(address);
-            
-            // Query the Parent Deed contract on Unichain Mainnet
             const deedBalance = await deedContract.balanceOf(cleanAddress);
             const ownedCount = parseInt(deedBalance.toString());
 
-            // Check if address is the owner of at least one deed, or the master game admin
             const isOwner = (ownedCount > 0) || (cleanAddress.toLowerCase() === process.env.ADMIN_ADDRESS.toLowerCase());
 
             if (isOwner) {
-                // Handshake Succeeded
                 socket.wallet = cleanAddress;
                 activeOverseers.set(socket.id, cleanAddress);
 
+                // 🎯 THE FIX: Instantly instantiate their server-side session as Overseer/Strategist
+                players[socket.id] = {
+                    id: socket.id,
+                    wallet: cleanAddress,
+                    charClass: (requestedMode === 'RTS') ? 'Overseer' : 'Strategist',
+                    skills: [],
+                    x: 80800,
+                    y: 80800,
+                    hp: 100,
+                    maxHp: 100,
+                    shield: 0,
+                    inventory: [],
+                    isOffline: false,
+                    energy: 100,
+                    maxEnergy: 100
+                };
+
+                // Emit successful handshake
                 socket.emit('sovereigntyVerified', {
                     success: true,
                     address: cleanAddress,
                     mode: requestedMode
                 });
-                
+
+                // 🎯 THE FIX: Instantly restore their session on the client, bypassing needsCharacterCreation
+                socket.emit('restoreHero', players[socket.id]);
+
                 console.log(`🏰 Sovereign Session Authorized: ${cleanAddress} entered ${requestedMode} mode.`);
             } else {
-                // Handshake Failed (Restrict if trying to access RTS/Terminal)
                 if (requestedMode === 'RTS' || requestedMode === 'TERMINAL') {
-                    socket.emit('sovereigntyVerified', {
-                        success: false,
-                        message: "ACCESS DENIED: You do not own a Sovereign Deed! Restricting to Hero Mode."
-                    });
-                    console.log(`🔒 Unauthorized attempt blocked: ${cleanAddress} tried to access ${requestedMode}.`);
+                    socket.emit('sovereigntyVerified', { success: false, message: "ACCESS DENIED: No Deed owned. Restricting to Hero Mode." });
                 } else {
-                    // MOBA mode allows guest/landless players standardly
                     socket.wallet = cleanAddress;
-                    socket.emit('sovereigntyVerified', {
-                        success: true,
-                        address: cleanAddress,
-                        mode: 'MOBA'
-                    });
+                    socket.emit('sovereigntyVerified', { success: true, address: cleanAddress, mode: 'MOBA' });
                 }
             }
         } catch (err) {
-            console.error("❌ On-chain sovereignty handshake failed:", err);
-            socket.emit('sovereigntyVerified', {
-                success: false,
-                message: "Blockchain synchronization error. Please try again."
-            });
+            console.error("Handshake failed:", err);
+            socket.emit('sovereigntyVerified', { success: false, message: "Unichain connection latency. Retry." });
         }
     });
 

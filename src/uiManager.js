@@ -2319,12 +2319,17 @@ export function setupMultiplayerListeners(s) {
         updateHUD();
         renderTabContent(); 
 
+        // Hide the main menu overlay
         document.getElementById('main-menu').classList.add('hidden');
+        
+        // 🎯 THE FIX: Explicitly force-hide the character creation panel for strategist roles
         const charMenu = document.getElementById('character-creation-menu');
-        if (charMenu) charMenu.classList.add('hidden');
+        if (charMenu) {
+            charMenu.classList.add('hidden');
+        }
+        
         document.getElementById('hud').style.display = 'block';
-
-        console.log("✅ Identity confirmed. Inventory synced.");
+        console.log("✅ Identity confirmed. Session fully restored.");
     });
 
     s.on('chestData', (data) => { 
