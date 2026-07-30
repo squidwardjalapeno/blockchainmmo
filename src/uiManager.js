@@ -416,23 +416,11 @@ export function initUI() {
     }
 
     // --- LOGIN SYSTEMS ---
-    const mainConnectBtn = document.getElementById('main-connect-btn');
     const loginBtn = document.getElementById('login-btn');
     const registerBtn = document.getElementById('register-btn');
     const guestBtn = document.getElementById('guest-btn');
 
-    if (mainConnectBtn) {
-        mainConnectBtn.onclick = async () => {
-            mainConnectBtn.innerText = "CONNECTING...";
-            let address = await connectWallet();
-            if (address && socket) {
-                setPlayerWallet(address);
-                socket.emit('identifyWallet', address);
-            } else {
-                mainConnectBtn.innerText = "CONNECT WALLET";
-            }
-        };
-    }
+    
 
     const handleAuth = (type) => {
         const user = document.getElementById('login-username').value;
@@ -1485,17 +1473,21 @@ export function initTwoTierMenu(socketInstance) {
 
         if (data.success) {
             console.log(`🏰 Handshake Confirmed! Mode: ${data.mode}`);
-            document.getElementById('main-menu').classList.add('hidden');
-            document.getElementById('hud').style.display = 'block';
+            
+            // Explicitly set the active local player wallet
+            setPlayerWallet(data.address);
 
-            // Launch the respective mode
             if (data.mode === 'RTS') {
+                document.getElementById('main-menu').classList.add('hidden');
+                document.getElementById('hud').style.display = 'block';
                 import('./rtsControls.js').then(rts => rts.setRtsMode(true));
             } else if (data.mode === 'TERMINAL') {
+                document.getElementById('main-menu').classList.add('hidden');
                 import('./terminalManager.js').then(term => term.setTerminalMode(true));
             } else {
-                // Launch standard MOBA Hero mode
+                // Launch standard MOBA Hero mode and load their session
                 import('./rtsControls.js').then(rts => rts.setRtsMode(false));
+                socketInstance.emit('identifyWallet', data.address);
             }
         } else {
             // 🎯 THE BLOCK: Enforce restriction, alert the player, and kick them back to Tier 1
