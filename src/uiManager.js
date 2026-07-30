@@ -1500,7 +1500,6 @@ export function initTwoTierMenu(socketInstance) {
 
 // client/uiManager.js - Update your spawner button handler
 
-// Update the parameter list to accept the server-provided "hobbitCount"
 export function setupClaimPeacefullyButton(socketInstance, wellX, wellY, hobbitCount) {
     const claimBtn = document.getElementById('village-claim-btn');
     if (!claimBtn) return;
@@ -1517,6 +1516,10 @@ export function setupClaimPeacefullyButton(socketInstance, wellX, wellY, hobbitC
         try {
             newClaimBtn.innerText = "SIGNING...";
             newClaimBtn.disabled = true;
+
+            // Dynamically import Ethers v6 directly from the CDN
+            const ethersModule = await import("https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.min.js");
+            const ethers = ethersModule.ethers;
 
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
