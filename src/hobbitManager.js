@@ -96,6 +96,8 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
     const heroCY = Math.floor(focus.y / 1600);
     const now = Date.now();
 
+
+    /*
     // ==========================================
     // ⚔️ REGIONAL HYBRID SPAWNER SYSTEM
     // ==========================================
@@ -147,6 +149,7 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         });
     }
 
+    */
     // ==========================================
     // 🌍 MACRO CATCH-UP ENGINE
     // ==========================================
