@@ -11,7 +11,7 @@ import { recalculateStats } from './interactionManager.js';
 import { PALADIN_SKILLS } from './abilities.js'; 
 import { roomMatrix } from './game.js';
 import { viewport } from './viewport.js';
-import { hobbits } from './hobbitCore.js';
+import { hobbits, getHobbitVillage } from './hobbitCore.js';
 import { macroTravelers } from './hobbitManager.js';
 
 
@@ -1498,8 +1498,6 @@ export function initTwoTierMenu(socketInstance) {
     });
 }
 
-// client/uiManager.js - Update your spawner button handler
-
 export function setupClaimPeacefullyButton(socketInstance, wellX, wellY, hobbitCount) {
     const claimBtn = document.getElementById('village-claim-btn');
     if (!claimBtn) return;
@@ -1527,10 +1525,26 @@ export function setupClaimPeacefullyButton(socketInstance, wellX, wellY, hobbitC
 
             const salt = ethers.solidityPackedKeccak256(["uint256", "uint256"], [wellX, wellY]);
 
-            console.log(`🛰️ Sending claim for well [${wellX}, ${wellY}] with ${hobbitCount} Hobbits...`);
+            // 🎯 SECURE HOBBIT COUNT QUERY
+            // Query all living hobbits explicitly assigned to this village
+            let activeHobbitCount = 0;
+
+            hobbits.forEach(hob => {
+                if (hob.hp <= 0) return; // Must be alive
+
+                const village = getHobbitVillage(hob);
+                if (village && village.x === wellX && village.y === wellY) {
+                    activeHobbitCount++;
+                }
+            });
+
+            // Enforce a minimum baseline of 3 if the area is empty or uninitialized
+            const finalHobbitCount = Math.max(3, activeHobbitCount);
+
+            console.log(`🛰️ Sending claim for well [${wellX}, ${wellY}] with ${finalHobbitCount} Hobbits...`);
             
             // 🎯 PASS DYNAMIC HOBBIT COUNT TO THE METAMASK TRANSACTION
-            const tx = await spawner.claimVillagePeacefully(salt, hobbitCount);
+            const tx = await spawner.claimVillagePeacefully(salt, finalHobbitCount);
             
             alert("Transaction sent! Mining... please wait.");
             const receipt = await tx.wait();
@@ -1539,7 +1553,8 @@ export function setupClaimPeacefullyButton(socketInstance, wellX, wellY, hobbitC
                 txHash: receipt.hash,
                 wellX: wellX,
                 wellY: wellY,
-                buyerAddress: await signer.getAddress()
+                buyerAddress: await signer.getAddress(),
+                hobbitCount: finalHobbitCount // Pass the exact count to the server
             });
 
             document.getElementById('village-menu').classList.add('hidden');
