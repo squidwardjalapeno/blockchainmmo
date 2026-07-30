@@ -989,6 +989,7 @@ io.on('connection', (socket) => {
     });
 
     // server.js - Updated verifySovereignty listener
+    // server.js - Updated verifySovereignty listener with active state checks
     socket.on('verifySovereignty', async (data) => {
         const { address, requestedMode } = data;
         if (!address) return;
@@ -997,14 +998,32 @@ io.on('connection', (socket) => {
             const cleanAddress = ethers.getAddress(address);
             const deedBalance = await deedContract.balanceOf(cleanAddress);
             const ownedCount = parseInt(deedBalance.toString());
+            const ownsNFT = (ownedCount > 0);
 
-            const isOwner = (ownedCount > 0) || (cleanAddress.toLowerCase() === process.env.ADMIN_ADDRESS.toLowerCase());
+            // 🎯 ACTIVE STATE CHECK: Iterate through active villages to verify server-side registration
+            let hasActiveVillage = false;
+            for (let [key, village] of serverVillages) {
+                if (village.owner) {
+                    try {
+                        const cleanOwner = ethers.getAddress(village.owner);
+                        if (cleanOwner === cleanAddress) {
+                            hasActiveVillage = true;
+                            break;
+                        }
+                    } catch (e) {}
+                }
+            }
 
-            if (isOwner) {
+            const isAdmin = (cleanAddress.toLowerCase() === process.env.ADMIN_ADDRESS.toLowerCase());
+
+            // Access to RTS/Terminal requires BOTH the on-chain NFT and an active server-side village
+            const isAuthorized = (ownsNFT && hasActiveVillage) || isAdmin;
+
+            if (isAuthorized) {
                 socket.wallet = cleanAddress;
                 activeOverseers.set(socket.id, cleanAddress);
 
-                // 🎯 THE FIX: Instantly instantiate their server-side session as Overseer/Strategist
+                // Instantly instantiate their server-side session as Overseer/Strategist
                 players[socket.id] = {
                     id: socket.id,
                     wallet: cleanAddress,
@@ -1028,13 +1047,18 @@ io.on('connection', (socket) => {
                     mode: requestedMode
                 });
 
-                // 🎯 THE FIX: Instantly restore their session on the client, bypassing needsCharacterCreation
+                // Instantly restore their session on the client, bypassing needsCharacterCreation
                 socket.emit('restoreHero', players[socket.id]);
 
                 console.log(`🏰 Sovereign Session Authorized: ${cleanAddress} entered ${requestedMode} mode.`);
             } else {
                 if (requestedMode === 'RTS' || requestedMode === 'TERMINAL') {
-                    socket.emit('sovereigntyVerified', { success: false, message: "ACCESS DENIED: No Deed owned. Restricting to Hero Mode." });
+                    // Distinguish between having no NFT vs having an expired/unregistered village
+                    const msg = !ownsNFT 
+                        ? "ACCESS DENIED: No Deed owned on-chain. Restricting to Hero Mode."
+                        : "ACCESS DENIED: Your Deed has expired or is inactive in this session. Re-claim your village to activate.";
+                        
+                    socket.emit('sovereigntyVerified', { success: false, message: msg });
                 } else {
                     socket.wallet = cleanAddress;
                     socket.emit('sovereigntyVerified', { success: true, address: cleanAddress, mode: 'MOBA' });
@@ -1123,6 +1147,8 @@ io.on('connection', (socket) => {
             if (receipt && receipt.status === 1) {
                 let tbaAddress = null;
                 let onChainHobbitCount = 0;
+                let deedTokenId = null; // 🆕 Track the specific Token ID
+
 
                 // Decode the event logs from the receipt to extract the deployed TBA and Hobbit Count
                 for (let log of receipt.logs) {
@@ -1131,6 +1157,8 @@ io.on('connection', (socket) => {
                         if (parsed && parsed.name === "VillageSpunIntact") {
                             tbaAddress = parsed.args.tbaAddress;
                             onChainHobbitCount = parseInt(parsed.args.hobbitCount.toString());
+                            deedTokenId = parseInt(parsed.args.deedTokenId.toString()); // 🆕 Extract Token ID
+
                             break;
                         }
                     } catch (e) {}
@@ -1148,6 +1176,8 @@ io.on('connection', (socket) => {
                     y: wellY,
                     owner: cleanBuyer,
                     tbaAddress: tbaAddress,
+                    deedTokenId: deedTokenId, // 🆕 Associate the Token ID directly
+
                     captureProgress: 0,
                     capturer: null
                 });
