@@ -2183,7 +2183,7 @@ io.on('connection', (socket) => {
         const requestedCount = Math.min(64, Math.max(1, data.count || 1)); 
 
         const effectiveTGV = Math.max(0, currentTVL - globalDebt);
-        const pointsPerSeed = effectiveTGV / 64000;
+        const pointsPerSeed = effectiveTGV / 640;
         const totalPoints = pointsPerSeed * requestedCount; 
 
         player.inGameUni = (parseFloat(player.inGameUni) || 0.0) + totalPoints;
