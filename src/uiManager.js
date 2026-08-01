@@ -826,6 +826,11 @@ function getItemIcon(item) {
     if (item.seedType === "coin") return "💰";
     if (item.seedType === "weapon_dagger") return "🗡️";
     if (item.isKey) return "🔑";
+
+    // Add these two explicit mappings:
+    if (item.seedType === "chicken_poop") return "💩";
+    if (item.seedType === "raw_chicken") return "🍗";
+    
     return "❓";
 }
 

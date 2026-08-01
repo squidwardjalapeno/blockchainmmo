@@ -940,6 +940,19 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Add this new listener directly below:
+    socket.on('movement', (data) => {
+        const player = players[socket.id];
+        if (!player) return;
+        player.x = data.x;
+        player.y = data.y;
+        player.dir = data.dir;
+        player.animFrame = data.animFrame;
+        player.isMoving = data.isMoving;
+        player.isWindingUp = data.isWindingUp;
+        player.currentTileID = data.currentTileID;
+    });
+
     socket.on('rts_camera_move', (data) => {
         const p = players[socket.id];
         if (p) {
