@@ -1173,7 +1173,7 @@ async function executeBurnAndReclaim(tokenId, tbaAddress) {
     console.log("Raw Token ID:", tokenId);
     console.log("Raw TBA Address:", tbaAddress);
 
-    // Strict parameter validation to prevent null/undefined errors
+    // Strict parameter validation to prevent null/undefined serialization errors
     if (!tokenId || tokenId === "null" || tokenId === "undefined") {
         alert("Error: Token ID is missing or invalid.");
         return;
@@ -1218,25 +1218,55 @@ async function executeBurnAndReclaim(tokenId, tbaAddress) {
             ]);
             const transferData = erc20Interface.encodeFunctionData("transfer", [signerAddress, tbaBalance]);
 
-            // Call execute on the TBA (op 0 is a standard CALL) using explicit BigInts
-            const reclaimTx = await tbaContract.execute(cleanUNI, 0n, transferData, 0);
+            // Call execute on the TBA (op 0 is a standard CALL) using explicit BigInts and manual gas limit
+            const reclaimTx = await tbaContract.execute(cleanUNI, 0n, transferData, 0, { gasLimit: 120000 });
             await reclaimTx.wait();
             console.log("UNI successfully reclaimed to your wallet.");
         } else {
             console.log("No leftover UNI found inside this TBA. Skipping reclaim step.");
         }
 
-        // 3. Burn the parent Deed NFT (Convert Token ID safely to BigInt)
+        // 3. Burn the parent Deed NFT (Try native burn, fallback to soft-burn if unsupported)
         console.log(`Executing on-chain NFT burn for SVD Token #${tokenId}...`);
-        const deedContract = new ethers.Contract(cleanSVD, [
-            "function burn(uint256 tokenId) external"
-        ], signer);
-
         const bigTokenId = BigInt(tokenId);
-        const burnTx = await deedContract.burn(bigTokenId);
-        await burnTx.wait();
 
-        alert(`Sovereign Deed #${tokenId} successfully burned and locked funds reclaimed!`);
+        try {
+            const deedContract = new ethers.Contract(cleanSVD, [
+                "function burn(uint256 tokenId) external"
+            ], signer);
+
+            // Try standard burn first with a manual gas limit to bypass RPC estimation
+            const burnTx = await deedContract.burn(bigTokenId, { gasLimit: 120000 }); 
+            await burnTx.wait();
+            console.log("Native ERC721 burn successful!");
+            alert(`Sovereign Deed #${tokenId} successfully burned and locked funds reclaimed!`);
+        } catch (burnErr) {
+            console.warn("Native burn function failed or is unsupported. Falling back to soft-burn transfer...");
+            
+            try {
+                const deedContractFallback = new ethers.Contract(cleanSVD, [
+                    "function safeTransferFrom(address from, address to, uint256 tokenId) external"
+                ], signer);
+
+                const deadAddress = "0x000000000000000000000000000000000000dEaD";
+                
+                // Execute standard ERC-721 safeTransferFrom to the dead address
+                const transferTx = await deedContractFallback.safeTransferFrom(
+                    signerAddress, 
+                    deadAddress, 
+                    bigTokenId,
+                    { gasLimit: 120000 }
+                );
+                await transferTx.wait();
+                
+                console.log("Soft-burn transfer to dead address successful!");
+                alert(`Sovereign Deed #${tokenId} successfully burned (transferred to the dead address) and locked funds reclaimed!`);
+            } catch (fallbackErr) {
+                console.error("Both native burn and soft-burn workflows failed:", fallbackErr);
+                alert("Transaction failed on-chain. Please verify ownership and network status.");
+                throw fallbackErr;
+            }
+        }
     } catch (err) {
         console.error("On-chain burn workflow failed:", err);
         alert("Transaction failed or was rejected.");
