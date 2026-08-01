@@ -1187,6 +1187,10 @@ async function executeBurnAndReclaim(tokenId, tbaAddress) {
         const ethersModule = await import("https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.min.js");
         const ethers = ethersModule.ethers;
 
+        // 1. Decouple Reads: Use stable public RPC provider for reads to avoid MetaMask state conflicts
+        const readProvider = new ethers.JsonRpcProvider("https://unichain.drpc.org", 130);
+        
+        // BrowserProvider is reserved strictly for write signatures
         const provider = new ethers.BrowserProvider(window.ethereum);
         const signer = await provider.getSigner();
         const signerAddress = await signer.getAddress();
@@ -1199,8 +1203,8 @@ async function executeBurnAndReclaim(tokenId, tbaAddress) {
         console.log("Sanitized Signer Address:", signerAddress);
         console.log("Sanitized TBA Address:", cleanTBA);
 
-        // 1. Query leftover UNI balance inside the TBA
-        const uniContract = new ethers.Contract(cleanUNI, ["function balanceOf(address) view returns (uint256)"], provider);
+        // Query leftover UNI balance inside the TBA using the stable readProvider
+        const uniContract = new ethers.Contract(cleanUNI, ["function balanceOf(address) view returns (uint256)"], readProvider);
         const tbaBalance = await uniContract.balanceOf(cleanTBA);
 
         console.log(`Checking TBA balances... Found: ${ethers.formatEther(tbaBalance)} UNI`);
