@@ -1074,6 +1074,37 @@ io.on('connection', (socket) => {
         activeOverseers.delete(socket.id);
     });
 
+    // server.js - Inside the connection block:
+    socket.on('requestBurnAuthorization', (data) => {
+        const { tokenId, tbaAddress } = data;
+        const cleanAddress = socket.wallet;
+
+        if (!cleanAddress || !tokenId) return;
+
+        let isActive = false;
+        // Verify if this Deed is currently mapped to an active village on the server
+        for (let [key, village] of serverVillages) {
+            if (village.deedTokenId === parseInt(tokenId) && village.owner) {
+                isActive = true;
+                break;
+            }
+        }
+
+        if (isActive) {
+            socket.emit('burnAuthorizationResponse', { 
+                success: false, 
+                message: "ABORT: This Deed belongs to an active village in this session! You cannot burn live properties." 
+            });
+        } else {
+            socket.emit('burnAuthorizationResponse', { 
+                success: true, 
+                tokenId: tokenId,
+                tbaAddress: tbaAddress,
+                message: "AUTHORIZATION GRANTED: Deed is expired. Initiating on-chain reclaim and burn." 
+            });
+        }
+    });
+
     // server.js - Inside requestWellState listener:
     socket.on('requestWellState', (data) => {
         const key = `${data.wellX}_${data.wellY}`;

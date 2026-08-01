@@ -249,6 +249,21 @@ export function initUI() {
         };
     }
 
+    // src/uiManager.js - Add inside initUI()
+    document.getElementById('confirm-burn-btn').onclick = () => {
+        const tokenId = document.getElementById('burn-token-id-input').value.trim();
+        const tbaAddress = document.getElementById('burn-tba-input').value.trim();
+
+        if (!tokenId || !tbaAddress) {
+            alert("Please enter both the Deed Token ID and its TBA address.");
+            return;
+        }
+
+        if (socket && socket.connected) {
+            socket.emit('requestBurnAuthorization', { tokenId, tbaAddress });
+        }
+    };
+
     // --- UNIFIED STORAGE LISTENERS ---
     document.getElementById('close-storage-btn').addEventListener('click', () => {
         document.getElementById('storage-menu').classList.add('hidden');
@@ -1149,6 +1164,60 @@ window.claimStoredItem = (index) => {
         renderStoreUI();
     }
 };
+
+// src/uiManager.js - Add this helper function to your file
+async function executeBurnAndReclaim(tokenId, tbaAddress) {
+    const UNI_TOKEN_ADDRESS = "0x8f187aA05619a017077f5308904739877ce9eA21";
+    const SVD_CONTRACT_ADDRESS = process.env.SOVEREIGN_DEED_ADDRESS || "0xb762c3B3f544B04D0eAD51Fa1883Ee0f0Ec87cE4"; // Your Deed Contract
+
+    try {
+        const ethersModule = await import("https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.min.js");
+        const ethers = ethersModule.ethers;
+
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        const signerAddress = await signer.getAddress();
+
+        // 1. Query leftover UNI balance inside the TBA
+        const uniContract = new ethers.Contract(UNI_TOKEN_ADDRESS, ["function balanceOf(address) view returns (uint256)"], provider);
+        const tbaBalance = await uniContract.balanceOf(tbaAddress);
+
+        console.log(`Checking TBA balances... Found: ${ethers.formatEther(tbaBalance)} UNI`);
+
+        // 2. Reclaim UNI if a balance exists
+        if (tbaBalance > 0n) {
+            console.log("Reclaiming leftover UNI from TBA contract...");
+            const tbaContract = new ethers.Contract(tbaAddress, [
+                "function execute(address to, uint256 value, bytes calldata data, uint8 operation) external payable returns (bytes memory)"
+            ], signer);
+
+            // Encode the ERC20 transfer(signerAddress, tbaBalance) call
+            const erc20Interface = new ethers.Interface([
+                "function transfer(address to, uint256 value) returns (bool)"
+            ]);
+            const transferData = erc20Interface.encodeFunctionData("transfer", [signerAddress, tbaBalance]);
+
+            // Call execute on the TBA (op 0 is a standard CALL)
+            const reclaimTx = await tbaContract.execute(UNI_TOKEN_ADDRESS, 0, transferData, 0);
+            await reclaimTx.wait();
+            console.log("UNI successfully reclaimed to your wallet.");
+        }
+
+        // 3. Burn the parent Deed NFT
+        console.log("Executing on-chain NFT burn...");
+        const deedContract = new ethers.Contract(SVD_CONTRACT_ADDRESS, [
+            "function burn(uint256 tokenId) external"
+        ], signer);
+
+        const burnTx = await deedContract.burn(tokenId);
+        await burnTx.wait();
+
+        alert(`Sovereign Deed #${tokenId} successfully burned and locked funds reclaimed!`);
+    } catch (err) {
+        console.error("On-chain burn workflow failed:", err);
+        alert("Transaction failed or was rejected.");
+    }
+}
 
 // ==========================================
 // ⛩️ TEMPLE ALTAR MENU
@@ -2295,6 +2364,16 @@ export function setupMultiplayerListeners(s) {
             m.gameState.tvl = data.tgv; 
             updateHUD(); 
         });
+    });
+
+    // src/uiManager.js - Add inside setupMultiplayerListeners()
+    s.on('burnAuthorizationResponse', async (data) => {
+        if (data.success) {
+            alert(data.message);
+            await executeBurnAndReclaim(data.tokenId, data.tbaAddress);
+        } else {
+            alert(data.message);
+        }
     });
 
     s.on('updateEquipment', (serverEquipment) => {
