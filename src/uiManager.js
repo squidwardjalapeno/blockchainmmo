@@ -1168,8 +1168,7 @@ window.claimStoredItem = (index) => {
 // src/uiManager.js - Add this helper function to your file
 async function executeBurnAndReclaim(tokenId, tbaAddress) {
     const UNI_TOKEN_ADDRESS = "0x8f187aA05619a017077f5308904739877ce9eA21";
-    const SVD_CONTRACT_ADDRESS = process.env.SOVEREIGN_DEED_ADDRESS || "0xb762c3B3f544B04D0eAD51Fa1883Ee0f0Ec87cE4"; // Your Deed Contract
-
+    const SVD_CONTRACT_ADDRESS = "0x5C43e68D160121923F1Aaff42139A1522D9010Cb";
     try {
         const ethersModule = await import("https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.min.js");
         const ethers = ethersModule.ethers;
