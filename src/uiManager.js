@@ -1165,10 +1165,24 @@ window.claimStoredItem = (index) => {
     }
 };
 
-// src/uiManager.js - Add this helper function to your file
 async function executeBurnAndReclaim(tokenId, tbaAddress) {
     const UNI_TOKEN_ADDRESS = "0x8f187aA05619a017077f5308904739877ce9eA21";
-    const SVD_CONTRACT_ADDRESS = "0x5C43e68D160121923F1Aaff42139A1522D9010Cb";
+    const SVD_CONTRACT_ADDRESS = "0x5C43e68D160121923F1Aaff42139A1522D9010Cb"; // Checksummed SVD address
+
+    console.log("--- 🏁 STARTING BURN & RECLAIM WORKFLOW ---");
+    console.log("Raw Token ID:", tokenId);
+    console.log("Raw TBA Address:", tbaAddress);
+
+    // Strict parameter validation to prevent null/undefined errors
+    if (!tokenId || tokenId === "null" || tokenId === "undefined") {
+        alert("Error: Token ID is missing or invalid.");
+        return;
+    }
+    if (!tbaAddress || tbaAddress === "null" || tbaAddress === "undefined") {
+        alert("Error: TBA Address is missing or invalid.");
+        return;
+    }
+
     try {
         const ethersModule = await import("https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.min.js");
         const ethers = ethersModule.ethers;
@@ -1177,16 +1191,24 @@ async function executeBurnAndReclaim(tokenId, tbaAddress) {
         const signer = await provider.getSigner();
         const signerAddress = await signer.getAddress();
 
+        // Checksum the addresses to format them correctly for Ethers v6
+        const cleanTBA = ethers.getAddress(tbaAddress);
+        const cleanUNI = ethers.getAddress(UNI_TOKEN_ADDRESS);
+        const cleanSVD = ethers.getAddress(SVD_CONTRACT_ADDRESS);
+
+        console.log("Sanitized Signer Address:", signerAddress);
+        console.log("Sanitized TBA Address:", cleanTBA);
+
         // 1. Query leftover UNI balance inside the TBA
-        const uniContract = new ethers.Contract(UNI_TOKEN_ADDRESS, ["function balanceOf(address) view returns (uint256)"], provider);
-        const tbaBalance = await uniContract.balanceOf(tbaAddress);
+        const uniContract = new ethers.Contract(cleanUNI, ["function balanceOf(address) view returns (uint256)"], provider);
+        const tbaBalance = await uniContract.balanceOf(cleanTBA);
 
         console.log(`Checking TBA balances... Found: ${ethers.formatEther(tbaBalance)} UNI`);
 
         // 2. Reclaim UNI if a balance exists
         if (tbaBalance > 0n) {
             console.log("Reclaiming leftover UNI from TBA contract...");
-            const tbaContract = new ethers.Contract(tbaAddress, [
+            const tbaContract = new ethers.Contract(cleanTBA, [
                 "function execute(address to, uint256 value, bytes calldata data, uint8 operation) external payable returns (bytes memory)"
             ], signer);
 
@@ -1196,19 +1218,22 @@ async function executeBurnAndReclaim(tokenId, tbaAddress) {
             ]);
             const transferData = erc20Interface.encodeFunctionData("transfer", [signerAddress, tbaBalance]);
 
-            // Call execute on the TBA (op 0 is a standard CALL)
-            const reclaimTx = await tbaContract.execute(UNI_TOKEN_ADDRESS, 0, transferData, 0);
+            // Call execute on the TBA (op 0 is a standard CALL) using explicit BigInts
+            const reclaimTx = await tbaContract.execute(cleanUNI, 0n, transferData, 0);
             await reclaimTx.wait();
             console.log("UNI successfully reclaimed to your wallet.");
+        } else {
+            console.log("No leftover UNI found inside this TBA. Skipping reclaim step.");
         }
 
-        // 3. Burn the parent Deed NFT
-        console.log("Executing on-chain NFT burn...");
-        const deedContract = new ethers.Contract(SVD_CONTRACT_ADDRESS, [
+        // 3. Burn the parent Deed NFT (Convert Token ID safely to BigInt)
+        console.log(`Executing on-chain NFT burn for SVD Token #${tokenId}...`);
+        const deedContract = new ethers.Contract(cleanSVD, [
             "function burn(uint256 tokenId) external"
         ], signer);
 
-        const burnTx = await deedContract.burn(tokenId);
+        const bigTokenId = BigInt(tokenId);
+        const burnTx = await deedContract.burn(bigTokenId);
         await burnTx.wait();
 
         alert(`Sovereign Deed #${tokenId} successfully burned and locked funds reclaimed!`);
