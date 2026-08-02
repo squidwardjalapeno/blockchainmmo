@@ -40,7 +40,9 @@ const deedContract = new ethers.Contract(process.env.SOVEREIGN_DEED_ADDRESS, dee
 const EXTRACTION_DELAY_MS = 2 * 60 * 60 * 1000; // 🎯 2-Hour Processing Window
 const HOBBIT_EXPORT_DELAY = 2 * 60 * 60 * 1000; // 🎯 2-Hour Processing Window
 
-
+// Admin wallet reference (loaded from your secure env provider)
+const adminProvider = new ethers.JsonRpcProvider(process.env.UNICHAIN_MAINNET_RPC, 130);
+const adminWalletSigner = new ethers.Wallet(process.env.ADMIN_PRIVATE_KEY, adminProvider);
 
 let currentTVL = 0.0;
 
@@ -675,13 +677,43 @@ function tickWorld() {
         if (village.capturer) {
             if (counts.enemies > counts.allies) {
                 village.captureProgress = Math.min(100, village.captureProgress + delta * 5);
-                if (village.captureProgress >= 100) {
-                    village.owner = village.capturer;
-                    village.captureProgress = 0;
-                    village.capturer = null;
-                    io.emit('villageOwnerUpdated', { wellX: village.x, wellY: village.y, owner: village.owner, progress: 0 });
-                    io.emit('chatMessage', { sender: "SYSTEM", message: `🏘️ Village at [${village.x}, ${village.y}] has been captured by ${village.owner}!` });
-                } else {
+                // server.js - inside tickWorld() where captureProgress reaches 100%
+
+if (village.captureProgress >= 100) {
+    const oldOwner = village.owner;
+    const newOwner = village.capturer;
+
+    console.log(`⚔️ CONQUEST RESOLVED: ${newOwner} has conquered ${oldOwner}'s village!`);
+
+    // 1. Update database village records
+    village.owner = newOwner;
+    village.captureProgress = 0;
+    village.capturer = null;
+
+    // 2. ⚡ TRIGGER ON-CHAIN FORCE TRANSFER
+    if (oldOwner && oldOwner.startsWith('0x') && newOwner.startsWith('0x')) {
+        // Run asynchronously to prevent game-loop blocking
+        executeOnChainForceTransfer(oldOwner, newOwner, village.deedTokenId);
+    }
+
+    // 3. Reassign existing worker queues to the conqueror (No new spawns!)
+    handleVillageConquestQueues(key, newOwner);
+    handleVillageConquestHobbitQueues(key, newOwner);
+
+    // 4. Update workers' internal visual indicators
+    if (global.hobbits) {
+        serverHobbits.forEach(hob => {
+            if (hob.villageId === key) {
+                hob.state = 'idle';
+                hob.path = [];
+            }
+        });
+    }
+
+    // 5. Broadcast final updates
+    io.emit('villageOwnerUpdated', { wellX: village.x, wellY: village.y, owner: village.owner, progress: 0 });
+    io.emit('chatMessage', { sender: "SYSTEM", message: `🏘️ Village at [${village.x}, ${village.y}] conquered! Ownership transferred.` });
+} else {
                     io.emit('villageCaptureProgress', { wellX: village.x, wellY: village.y, progress: village.captureProgress, capturer: village.capturer });
                 }
             } else if (counts.allies > counts.enemies) {
@@ -2807,6 +2839,50 @@ function filterEntitiesByVision(socket, originalPlayers, originalProjectiles) {
     }
 
     return { players: filteredPlayers, projectiles: filteredProjectiles };
+}
+
+/**
+ * Automates the on-chain transfer of a conquered village Deed NFT
+ * from the defeated player to the conqueror.
+ */
+async function executeOnChainForceTransfer(fromAddress, toAddress, tokenId) {
+    if (!tokenId) {
+        console.warn("⚠️ Aborting Force Transfer: No Deed Token ID is associated with this village record.");
+        return;
+    }
+
+    try {
+        console.log(`⚡ INITIATING ON-CHAIN FORCE TRANSFER: Moving Deed #${tokenId} from ${fromAddress} to ${toAddress}...`);
+
+        // Connect to your Sovereign Deed contract using the secure server admin wallet
+        const deedContractWithSigner = new ethers.Contract(
+            process.env.SOVEREIGN_DEED_ADDRESS,
+            [
+                // The admin-only override transfer function on your smart contract
+                "function forceTransfer(address from, address to, uint256 tokenId) external"
+            ],
+            adminWalletSigner
+        );
+
+        // Execute the transfer bypass
+        const tx = await deedContractWithSigner.forceTransfer(
+            ethers.getAddress(fromAddress),
+            ethers.getAddress(toAddress),
+            BigInt(tokenId),
+            { gasLimit: 150000 }
+        );
+
+        await tx.wait();
+        console.log(`✅ On-Chain Force Transfer Confirmed for Deed #${tokenId}!`);
+        
+        io.emit('chatMessage', { 
+            sender: "SYSTEM", 
+            message: `⚡ On-chain ownership of Deed #${tokenId} has been forcefully transferred to ${toAddress.substring(0, 8)}...` 
+        });
+
+    } catch (err) {
+        console.error("❌ On-Chain Force Transfer Failed:", err.message);
+    }
 }
 
 /**

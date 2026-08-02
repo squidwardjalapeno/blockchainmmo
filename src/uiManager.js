@@ -1797,37 +1797,40 @@ export function openVillageMenu(wellX, wellY, villageData) {
         }
     });
 
-    if (villageData.owner === null) {
-        progressSection.classList.add('hidden');
-        claimBtn.innerText = "CLAIM PEACEFULLY";
-        claimBtn.className = "pixel-btn safe";
+    // src/uiManager.js - inside openVillageMenu()
+
+if (villageData.owner === null) {
+    progressSection.classList.add('hidden');
+    claimBtn.innerText = "CLAIM PEACEFULLY";
+    claimBtn.className = "pixel-btn safe";
+    claimBtn.disabled = false;
+    
+    claimBtn.onclick = () => {
+        if (socket) socket.emit('requestWellInteraction', { wellX, wellY });
+        document.getElementById('village-menu').classList.add('hidden');
+    };
+} else {
+    progressSection.classList.remove('hidden');
+    const pct = villageData.progress || 0;
+    progressBar.style.width = `${pct}%`;
+    progressText.innerText = `${Math.floor(pct)}%`;
+
+    const isOwner = (villageData.owner === playerWallet);
+    if (isOwner) {
+        claimBtn.innerText = "YOU OWN THIS VILLAGE";
+        claimBtn.className = "pixel-btn";
+        claimBtn.disabled = true; // 👈 Disable duplicate claim
+    } else {
+        // Village is owned by another player. Initiate Siege instead of claim!
+        claimBtn.innerText = "INITIATE SIEGE";
+        claimBtn.className = "pixel-btn cancel";
         claimBtn.disabled = false;
-        
         claimBtn.onclick = () => {
             if (socket) socket.emit('requestWellInteraction', { wellX, wellY });
             document.getElementById('village-menu').classList.add('hidden');
         };
-    } else {
-        progressSection.classList.remove('hidden');
-        const pct = villageData.progress || 0;
-        progressBar.style.width = `${pct}%`;
-        progressText.innerText = `${Math.floor(pct)}%`;
-
-        const isOwner = (villageData.owner === playerWallet);
-        if (isOwner) {
-            claimBtn.innerText = "YOU OWN THIS VILLAGE";
-            claimBtn.className = "pixel-btn";
-            claimBtn.disabled = true;
-        } else {
-            claimBtn.innerText = "INITIATE SIEGE";
-            claimBtn.className = "pixel-btn cancel";
-            claimBtn.disabled = false;
-            claimBtn.onclick = () => {
-                if (socket) socket.emit('requestWellInteraction', { wellX, wellY });
-                document.getElementById('village-menu').classList.add('hidden');
-            };
-        }
     }
+}
 
     document.getElementById('close-village-btn').onclick = () => {
         document.getElementById('village-menu').classList.add('hidden');
