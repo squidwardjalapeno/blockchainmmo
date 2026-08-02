@@ -21,6 +21,8 @@ import {
     chestCache, 
     hayStorageCache 
 } from './multiplayer.js';
+import { findPathToCoords, isWalkableForHobbit, assignRandomWalk } from './hobbitNavigation.js';
+
 
 if (typeof window !== 'undefined') {
     if (window.logStep) logStep("hobbitBehavior.js loaded");
@@ -273,4 +275,194 @@ export function estimateCatchUpStep(startX, startY, targetX, targetY) {
         x: startX + Math.round(dx / dist),
         y: startY + Math.round(dy / dist)
     };
+}
+
+export function runForagerBehavior(hobbit, modifier, worldMatrix, roomMatrix) {
+    const currTX = Math.floor((hobbit.x + 8) / 16);
+    const currTY = Math.floor((hobbit.y + 15) / 16);
+
+    const nonKeyItems = hobbit.inventory.filter(i => !i.isKey);
+    const isInventoryFull = (nonKeyItems.length >= 6); 
+    const hasPM = hobbit.inventory.some(i => i.seedType === 'plant_matter');
+    const hasOtherLoot = hobbit.inventory.some(i => !i.isKey && i.seedType !== 'plant_matter');
+    
+    const chestId = `chest_${hobbit.chestX}_${hobbit.chestY}`;
+    const chestItems = chestCache.get(chestId) || [];
+    const isChestFull = (chestItems.length >= 8);
+
+    const nearestPlant = findNearestMaturePlant(hobbit);
+    const hasNearbyCrops = nearestPlant || hobbit.targetPlant;
+    const shouldDeposit = isInventoryFull || ((hasOtherLoot || hasPM) && !hasNearbyCrops);
+
+    // Decision Tree
+    if (isInventoryFull && hasPM && isChestFull) {
+        hobbit.goal = 'sell_pm';
+        const counter = findNearestStoreCounter(hobbit);
+        if (counter) {
+            executeStoreTravel(hobbit, counter, currTX, currTY, worldMatrix, roomMatrix);
+        }
+    }
+    else if (isChestFull && nonKeyItems.length === 0) {
+        hobbit.goal = 'withdraw_pm';
+        executeChestTravel(hobbit, hobbit.chestX + 1, hobbit.chestY, currTX, currTY, worldMatrix, roomMatrix, chestId, chestItems);
+    }
+    else if (shouldDeposit) {
+        hobbit.goal = 'deposit';
+        executeChestTravel(hobbit, hobbit.chestX + 1, hobbit.chestY, currTX, currTY, worldMatrix, roomMatrix, chestId, chestItems);
+    }
+    else {
+        hobbit.goal = 'harvest';
+        executeHarvestLogic(hobbit, nearestPlant, currTX, currTY, worldMatrix, roomMatrix);
+    }
+}
+
+// Helper: Handle Store Navigation / Trading
+function executeStoreTravel(hobbit, counter, currTX, currTY, worldMatrix, roomMatrix) {
+    const standX = counter.x;
+    const standY = counter.y + 1;
+    const dist = Math.hypot((standX * 16 + 8) - (hobbit.x + 8), (standY * 16 + 8) - (hobbit.y + 8));
+
+    if (dist <= 24) {
+        hobbit.state = 'idle';
+        hobbit.path = [];
+        tryHobbitTrade(hobbit, counter.x, counter.y);
+    } else {
+        if ((!hobbit.path || hobbit.path.length === 0) && hobbit.pathTimer <= 0) {
+            hobbit.pathTimer = 1.5;
+            const path = findPathToCoords(currTX, currTY, standX, standY, worldMatrix, roomMatrix, hobbit, 40);
+            if (path) {
+                hobbit.path = path;
+                hobbit.state = 'walking';
+            } else {
+                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
+            }
+        }
+    }
+}
+
+// Helper: Handle Chest Navigation / Interaction
+function executeChestTravel(hobbit, depositTX, depositTY, currTX, currTY, worldMatrix, roomMatrix, chestId, chestItems) {
+    const dist = Math.hypot((depositTX * 16 + 8) - (hobbit.x + 8), (depositTY * 16 + 8) - (hobbit.y + 8));
+    
+    if (dist <= 24) {
+        hobbit.state = 'idle';
+        hobbit.path = [];
+
+        if (!chestCache.has(chestId)) {
+            if (socket && socket.connected) socket.emit('requestChest', chestId);
+        } else {
+            // Logic for transferring items to/from chest
+            if (hobbit.goal === 'deposit') {
+                transferToChest(hobbit, chestId, chestItems);
+            } else if (hobbit.goal === 'withdraw_pm') {
+                withdrawFromChest(hobbit, chestId, chestItems);
+            }
+        }
+    } else {
+        if ((!hobbit.path || hobbit.path.length === 0) && hobbit.pathTimer <= 0) {
+            hobbit.pathTimer = 1.5;
+            const path = findPathToCoords(currTX, currTY, depositTX, depositTY, worldMatrix, roomMatrix, hobbit);
+            if (path) {
+                hobbit.path = path;
+                hobbit.state = 'walking';
+            } else {
+                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
+            }
+        }
+    }
+}
+
+// Helper: Handle Crop Searching and Harvesting
+function executeHarvestLogic(hobbit, nearestPlant, currTX, currTY, worldMatrix, roomMatrix) {
+    if (hobbit.targetPlant) {
+        const plantKey = `${hobbit.targetPlant.gx}_${hobbit.targetPlant.gy}`;
+        const livePlant = plants.get(plantKey);
+
+        if (livePlant && livePlant.growth >= 100) {
+            const dist = Math.hypot((livePlant.gx * 16 + 8) - (hobbit.x + 8), (livePlant.gy * 16 + 8) - (hobbit.y + 8));
+
+            if (dist <= 24) {
+                // Perform harvest
+                const keyName = YIELD_MAP[livePlant.type];
+                if (keyName && ITEM_TYPES[keyName]) {
+                    giveItemToHobbit(hobbit, createItem(ITEM_TYPES[keyName]));
+                }
+                plants.delete(plantKey);
+                if (socket && socket.connected) {
+                    socket.emit('syncTile', { gx: livePlant.gx, gy: livePlant.gy, traits: 0 });
+                }
+                hobbit.targetPlant = null;
+                hobbit.path = [];
+                hobbit.state = 'idle';
+            } else {
+                if ((!hobbit.path || hobbit.path.length === 0) && hobbit.pathTimer <= 0) {
+                    hobbit.pathTimer = 1.5;
+                    const path = findPathToCoords(currTX, currTY, livePlant.gx, livePlant.gy, worldMatrix, roomMatrix, hobbit, 12);
+                    if (path) {
+                        hobbit.path = path;
+                        hobbit.state = 'walking';
+                    } else {
+                        hobbit.targetPlant = null;
+                    }
+                }
+            }
+        } else {
+            hobbit.targetPlant = null;
+        }
+    } else if (nearestPlant) {
+        hobbit.targetPlant = nearestPlant;
+    } else {
+        if ((!hobbit.path || hobbit.path.length === 0)) {
+            assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+            hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
+        }
+    }
+}
+
+// Atomic helper: Transfer items from Inventory to Chest
+function transferToChest(hobbit, chestId, chestItems) {
+    const depositItems = hobbit.inventory.filter(item => !item.isKey);
+    depositItems.forEach(dep => {
+        const existing = chestItems.find(i => i.seedType === dep.seedType && i.count < (i.maxStack || 8));
+        if (existing) {
+            const space = (existing.maxStack || 8) - existing.count;
+            if (dep.count <= space) {
+                existing.count += dep.count;
+                hobbit.inventory = hobbit.inventory.filter(i => i !== dep);
+            } else {
+                existing.count = existing.maxStack || 8;
+                dep.count -= space;
+            }
+        } else if (chestItems.length < 8) {
+            chestItems.push(dep);
+            hobbit.inventory = hobbit.inventory.filter(i => i !== dep);
+        }
+    });
+
+    if (socket && socket.connected) {
+        socket.emit('updateChest', { chestId, items: chestItems });
+    }
+}
+
+// Atomic helper: Withdraw PM from Chest
+function withdrawFromChest(hobbit, chestId, chestItems) {
+    const pmIdx = chestItems.findIndex(i => i.seedType === 'plant_matter');
+    if (pmIdx !== -1) {
+        const pmItemInChest = chestItems[pmIdx];
+        const amountToWithdraw = Math.min(4, pmItemInChest.count || 1);
+        pmItemInChest.count -= amountToWithdraw;
+        if (pmItemInChest.count <= 0) {
+            chestItems.splice(pmIdx, 1);
+        }
+        if (socket && socket.connected) {
+            socket.emit('updateChest', { chestId, items: chestItems });
+        }
+
+        const keys = hobbit.inventory.filter(i => i.isKey);
+        const pmItemForHobbit = createItem(ITEM_TYPES.PLANT_MATTER);
+        pmItemForHobbit.count = amountToWithdraw;
+        hobbit.inventory = [...keys, pmItemForHobbit];
+    }
 }
