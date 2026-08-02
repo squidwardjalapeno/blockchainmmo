@@ -1,4 +1,5 @@
 // src/hobbitBehavior.js
+
 import { 
     hobbits, 
     getHobbitVillage, 
@@ -12,6 +13,8 @@ import { ITEM_TYPES, createItem } from './items.js';
 import { getTileData } from './physics.js';
 import { hero } from './entities.js';
 import { plannedWells } from './cellDecorator.js';
+import { worldTime } from './clock.js'; 
+import { findPathToCoords, assignRandomWalk } from './hobbitNavigation.js';
 import { 
     socket, 
     myID, 
@@ -19,18 +22,21 @@ import {
     remotePlayers, 
     storeDbCache, 
     chestCache, 
-    hayStorageCache 
+    hayStorageCache,
+    doorStates,
+    villageOwners
 } from './multiplayer.js';
-import { findPathToCoords, isWalkableForHobbit, assignRandomWalk } from './hobbitNavigation.js';
-
 
 if (typeof window !== 'undefined') {
     if (window.logStep) logStep("hobbitBehavior.js loaded");
 }
 
+// ============================================================================
+// 🦴 1. SHARED UTILITY & SEARCH FUNCTIONS
+// ============================================================================
+
 /**
- * Checks a hobbit's inventory for edible items and consumes one if energy is depleted,
- * returning true if consumption occurred.
+ * Checks a hobbit's inventory for edible items and consumes one if energy is depleted.
  */
 export function eatFoodIfAvailable(hobbit) {
     const foodIndex = hobbit.inventory.findIndex(i => HOBBIT_FOOD_VALUES[i.seedType] !== undefined);
@@ -132,7 +138,7 @@ export function findNearestEgg(hobbit, range = 400) {
                 const traits = bac.data[bac.idx];
                 if (traits > 0) {
                     const typeID = (traits >> 20) & 0xFF;
-                    if (typeID === 16) { // Egg ID
+                    if (typeID === 16) { 
                         const dist = Math.hypot((tx * 16 + 8) - (hobbit.x + 8), (ty * 16 + 8) - (hobbit.y + 8));
                         if (dist < range && dist < minDist) {
                             minDist = dist;
@@ -277,10 +283,280 @@ export function estimateCatchUpStep(startX, startY, targetX, targetY) {
     };
 }
 
+/**
+ * Finds the nearest Temple Altar and calculates its associated entrance door.
+ */
+export function findNearestTemple(hobbit) {
+    let nearestAltar = null;
+    let minDist = Infinity;
+    
+    for (let [key, obj] of staticObjects) {
+        if (obj.type === 'TEMPLE_ALTAR') {
+            const tx = Math.floor(key / 10000);
+            const ty = key % 10000;
+            const dist = Math.hypot((tx * 16 + 8) - (hobbit.x + 8), (ty * 16 + 8) - (hobbit.y + 8));
+            if (dist < minDist) {
+                minDist = dist;
+                nearestAltar = { 
+                    x: tx, 
+                    y: ty, 
+                    houseId: obj.houseId,
+                    doorX: tx - 1,
+                    doorY: ty + 6
+                };
+            }
+        }
+    }
+    return nearestAltar;
+}
+
+/**
+ * Searches local cache registries for any companion Forager chests containing seeds.
+ */
+export function findForagerChestWithSeeds(hobbit) {
+    const village = hobbit.cachedWell || getHobbitVillage(hobbit);
+    if (!village) return null;
+
+    let targetChest = null;
+    let minDist = Infinity;
+
+    hobbits.forEach(other => {
+        if (other.job === 'Forager' && other.chestX !== null) {
+            const otherVillage = getHobbitVillage(other);
+
+            if (otherVillage && otherVillage.x === village.x && otherVillage.y === village.y) {
+                const chestId = `chest_${other.chestX}_${other.chestY}`;
+                const items = chestCache.get(chestId) || [];
+                const hasSeeds = items.some(i => i.seedType && i.seedType.includes('_seed'));
+
+                if (hasSeeds) {
+                    const dist = Math.hypot(other.chestX - Math.floor(hobbit.x / 16), other.chestY - Math.floor(hobbit.y / 16));
+                    if (dist < minDist) {
+                        minDist = dist;
+                        targetChest = { x: other.chestX, y: other.chestY };
+                    }
+                }
+            }
+        }
+    });
+
+    return targetChest;
+}
+
+// ============================================================================
+// 🚪 2. SHARED BUILDING LOCKING & SLEEPING ROUTINE
+// ============================================================================
+
+/**
+ * Handles morning unlocking, nighttime locking, and traveling inside to wait.
+ * Returns true if busy with the locking/waiting routine; false if free to work.
+ */
+export function executeStructureRoutine(hobbit, currTX, currTY, targetX, targetY, doorX, doorY, worldMatrix, roomMatrix) {
+    if (doorX === null || doorY === null || targetX === null || targetY === null) return false;
+
+    const doorKey = `${doorX}_${doorY}`;
+    const doorState = doorStates.get(doorKey);
+    const isLocked = doorState ? doorState.locked : true;
+    const distToDoor = Math.max(Math.abs(currTX - doorX), Math.abs(currTY - doorY));
+
+    if (!worldTime.isNight) {
+        // --- DAYTIME: Ensure door is unlocked ---
+        if (isLocked) {
+            hobbit.goal = 'unlock_door';
+            if (distToDoor <= 1) {
+                hobbit.state = 'idle';
+                hobbit.path = [];
+                if (socket && socket.connected) {
+                    socket.emit('setDoorLock', { gx: doorX, gy: doorY, locked: false });
+                }
+            } else {
+                if ((!hobbit.path || hobbit.path.length === 0) && hobbit.pathTimer <= 0) {
+                    hobbit.pathTimer = 1.0;
+                    const path = findPathToCoords(currTX, currTY, doorX, doorY, worldMatrix, roomMatrix, hobbit, 40);
+                    if (path) {
+                        hobbit.path = path;
+                        hobbit.state = 'walking';
+                    }
+                }
+            }
+            return true; 
+        }
+        return false; 
+    } else {
+        // --- NIGHTTIME: Lock door and wait inside ---
+        if (!isLocked) {
+            hobbit.goal = 'lock_door';
+            if (distToDoor <= 1) {
+                hobbit.state = 'idle';
+                hobbit.path = [];
+                if (socket && socket.connected) {
+                    socket.emit('setDoorLock', { gx: doorX, gy: doorY, locked: true });
+                }
+            } else {
+                if ((!hobbit.path || hobbit.path.length === 0) && hobbit.pathTimer <= 0) {
+                    hobbit.pathTimer = 1.0;
+                    const path = findPathToCoords(currTX, currTY, doorX, doorY, worldMatrix, roomMatrix, hobbit, 40);
+                    if (path) {
+                        hobbit.path = path;
+                        hobbit.state = 'walking';
+                    }
+                }
+            }
+            return true; 
+        } else {
+            // Door is locked: Stand at our indoor waiting spot
+            if (currTX === targetX && currTY === targetY) {
+                hobbit.state = 'idle';
+                hobbit.goal = 'wait_inside';
+                hobbit.path = [];
+            } else {
+                hobbit.goal = 'go_inside';
+                if ((!hobbit.path || hobbit.path.length === 0) && hobbit.pathTimer <= 0) {
+                    hobbit.pathTimer = 1.0;
+                    const path = findPathToCoords(currTX, currTY, targetX, targetY, worldMatrix, roomMatrix, hobbit, 40);
+                    if (path) {
+                        hobbit.path = path;
+                        hobbit.state = 'walking';
+                    }
+                }
+            }
+            return true; 
+        }
+    }
+}
+
+// ============================================================================
+// 💼 3. ROLE-SPECIFIC STRATEGIC BEHAVIOR MACHINE STATES
+// ============================================================================
+
+/**
+ * Main behavior machine for the Usher job.
+ */
+export function runUsherBehavior(hobbit, modifier, worldMatrix, roomMatrix) {
+    const currTX = Math.floor((hobbit.x + 8) / 16);
+    const currTY = Math.floor((hobbit.y + 15) / 16);
+
+    const temple = findNearestTemple(hobbit);
+    if (!temple) return; 
+
+    // 1. Manage temple unlocking, locking, and indoor waiting
+    if (executeStructureRoutine(
+        hobbit, currTX, currTY, 
+        temple.x, temple.y,        
+        temple.doorX, temple.doorY, 
+        worldMatrix, roomMatrix
+    )) {
+        return; 
+    }
+
+    // 2. Perform daytime gathering/sacrificing duties
+    const seedInventory = hobbit.inventory.filter(item => item.seedType && item.seedType.includes('_seed'));
+    const totalSeeds = seedInventory.reduce((acc, item) => acc + item.count, 0);
+
+    if (totalSeeds < 64) {
+        hobbit.goal = 'collect_seeds';
+        const targetChest = findForagerChestWithSeeds(hobbit);
+        
+        if (targetChest) {
+            const distToChest = Math.hypot((targetChest.x * 16 + 8) - (hobbit.x + 8), (targetChest.y * 16 + 8) - (hobbit.y + 8));
+            if (distToChest <= 24) {
+                hobbit.state = 'idle';
+                hobbit.path = [];
+                
+                const chestId = `chest_${targetChest.x}_${targetChest.y}`;
+                const chestItems = chestCache.get(chestId) || [];
+                
+                let extracted = false;
+                for (let i = chestItems.length - 1; i >= 0; i--) {
+                    const item = chestItems[i];
+                    if (item.seedType && item.seedType.includes('_seed')) {
+                        chestItems.splice(i, 1);
+                        giveItemToHobbit(hobbit, item);
+                        extracted = true;
+                    }
+                }
+
+                if (extracted && socket && socket.connected) {
+                    socket.emit('updateChest', { chestId, items: chestItems });
+                }
+            } else {
+                if ((!hobbit.path || hobbit.path.length === 0) && hobbit.pathTimer <= 0) {
+                    hobbit.pathTimer = 1.5;
+                    const path = findPathToCoords(currTX, currTY, targetChest.x + 1, targetChest.y, worldMatrix, roomMatrix, hobbit);
+                    if (path) {
+                        hobbit.path = path;
+                        hobbit.state = 'walking';
+                    }
+                }
+            }
+        } else {
+            if (!hobbit.path || hobbit.path.length === 0) {
+                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
+                hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
+            }
+        }
+    } else {
+        hobbit.goal = 'sacrifice_seeds';
+        const distToAltar = Math.hypot((temple.x * 16 + 8) - (hobbit.x + 8), (temple.y * 16 + 8) - (hobbit.y + 8));
+        if (distToAltar <= 24) {
+            hobbit.state = 'idle';
+            hobbit.path = [];
+
+            const village = hobbit.cachedWell || getHobbitVillage(hobbit);
+            let isCaptured = false;
+            if (village && villageOwners) {
+                const data = villageOwners.get(`${village.x}_${village.y}`);
+                isCaptured = data && data.owner && !data.owner.startsWith("Guest") && data.owner !== "UNCLAIMED";
+            }
+
+            const seedsToSacrifice = hobbit.inventory.filter(item => item.seedType && item.seedType.includes('_seed'));
+            hobbit.inventory = hobbit.inventory.filter(item => !item.seedType || !item.seedType.includes('_seed'));
+
+            if (isCaptured) {
+                console.log(`✨ Usher ${hobbit.name} sacrificed seeds to fund Village Treasury!`);
+                if (socket && socket.connected) {
+                    seedsToSacrifice.forEach(seed => {
+                        socket.emit('sacrificeItem', { 
+                            itemType: seed.seedType, 
+                            count: seed.count,
+                            isVillageWalletFund: true 
+                        });
+                    });
+                }
+            } else {
+                console.log(`🍂 Usher ${hobbit.name} sacrificed seeds for nothing (Neutral Settlement).`);
+            }
+        } else {
+            if ((!hobbit.path || hobbit.path.length === 0) && hobbit.pathTimer <= 0) {
+                hobbit.pathTimer = 1.5;
+                const path = findPathToCoords(currTX, currTY, temple.x, temple.y, worldMatrix, roomMatrix, hobbit, 60);
+                if (path) {
+                    hobbit.path = path;
+                    hobbit.state = 'walking';
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Main behavior machine for the Forager job.
+ */
 export function runForagerBehavior(hobbit, modifier, worldMatrix, roomMatrix) {
     const currTX = Math.floor((hobbit.x + 8) / 16);
     const currTY = Math.floor((hobbit.y + 15) / 16);
 
+    // 1. Manage house unlocking, locking, and standing on bedroll at night
+    if (executeStructureRoutine(
+        hobbit, currTX, currTY, 
+        hobbit.homeX, hobbit.homeY, 
+        hobbit.doorX, hobbit.doorY, 
+        worldMatrix, roomMatrix
+    )) {
+        return; 
+    }
+
+    // 2. Perform daytime foraging duties
     const nonKeyItems = hobbit.inventory.filter(i => !i.isKey);
     const isInventoryFull = (nonKeyItems.length >= 6); 
     const hasPM = hobbit.inventory.some(i => i.seedType === 'plant_matter');
@@ -294,7 +570,6 @@ export function runForagerBehavior(hobbit, modifier, worldMatrix, roomMatrix) {
     const hasNearbyCrops = nearestPlant || hobbit.targetPlant;
     const shouldDeposit = isInventoryFull || ((hasOtherLoot || hasPM) && !hasNearbyCrops);
 
-    // Decision Tree
     if (isInventoryFull && hasPM && isChestFull) {
         hobbit.goal = 'sell_pm';
         const counter = findNearestStoreCounter(hobbit);
@@ -316,7 +591,41 @@ export function runForagerBehavior(hobbit, modifier, worldMatrix, roomMatrix) {
     }
 }
 
-// Helper: Handle Store Navigation / Trading
+/**
+ * Main behavior machine for the Trader job.
+ */
+export function runTraderBehavior(hobbit, modifier, worldMatrix, roomMatrix) {
+    const currTX = Math.floor((hobbit.x + 8) / 16);
+    const currTY = Math.floor((hobbit.y + 15) / 16);
+
+    const storeCounter = findNearestStoreCounter(hobbit);
+    if (!storeCounter) return;
+
+    const doorX = storeCounter.x - 1;
+    const doorY = storeCounter.y + 2;
+    const targetX = storeCounter.x;
+    const targetY = storeCounter.y + 1; 
+
+    // 1. Manage store unlocking, locking, and waiting behind counter at night
+    if (executeStructureRoutine(
+        hobbit, currTX, currTY, 
+        targetX, targetY,   
+        doorX, doorY,       
+        worldMatrix, roomMatrix
+    )) {
+        return; 
+    }
+
+    // 2. Perform daytime trading duties (idle behind counter)
+    hobbit.goal = 'shopkeeping';
+    hobbit.state = 'idle';
+    hobbit.path = [];
+}
+
+// ============================================================================
+// 🛠️ 4. INTERNAL ACTION CONTROLLERS (PRIVATE HELPERS)
+// ============================================================================
+
 function executeStoreTravel(hobbit, counter, currTX, currTY, worldMatrix, roomMatrix) {
     const standX = counter.x;
     const standY = counter.y + 1;
@@ -341,7 +650,6 @@ function executeStoreTravel(hobbit, counter, currTX, currTY, worldMatrix, roomMa
     }
 }
 
-// Helper: Handle Chest Navigation / Interaction
 function executeChestTravel(hobbit, depositTX, depositTY, currTX, currTY, worldMatrix, roomMatrix, chestId, chestItems) {
     const dist = Math.hypot((depositTX * 16 + 8) - (hobbit.x + 8), (depositTY * 16 + 8) - (hobbit.y + 8));
     
@@ -352,7 +660,6 @@ function executeChestTravel(hobbit, depositTX, depositTY, currTX, currTY, worldM
         if (!chestCache.has(chestId)) {
             if (socket && socket.connected) socket.emit('requestChest', chestId);
         } else {
-            // Logic for transferring items to/from chest
             if (hobbit.goal === 'deposit') {
                 transferToChest(hobbit, chestId, chestItems);
             } else if (hobbit.goal === 'withdraw_pm') {
@@ -374,7 +681,6 @@ function executeChestTravel(hobbit, depositTX, depositTY, currTX, currTY, worldM
     }
 }
 
-// Helper: Handle Crop Searching and Harvesting
 function executeHarvestLogic(hobbit, nearestPlant, currTX, currTY, worldMatrix, roomMatrix) {
     if (hobbit.targetPlant) {
         const plantKey = `${hobbit.targetPlant.gx}_${hobbit.targetPlant.gy}`;
@@ -384,7 +690,6 @@ function executeHarvestLogic(hobbit, nearestPlant, currTX, currTY, worldMatrix, 
             const dist = Math.hypot((livePlant.gx * 16 + 8) - (hobbit.x + 8), (livePlant.gy * 16 + 8) - (hobbit.y + 8));
 
             if (dist <= 24) {
-                // Perform harvest
                 const keyName = YIELD_MAP[livePlant.type];
                 if (keyName && ITEM_TYPES[keyName]) {
                     giveItemToHobbit(hobbit, createItem(ITEM_TYPES[keyName]));
@@ -414,14 +719,13 @@ function executeHarvestLogic(hobbit, nearestPlant, currTX, currTY, worldMatrix, 
     } else if (nearestPlant) {
         hobbit.targetPlant = nearestPlant;
     } else {
-        if ((!hobbit.path || hobbit.path.length === 0)) {
+        if (!hobbit.path || hobbit.path.length === 0) {
             assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
             hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
         }
     }
 }
 
-// Atomic helper: Transfer items from Inventory to Chest
 function transferToChest(hobbit, chestId, chestItems) {
     const depositItems = hobbit.inventory.filter(item => !item.isKey);
     depositItems.forEach(dep => {
@@ -446,7 +750,6 @@ function transferToChest(hobbit, chestId, chestItems) {
     }
 }
 
-// Atomic helper: Withdraw PM from Chest
 function withdrawFromChest(hobbit, chestId, chestItems) {
     const pmIdx = chestItems.findIndex(i => i.seedType === 'plant_matter');
     if (pmIdx !== -1) {
