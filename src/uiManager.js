@@ -334,16 +334,20 @@ if (socket) {
     });
 }
 
+// src/uiManager.js - inside initUI()
+
+window.activeExchangeWell = null;
+
 document.getElementById('close-ue-btn').onclick = () => {
     document.getElementById('uni-exchange-menu').classList.add('hidden');
-    activeExchangeWell = null;
+    window.activeExchangeWell = null;
 };
 
 document.getElementById('ue-withdraw-btn').onclick = () => {
-    if (activeExchangeWell && socket && socket.connected) {
+    if (window.activeExchangeWell && socket && socket.connected) {
         socket.emit('claimVillageTreasury', { 
-            wellX: activeExchangeWell.x, 
-            wellY: activeExchangeWell.y 
+            wellX: window.activeExchangeWell.x, 
+            wellY: window.activeExchangeWell.y 
         });
         document.getElementById('uni-exchange-menu').classList.add('hidden');
     }
@@ -2681,6 +2685,28 @@ export function setupMultiplayerListeners(s) {
     s.on('receiveWithdrawalVoucher', (voucher) => {
         executeWithdrawal(voucher);
     });
+
+    // src/uiManager.js - inside setupMultiplayerListeners(s)
+
+s.on('uniExchangeData', (data) => {
+    window.activeExchangeWell = { x: data.wellX, y: data.wellY };
+    
+    const treasuryVal = parseFloat(data.treasury) || 0;
+    const tbaVal = parseFloat(data.tbaBalance) || 0;
+    const total = treasuryVal + tbaVal;
+
+    document.getElementById('ue-treasury-bal').innerText = `${treasuryVal.toFixed(8)} UNI`;
+    document.getElementById('ue-tba-bal').innerText = `${tbaVal.toFixed(8)} UNI`;
+    document.getElementById('ue-total-withdrawable').innerText = `${total.toFixed(8)} UNI`;
+
+    const withdrawBtn = document.getElementById('ue-withdraw-btn');
+    const isOwner = (data.owner === playerWallet);
+    
+    // Enable button only if the player owns the village and funds exceed the 0.05 fee
+    withdrawBtn.disabled = !isOwner || (total <= 0.05);
+    document.getElementById('uni-exchange-menu').classList.remove('hidden');
+});
+
 }
 
 if (typeof window !== 'undefined') {

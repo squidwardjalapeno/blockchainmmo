@@ -1122,14 +1122,26 @@ io.on('connection', (socket) => {
 
     // server.js - inside connection block:
 
+// server.js - inside io.on('connection') socket block:
+
 socket.on('requestUniExchangeData', async (data) => {
     const key = `${data.wellX}_${data.wellY}`;
+    
+    // 🎯 FIX: Initialize the village on-demand if it hasn't been cached yet
+    if (!serverVillages.has(key)) {
+        serverVillages.set(key, { 
+            x: data.wellX, 
+            y: data.wellY, 
+            owner: null, 
+            captureProgress: 0, 
+            capturer: null,
+            treasury: 0.0 
+        });
+    }
+
     const village = serverVillages.get(key);
-    if (!village) return;
 
     let tbaBalance = "0.0";
-    
-    // Fetch live on-chain TBA balance from Unichain using ethers
     if (village.tbaAddress) {
         try {
             const uniAbi = ["function balanceOf(address) view returns (uint256)"];
