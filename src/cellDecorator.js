@@ -212,6 +212,9 @@ export function drawTemple(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, wor
     }
 
     registerObject(gx + 2, gy - 6, 'TEMPLE_ALTAR', { houseId: currentId });
+
+    // 🧝 Spawn the temple Usher hobbit dynamically inside the structure
+    import('./hobbitCore.js').then(m => m.spawnHobbit(gx + 2, gy - 4, currentId, gx + 2, gy - 6, 'Usher'));
 }
 
 export function drawGeneralStore(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
@@ -220,6 +223,7 @@ export function drawGeneralStore(gx, gy, worldMatrix, roomMatrix, fertilityMatri
 
     // Inside drawGeneralStore()
     // Register our three interior counter objects side-by-side
+    registerObject(gx + 0, gy - 2, 'UNI_EXCHANGE', { houseId: currentId }); // 👈 NEW: UNI Exchange
     registerObject(gx + 1, gy - 2, 'HOBBIT_EXCHANGE', { houseId: currentId }); // 🧝 Hobbit NFA Terminal
     registerObject(gx + 2, gy - 2, 'STORE_COUNTER', { houseId: currentId });   // 🏪 Merchant Counter
     registerObject(gx + 3, gy - 2, 'GRAND_EXCHANGE', { houseId: currentId });   // 🏦 Item NFT Terminal    

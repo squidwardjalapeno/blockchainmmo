@@ -873,8 +873,10 @@ function tickWorld() {
             continue; 
         }
 
+        // server.js - inside tickWorld
         if (plant.growth < 100) {
-            plant.growth = Math.min(100, plant.growth + (plant.growthRate * delta));
+            const rate = plant.growthRate || SERVER_PLANT_DEFS[plant.type]?.growthRate || 0.4; // 👈 SAFE FALLBACK
+            plant.growth = Math.min(100, plant.growth + (rate * delta));
         }
     }
 
@@ -1117,6 +1119,88 @@ io.on('connection', (socket) => {
             });
         }
     });
+
+    // server.js - inside connection block:
+
+socket.on('requestUniExchangeData', async (data) => {
+    const key = `${data.wellX}_${data.wellY}`;
+    const village = serverVillages.get(key);
+    if (!village) return;
+
+    let tbaBalance = "0.0";
+    
+    // Fetch live on-chain TBA balance from Unichain using ethers
+    if (village.tbaAddress) {
+        try {
+            const uniAbi = ["function balanceOf(address) view returns (uint256)"];
+            const uniContract = new ethers.Contract("0x8f187aA05619a017077f5308904739877ce9eA21", uniAbi, provider);
+            const rawBal = await uniContract.balanceOf(village.tbaAddress);
+            tbaBalance = ethers.formatEther(rawBal);
+        } catch (e) {
+            console.warn("Failed to fetch TBA balance from Unichain:", e);
+        }
+    }
+
+    socket.emit('uniExchangeData', {
+        wellX: data.wellX,
+        wellY: data.wellY,
+        owner: village.owner,
+        treasury: village.treasury || 0.0,
+        tbaBalance: parseFloat(tbaBalance)
+    });
+});
+
+socket.on('claimVillageTreasury', async (data) => {
+    const key = `${data.wellX}_${data.wellY}`;
+    const village = serverVillages.get(key);
+    if (!village || !village.owner) return;
+
+    if (socket.wallet !== village.owner) {
+        socket.emit('oreMessage', "Unauthorized: Only the sovereign owner can extract village funds!");
+        return;
+    }
+
+    let tbaBalance = 0.0;
+    if (village.tbaAddress) {
+        try {
+            const uniAbi = ["function balanceOf(address) view returns (uint256)"];
+            const uniContract = new ethers.Contract("0x8f187aA05619a017077f5308904739877ce9eA21", uniAbi, provider);
+            const rawBal = await uniContract.balanceOf(village.tbaAddress);
+            tbaBalance = parseFloat(ethers.formatEther(rawBal));
+        } catch (e) {}
+    }
+
+    const available = (village.treasury || 0.0) + tbaBalance;
+    const fee = 0.05;
+
+    if (available <= fee) {
+        socket.emit('oreMessage', "Treasury balance is too low to cover the 0.05 UNI processing fee.");
+        return;
+    }
+
+    const payout = available - fee;
+
+    // Reset database treasury immediately
+    village.treasury = 0.0;
+
+    // Queue payout (delivered to their personal on-chain wallet after the processing window)
+    const queueId = 'payout_' + Math.random().toString(36).substr(2, 9);
+    const now = Date.now();
+
+    activeExtractionQueues.set(queueId, {
+        id: queueId,
+        owner: village.owner,
+        itemType: 'UNI_PAYOUT',
+        count: payout,
+        startTime: now,
+        endTime: now + EXTRACTION_DELAY_MS,
+        villageId: key,
+        status: 'PROCESSING'
+    });
+
+    console.log(`🏦 Treasury claimed! Payout of ${payout.toFixed(8)} UNI queued for ${village.owner}.`);
+    socket.emit('oreMessage', `Withdrawal initiated! ${payout.toFixed(4)} UNI will arrive in your wallet in 2 hours.`);
+});
 
     // server.js - Inside requestWellState listener:
     socket.on('requestWellState', (data) => {
@@ -1595,11 +1679,14 @@ io.on('connection', (socket) => {
         if (serverPlants.has(plantKey)) return; 
 
         const plantType = item.seedType.replace("_seed", "").replace("_item", "");
+        const def = SERVER_PLANT_DEFS[plantType]; // 👈 ADD THIS LINE
+
         
         serverPlants.set(plantKey, {
             gx: tx, gy: ty,
             type: plantType,
             growth: 0,
+            growthRate: def ? def.growthRate : 0.4, // 👈 ADD THIS LINE
             timestamp: Date.now()
         });
 
@@ -1625,11 +1712,14 @@ io.on('connection', (socket) => {
     socket.on('registerWildPlant', (data) => {
         const { gx, gy, type, growth } = data;
         const plantKey = `${gx}_${gy}`;
+        const def = SERVER_PLANT_DEFS[type]; // 👈 ADD THIS LINE
+
         
         serverPlants.set(plantKey, {
             gx: gx, gy: gy,
             type: type,
             growth: growth || 0,
+            growthRate: def ? def.growthRate : 0.4, // 👈 ADD THIS LINE
             timestamp: Date.now()
         });
     });
@@ -2784,6 +2874,8 @@ function handleVillageConquestQueues(villageId, newOwnerWalletAddress) {
         }
     });
 }
+
+
 
 /**
  * Initiates the packaging and export queue at the Hobbit Exchange.

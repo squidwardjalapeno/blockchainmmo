@@ -166,6 +166,21 @@ if (obj.type === 'GRAND_EXCHANGE') {
     return;
 }
 
+// src/interactionManager.js - inside handleInteractions()
+
+if (obj.type === 'UNI_EXCHANGE') {
+    // Determine closest village well
+    import('./cellDecorator.js').then(m => {
+        const well = m.getVillageAt(tx, ty);
+        if (well && socket) {
+            socket.emit('requestUniExchangeData', { wellX: well.x, wellY: well.y });
+        }
+    });
+    inputState.interact = false;
+    inputState.action = false;
+    return;
+}
+
 // Inside handleInteractions() of interactionManager.js:
 if (obj.type === 'HOBBIT_EXCHANGE') {
     // Open the Hobbit Exchange UI Modal

@@ -297,6 +297,7 @@ export function initUI() {
         renderStorageUI();
     });
 
+
     const storageHeroPane = document.getElementById('storage-hero-inv');
     const storageBoxPane = document.getElementById('storage-box-inv');
 
@@ -307,6 +308,46 @@ export function initUI() {
     storageHeroPane.addEventListener('drop', (e) => handleStorageDrop(e, 'hero'));
     storageBoxPane.addEventListener('drop', (e) => handleStorageDrop(e, 'storage'));
 
+
+    // src/uiManager.js - place inside initUI()
+
+let activeExchangeWell = null;
+
+if (socket) {
+    socket.on('uniExchangeData', (data) => {
+        activeExchangeWell = { x: data.wellX, y: data.wellY };
+        
+        const treasuryVal = parseFloat(data.treasury);
+        const tbaVal = parseFloat(data.tbaBalance);
+        const total = treasuryVal + tbaVal;
+
+        document.getElementById('ue-treasury-bal').innerText = `${treasuryVal.toFixed(8)} UNI`;
+        document.getElementById('ue-tba-bal').innerText = `${tbaVal.toFixed(8)} UNI`;
+        document.getElementById('ue-total-withdrawable').innerText = `${total.toFixed(8)} UNI`;
+
+        const withdrawBtn = document.getElementById('ue-withdraw-btn');
+        // Enable if player is owner of this village and total exceeds processing fee
+        const isOwner = (data.owner === playerWallet);
+        
+        withdrawBtn.disabled = !isOwner || (total <= 0.05);
+        document.getElementById('uni-exchange-menu').classList.remove('hidden');
+    });
+}
+
+document.getElementById('close-ue-btn').onclick = () => {
+    document.getElementById('uni-exchange-menu').classList.add('hidden');
+    activeExchangeWell = null;
+};
+
+document.getElementById('ue-withdraw-btn').onclick = () => {
+    if (activeExchangeWell && socket && socket.connected) {
+        socket.emit('claimVillageTreasury', { 
+            wellX: activeExchangeWell.x, 
+            wellY: activeExchangeWell.y 
+        });
+        document.getElementById('uni-exchange-menu').classList.add('hidden');
+    }
+};
     // --- TEMPLE ALTAR LISTENERS ---
     document.getElementById('close-temple-btn').addEventListener('click', () => {
         document.getElementById('temple-menu').classList.add('hidden');
@@ -830,7 +871,7 @@ function getItemIcon(item) {
     // Add these two explicit mappings:
     if (item.seedType === "chicken_poop") return "💩";
     if (item.seedType === "raw_chicken") return "🍗";
-    
+
     return "❓";
 }
 

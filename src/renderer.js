@@ -331,7 +331,9 @@ if (obj) {
         'FOOD_STORAGE': 11,
         'HOBBIT_MANAGER': 12,
         'GRAND_EXCHANGE': 13, // 👈 Added: Maps to Tile 13 in the transparentTileset
-        'HOBBIT_EXCHANGE': 14 // 👈 Added: Maps to Tile 14 of the transparentTileset
+        'HOBBIT_EXCHANGE': 14, // 👈 Added: Maps to Tile 14 of the transparentTileset
+        'UNI_EXCHANGE': 15 // 👈 ADDED: Maps to Tile 15 in transparentTileset
+
     };
     const oldMap = { 'SMELTER': 53, 'BEDROLL': 61, 'INT_WALL': 41, 'ANVIL': 54 }; 
 
