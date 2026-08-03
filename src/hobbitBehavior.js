@@ -439,10 +439,13 @@ export function runUsherBehavior(hobbit, modifier, worldMatrix, roomMatrix) {
     const temple = findNearestTemple(hobbit);
     if (!temple) return; 
 
+    // Initialize local inspection memories on the unit
+    if (!hobbit.lastCheckedChests) hobbit.lastCheckedChests = new Map();
+
     // 1. Manage temple unlocking, locking, and indoor waiting
     if (executeStructureRoutine(
         hobbit, currTX, currTY, 
-        temple.x, temple.y,        
+        temple.x, temple.y + 1,        
         temple.doorX, temple.doorY, 
         worldMatrix, roomMatrix
     )) {
@@ -455,41 +458,97 @@ export function runUsherBehavior(hobbit, modifier, worldMatrix, roomMatrix) {
 
     if (totalSeeds < 64) {
         hobbit.goal = 'collect_seeds';
-        const targetChest = findForagerChestWithSeeds(hobbit);
         
-        if (targetChest) {
-            const distToChest = Math.hypot((targetChest.x * 16 + 8) - (hobbit.x + 8), (targetChest.y * 16 + 8) - (hobbit.y + 8));
+        // Find all chests in the village
+        const villageChests = getVillageChests(hobbit);
+        const now = Date.now();
+
+        // Filter out chests inspected less than 45 seconds ago
+        const availableChests = villageChests.filter(chest => {
+            const lastChecked = hobbit.lastCheckedChests.get(chest.id) || 0;
+            return (now - lastChecked) > 45000; 
+        });
+
+        // Retain or select closest available chest to target
+        if (hobbit.targetChest) {
+            const stillAvailable = availableChests.some(c => c.id === hobbit.targetChest.id);
+            if (!stillAvailable) hobbit.targetChest = null;
+        }
+
+        if (!hobbit.targetChest && availableChests.length > 0) {
+            let closest = null;
+            let minDist = Infinity;
+            availableChests.forEach(c => {
+                const dist = Math.hypot(c.x - currTX, c.y - currTY);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closest = c;
+                }
+            });
+            hobbit.targetChest = closest;
+        }
+
+        const target = hobbit.targetChest;
+
+        if (target) {
+            const distToChest = Math.hypot((target.x * 16 + 8) - (hobbit.x + 8), (target.y * 16 + 8) - (hobbit.y + 8));
+            
             if (distToChest <= 24) {
                 hobbit.state = 'idle';
                 hobbit.path = [];
-                
-                const chestId = `chest_${targetChest.x}_${targetChest.y}`;
-                const chestItems = chestCache.get(chestId) || [];
-                
-                let extracted = false;
-                for (let i = chestItems.length - 1; i >= 0; i--) {
-                    const item = chestItems[i];
-                    if (item.seedType && item.seedType.includes('_seed')) {
-                        chestItems.splice(i, 1);
-                        giveItemToHobbit(hobbit, item);
-                        extracted = true;
+
+                // 🎯 PHYSICAL INSPECTION: Fetch/Verify the latest chest state from the server
+                if (!chestCache.has(target.id)) {
+                    if (socket && socket.connected) {
+                        socket.emit('requestChest', target.id);
+                    }
+                } else {
+                    const chestItems = chestCache.get(target.id) || [];
+                    const hasSeeds = chestItems.some(i => i.seedType && i.seedType.includes('_seed'));
+
+                    if (hasSeeds) {
+                        console.log(`✨ Usher ${hobbit.name} found seeds inside chest ${target.id}! Extracting...`);
+                        
+                        let extracted = false;
+                        for (let i = chestItems.length - 1; i >= 0; i--) {
+                            const item = chestItems[i];
+                            if (item.seedType && item.seedType.includes('_seed')) {
+                                chestItems.splice(i, 1);
+                                giveItemToHobbit(hobbit, item);
+                                extracted = true;
+                            }
+                        }
+
+                        if (extracted && socket && socket.connected) {
+                            socket.emit('updateChest', { chestId: target.id, items: chestItems });
+                        }
+
+                        // Done collecting, clear target
+                        hobbit.targetChest = null;
+                    } else {
+                        console.log(`🔍 Usher ${hobbit.name} inspected chest ${target.id}. No seeds found.`);
+                        // Mark as checked to initiate the cooldown
+                        hobbit.lastCheckedChests.set(target.id, now);
+                        hobbit.targetChest = null;
                     }
                 }
-
-                if (extracted && socket && socket.connected) {
-                    socket.emit('updateChest', { chestId, items: chestItems });
-                }
             } else {
+                // Navigate to the target chest
                 if ((!hobbit.path || hobbit.path.length === 0) && hobbit.pathTimer <= 0) {
                     hobbit.pathTimer = 1.5;
-                    const path = findPathToCoords(currTX, currTY, targetChest.x + 1, targetChest.y, worldMatrix, roomMatrix, hobbit);
+                    const path = findPathToCoords(currTX, currTY, target.x + 1, target.y, worldMatrix, roomMatrix, hobbit, 60);
                     if (path) {
                         hobbit.path = path;
                         hobbit.state = 'walking';
+                    } else {
+                        // Pathfinder could not find a path (door might be locked/blocked)
+                        hobbit.lastCheckedChests.set(target.id, now);
+                        hobbit.targetChest = null;
                     }
                 }
             }
         } else {
+            // All chests are on cooldown or no foragers exist, patrol the village randomly
             if (!hobbit.path || hobbit.path.length === 0) {
                 assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
                 hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
@@ -529,7 +588,7 @@ export function runUsherBehavior(hobbit, modifier, worldMatrix, roomMatrix) {
         } else {
             if ((!hobbit.path || hobbit.path.length === 0) && hobbit.pathTimer <= 0) {
                 hobbit.pathTimer = 1.5;
-                const path = findPathToCoords(currTX, currTY, temple.x, temple.y, worldMatrix, roomMatrix, hobbit, 60);
+                const path = findPathToCoords(currTX, currTY, temple.x, temple.y + 1, worldMatrix, roomMatrix, hobbit, 60);
                 if (path) {
                     hobbit.path = path;
                     hobbit.state = 'walking';
@@ -538,7 +597,6 @@ export function runUsherBehavior(hobbit, modifier, worldMatrix, roomMatrix) {
         }
     }
 }
-
 /**
  * Main behavior machine for the Forager job.
  */
@@ -768,4 +826,27 @@ function withdrawFromChest(hobbit, chestId, chestItems) {
         pmItemForHobbit.count = amountToWithdraw;
         hobbit.inventory = [...keys, pmItemForHobbit];
     }
+}
+
+/**
+ * Resolves all physical Forager chest coordinates inside the Usher's village.
+ */
+export function getVillageChests(hobbit) {
+    const village = hobbit.cachedWell || getHobbitVillage(hobbit);
+    if (!village) return [];
+
+    const chests = [];
+    hobbits.forEach(other => {
+        if (other.job === 'Forager' && other.chestX !== null) {
+            const otherVillage = getHobbitVillage(other);
+            if (otherVillage && otherVillage.x === village.x && otherVillage.y === village.y) {
+                chests.push({ 
+                    x: other.chestX, 
+                    y: other.chestY, 
+                    id: `chest_${other.chestX}_${other.chestY}` 
+                });
+            }
+        }
+    });
+    return chests;
 }
