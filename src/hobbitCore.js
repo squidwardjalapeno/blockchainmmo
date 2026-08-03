@@ -74,7 +74,12 @@ export const YIELD_MAP = {
 /**
  * Instantiates a new hobbit structure and appends it to the active simulation array
  */
-export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null, defaultJob = 'Forager') {
+// hobbitCore.js
+
+/**
+ * Instantiates a new hobbit structure and appends it to the active simulation array
+ */
+export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null, defaultJob = 'Forager', id = null) { // 🎯 Added 'id' parameter
     const seed = (gx * 31) + gy;
     const hash = Math.abs(Math.sin(seed) * 10000);
     const firstName = HOBBIT_FIRST_NAMES[Math.floor(hash) % HOBBIT_FIRST_NAMES.length];
@@ -96,7 +101,8 @@ export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null, 
     } : null;
 
     hobbits.push({
-        id: 'hobbit_' + Math.random().toString(36).substr(2, 9),
+        // 🎯 FIX: Assign the standard server ID immediately to prevent deletion desyncs
+        id: id || ('hobbit_' + Math.random().toString(36).substr(2, 9)),
         name: proceduralName, 
         job: defaultJob,       
         isHobbit: true,
