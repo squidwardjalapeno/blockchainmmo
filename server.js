@@ -1413,6 +1413,8 @@ socket.on('claimVillageTreasury', async (data) => {
 // server.js - inside io.on('connection') socket block:
 
 // server.js - inside requestWellState listener:
+// server.js - inside requestWellState listener:
+
 socket.on('requestWellState', async (data) => {
     const key = `${data.wellX}_${data.wellY}`;
     
@@ -1425,13 +1427,16 @@ socket.on('requestWellState', async (data) => {
             captureProgress: 0, 
             capturer: null,
             treasury: 0.0,
-            structures: [] // Initialize empty structures array
+            structures: [],
+            isSpawning: false,
+            isWorkforceSpawned: false // 🎯 NEW: Permanent workforce spawning guard
         });
+        saveVillages();
     }
     
     const v = serverVillages.get(key);
     
-    // 🎯 Save the client's transmitted planned structures if provided
+    // Save the client's transmitted planned structures if provided
     if (data.structures && data.structures.length > 0) {
         v.structures = data.structures;
         saveVillages();
@@ -1439,8 +1444,10 @@ socket.on('requestWellState', async (data) => {
 
     let existingHobbits = serverHobbits.filter(h => h.villageId === key);
 
-    // If there are no active in-memory hobbits for this village, determine the spawn path
-    if (existingHobbits.length === 0) {
+    // 🎯 SECURE ATOMIC GUARD: Only spawn if the database explicitly says they have never been spawned
+    if (!v.isWorkforceSpawned && !v.isSpawning && existingHobbits.length === 0) {
+        v.isSpawning = true; // Set concurrency lock
+
         if (v.owner && v.tbaAddress) {
             // Path A: Owned Village. Query Unichain and restore the exact workforce.
             try {
@@ -1456,7 +1463,7 @@ socket.on('requestWellState', async (data) => {
             }
         } else {
             // Path B: Neutral / Unclaimed Village. Spawn exactly 1 hobbit per planned structure.
-            const spawnCount = v.structures.length > 0 ? v.structures.length : 3;
+            const spawnCount = v.structures.length;
             console.log(`📡 NEUTRAL SATELLITE: Spawning ${spawnCount} structural workers for village [${key}]...`);
             
             for (let i = 0; i < spawnCount; i++) {
@@ -1465,6 +1472,12 @@ socket.on('requestWellState', async (data) => {
                 spawnDatabaseHobbit(v.x, v.y, key, fallbackJob, assignedStruct);
             }
         }
+        
+        v.isWorkforceSpawned = true; // 🎯 Set permanent database guard
+        saveVillages(); // Save updated JSON database to disk
+        
+        v.isSpawning = false; // Release lock
+        
         // Refresh references after spawning
         existingHobbits = serverHobbits.filter(h => h.villageId === key);
     }
@@ -1485,6 +1498,7 @@ socket.on('requestWellState', async (data) => {
         });
     }
 });
+
     socket.on('requestWellInteraction', (data) => {
         const { wellX, wellY } = data;
         const key = `${wellX}_${wellY}`;
