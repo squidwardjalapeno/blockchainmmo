@@ -1,7 +1,7 @@
 // src/uiManager.js
 
 import { hero, getLevelInfo, gameState, getFocusCoordinates } from './entities.js';
-import { socket, playerWallet, setPlayerWallet, syncInventoryWithServer, chestCache, hayStorageCache, storeDbCache, playerRequestedChestId, setPlayerRequestedChestId, doorStates } from './multiplayer.js';
+import { socket, playerWallet, setPlayerWallet, syncInventoryWithServer, chestCache, hayStorageCache, storeDbCache, playerRequestedChestId, setPlayerRequestedChestId, doorStates, villageOwners, villageCriminals } from './multiplayer.js';
 import { CONFIG } from './config.js';
 import { ITEM_TYPES, createItem } from './items.js';
 import { getWaitModifier, getRandomFish, globalFishCount } from './fish.js';
@@ -139,9 +139,6 @@ export const uiState = {
     isOpen: false,
     currentTab: 'inventory'
 };
-
-export const villageOwners = new Map();
-export const villageCriminals = new Map();
 
 if (typeof window !== 'undefined') {
     window.villageOwners = villageOwners;
