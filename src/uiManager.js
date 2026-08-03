@@ -1226,6 +1226,8 @@ window.claimStoredItem = (index) => {
 
 // src/uiManager.js
 
+// src/uiManager.js
+
 async function executeBurnAndReclaim(tokenId, tbaAddress) {
     const UNI_TOKEN_ADDRESS = "0x8f187aA05619a017077f5308904739877ce9eA21";
     // Deployed SovereignDeed parent contract
@@ -1257,7 +1259,6 @@ async function executeBurnAndReclaim(tokenId, tbaAddress) {
         const signer = await provider.getSigner();
         const signerAddress = await signer.getAddress();
 
-        // Checksum the addresses to format them correctly for Ethers v6
         const cleanTBA = ethers.getAddress(tbaAddress);
         const cleanUNI = ethers.getAddress(UNI_TOKEN_ADDRESS);
         const cleanSVD = ethers.getAddress(SVD_CONTRACT_ADDRESS);
@@ -1265,13 +1266,30 @@ async function executeBurnAndReclaim(tokenId, tbaAddress) {
         console.log("Sanitized Signer Address:", signerAddress);
         console.log("Sanitized TBA Address:", cleanTBA);
 
+        // 🕵️ DIAGNOSTIC: Query the TBA's standard ERC-6551 token() parameters
+        const tbaReadContract = new ethers.Contract(cleanTBA, [
+            "function token() external view returns (uint256, address, uint256)"
+        ], readProvider);
+
+        try {
+            const [storedChainId, storedTokenContract, storedTokenId] = await tbaReadContract.token();
+            console.log("--- 🕵️ TBA PARAMETERS POLL ---");
+            console.log("TBA Stored Chain ID:", storedChainId.toString());
+            console.log("TBA Stored Parent Contract:", storedTokenContract);
+            console.log("TBA Stored Token ID:", storedTokenId.toString());
+            console.log("Current Unichain Network Chain ID:", (await readProvider.getNetwork()).chainId.toString());
+            console.log("-------------------------------");
+        } catch (pollErr) {
+            console.warn("Could not query standard token() metadata on this TBA:", pollErr.message);
+        }
+
         // Query leftover UNI balance inside the TBA using the stable readProvider
         const uniContract = new ethers.Contract(cleanUNI, ["function balanceOf(address) view returns (uint256)"], readProvider);
         const tbaBalance = await uniContract.balanceOf(cleanTBA);
 
         console.log(`Checking TBA balances... Found: ${ethers.formatEther(tbaBalance)} UNI`);
 
-        // 1. Reclaim UNI if a balance exists
+        // 1. Reclaim UNI if a balance exists (Strictly blocks the burn on failure)
         if (tbaBalance > 0n) {
             console.log("Reclaiming leftover UNI from TBA contract...");
             
@@ -1309,7 +1327,7 @@ async function executeBurnAndReclaim(tokenId, tbaAddress) {
             console.log("No leftover UNI found inside this TBA. Skipping reclaim step.");
         }
 
-        // 2. Burn the parent Deed NFT (Try native burn, fallback to soft-burn if unsupported)
+        // 2. Burn the parent Deed NFT (Only executes if the reclaim code block has successfully completed)
         console.log(`Executing on-chain NFT burn for SVD Token #${tokenId}...`);
         const bigTokenId = BigInt(tokenId);
 
@@ -1352,7 +1370,7 @@ async function executeBurnAndReclaim(tokenId, tbaAddress) {
         }
     } catch (err) {
         console.error("On-chain burn workflow failed:", err);
-        alert("Transaction failed or was rejected.");
+        alert("Transaction failed or was rejected. Reclaim blocked to protect your funds.");
     }
 }
 
