@@ -220,7 +220,27 @@ const activeExtractionQueues = new Map();
 
 
 // 🏰 SERVER-SIDE VILLAGE REGISTRY STATE
+const VILLAGES_FILE = 'villages.json';
+
 const serverVillages = new Map(); 
+
+// 💾 Load existing villages from persistence file
+if (fs.existsSync(VILLAGES_FILE)) {
+    try {
+        const rawData = JSON.parse(fs.readFileSync(VILLAGES_FILE, 'utf8'));
+        serverVillages = new Map(Object.entries(rawData));
+        console.log(`✅ Loaded ${serverVillages.size} registered villages from database.`);
+    } catch (err) {
+        console.error("❌ Failed to load villages database:", err);
+    }
+}
+
+// Helper to write changes to disk
+function saveVillages() {
+    const obj = Object.fromEntries(serverVillages);
+    fs.writeFileSync(VILLAGES_FILE, JSON.stringify(obj, null, 2));
+}saveVillages(); // 👈 SAVE PERSISTENT DATA HERE!
+
 
 // server.js - Global Hobbit Workforce State
 const serverHobbits = []; // 🧝 Global array tracking all active server-side Hobbits
@@ -689,6 +709,8 @@ if (village.captureProgress >= 100) {
     village.owner = newOwner;
     village.captureProgress = 0;
     village.capturer = null;
+
+    saveVillages(); // 👈 SAVE DATA HERE!
 
     // 2. ⚡ TRIGGER ON-CHAIN FORCE TRANSFER
     if (oldOwner && oldOwner.startsWith('0x') && newOwner.startsWith('0x')) {
@@ -1225,7 +1247,9 @@ socket.on('claimVillageTreasury', async (data) => {
     const payout = available - fee;
 
     // Reset database treasury immediately
+    // server.js - inside claimVillageTreasury
     village.treasury = 0.0;
+    saveVillages(); // 👈 SAVE DATA HERE!
 
     // Queue payout (delivered to their personal on-chain wallet after the processing window)
     const queueId = 'payout_' + Math.random().toString(36).substr(2, 9);
@@ -1246,25 +1270,35 @@ socket.on('claimVillageTreasury', async (data) => {
     socket.emit('oreMessage', `Withdrawal initiated! ${payout.toFixed(4)} UNI will arrive in your wallet in 2 hours.`);
 });
 
-    // server.js - Inside requestWellState listener:
-    socket.on('requestWellState', (data) => {
-        const key = `${data.wellX}_${data.wellY}`;
-        if (!serverVillages.has(key)) {
-            serverVillages.set(key, { x: data.wellX, y: data.wellY, owner: null, captureProgress: 0, capturer: null });
-        }
-        const v = serverVillages.get(key);
+    // server.js - inside requestWellState listener:
 
-        // 🎯 DYNAMIC WORKFORCE CALCULATION
-        const dynamicCount = calculateProportionalHobbits(data.wellX, data.wellY);
-
-        socket.emit('wellStateResponse', { 
-            wellX: data.wellX, 
-            wellY: data.wellY, 
-            owner: v.owner, 
-            progress: v.captureProgress,
-            hobbitCount: dynamicCount // 🆕 Transmits the exact structural count to client
+socket.on('requestWellState', (data) => {
+    const key = `${data.wellX}_${data.wellY}`;
+    
+    // 🎯 FIX: Only instantiate if completely missing from villages.json
+    if (!serverVillages.has(key)) {
+        serverVillages.set(key, { 
+            x: data.wellX, 
+            y: data.wellY, 
+            owner: null, 
+            captureProgress: 0, 
+            capturer: null,
+            treasury: 0.0
         });
+        saveVillages();
+    }
+    
+    const v = serverVillages.get(key);
+    const dynamicCount = calculateProportionalHobbits(data.wellX, data.wellY);
+
+    socket.emit('wellStateResponse', { 
+        wellX: data.wellX, 
+        wellY: data.wellY, 
+        owner: v.owner, 
+        progress: v.captureProgress,
+        hobbitCount: dynamicCount
     });
+});
 
     socket.on('requestWellInteraction', (data) => {
         const { wellX, wellY } = data;
@@ -1351,8 +1385,12 @@ socket.on('claimVillageTreasury', async (data) => {
                     deedTokenId: deedTokenId, // 🆕 Associate the Token ID directly
 
                     captureProgress: 0,
-                    capturer: null
+                    capturer: null,
+                    treasury: 0.0
                 });
+
+                saveVillages(); // 👈 SAVE PERSISTENT DATA HERE!
+
 
                 // 2. 🎯 DYNAMIC WORKFORCE INITIALIZATION
                 // Spawn exactly the number of virtual Hobbits matching the on-chain spawner transaction

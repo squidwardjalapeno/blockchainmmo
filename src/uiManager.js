@@ -1765,10 +1765,9 @@ export function updateDoorControlUI(gx, gy, locked) {
     }
 }
 
+// src/uiManager.js - Replace openVillageMenu with this:
+
 export function openVillageMenu(wellX, wellY, villageData) {
-
-    setupClaimPeacefullyButton(socket, wellX, wellY);
-
     document.getElementById('village-menu').classList.remove('hidden');
     
     const ownerLabel = document.getElementById('village-owner-label');
@@ -1780,7 +1779,7 @@ export function openVillageMenu(wellX, wellY, villageData) {
     const shortOwner = villageData.owner ? (villageData.owner.startsWith('0x') ? villageData.owner.substring(0, 6) + "..." : villageData.owner) : "UNCLAIMED";
     ownerLabel.innerText = shortOwner;
 
-    // Dynamic well lookup to handle spawning toggle logic safely without circular imports
+    // Dynamic well lookup to handle spawning toggle logic safely
     import('./cellDecorator.js').then(m => {
         const well = m.plannedWells.find(w => w.x === wellX && w.y === wellY);
         const toggleSpawningBtn = document.getElementById('village-toggle-spawning-btn');
@@ -1797,40 +1796,43 @@ export function openVillageMenu(wellX, wellY, villageData) {
         }
     });
 
-    // src/uiManager.js - inside openVillageMenu()
+    if (villageData.owner === null) {
+        // 🎯 1. PEACEFUL CLAIM BRANCH
+        // Only bind MetaMask claim listener if the village is completely unclaimed
+        setupClaimPeacefullyButton(socket, wellX, wellY);
 
-if (villageData.owner === null) {
-    progressSection.classList.add('hidden');
-    claimBtn.innerText = "CLAIM PEACEFULLY";
-    claimBtn.className = "pixel-btn safe";
-    claimBtn.disabled = false;
-    
-    claimBtn.onclick = () => {
-        if (socket) socket.emit('requestWellInteraction', { wellX, wellY });
-        document.getElementById('village-menu').classList.add('hidden');
-    };
-} else {
-    progressSection.classList.remove('hidden');
-    const pct = villageData.progress || 0;
-    progressBar.style.width = `${pct}%`;
-    progressText.innerText = `${Math.floor(pct)}%`;
-
-    const isOwner = (villageData.owner === playerWallet);
-    if (isOwner) {
-        claimBtn.innerText = "YOU OWN THIS VILLAGE";
-        claimBtn.className = "pixel-btn";
-        claimBtn.disabled = true; // 👈 Disable duplicate claim
-    } else {
-        // Village is owned by another player. Initiate Siege instead of claim!
-        claimBtn.innerText = "INITIATE SIEGE";
-        claimBtn.className = "pixel-btn cancel";
+        progressSection.classList.add('hidden');
+        claimBtn.innerText = "CLAIM PEACEFULLY";
+        claimBtn.className = "pixel-btn safe";
         claimBtn.disabled = false;
-        claimBtn.onclick = () => {
-            if (socket) socket.emit('requestWellInteraction', { wellX, wellY });
-            document.getElementById('village-menu').classList.add('hidden');
-        };
+    } else {
+        // --- VILLAGE IS CLAIMED ---
+        progressSection.classList.remove('hidden');
+        const pct = villageData.progress || 0;
+        progressBar.style.width = `${pct}%`;
+        progressText.innerText = `${Math.floor(pct)}%`;
+
+        const isOwner = (villageData.owner === playerWallet);
+        if (isOwner) {
+            // 🎯 2. OWNER BRANCH: Disable actions
+            claimBtn.innerText = "YOU OWN THIS VILLAGE";
+            claimBtn.className = "pixel-btn";
+            claimBtn.disabled = true;
+        } else {
+            // 🎯 3. SIEGE BRANCH: Clone button to permanently strip any lingering MetaMask listeners!
+            const newClaimBtn = claimBtn.cloneNode(true);
+            claimBtn.parentNode.replaceChild(newClaimBtn, claimBtn);
+
+            newClaimBtn.innerText = "INITIATE SIEGE";
+            newClaimBtn.className = "pixel-btn cancel";
+            newClaimBtn.disabled = false;
+            
+            newClaimBtn.onclick = () => {
+                if (socket) socket.emit('requestWellInteraction', { wellX, wellY });
+                document.getElementById('village-menu').classList.add('hidden');
+            };
+        }
     }
-}
 
     document.getElementById('close-village-btn').onclick = () => {
         document.getElementById('village-menu').classList.add('hidden');
