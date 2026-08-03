@@ -1799,7 +1799,7 @@ export function openVillageMenu(wellX, wellY, villageData) {
     if (villageData.owner === null) {
         // 🎯 1. PEACEFUL CLAIM BRANCH
         // Only bind MetaMask claim listener if the village is completely unclaimed
-        setupClaimPeacefullyButton(socket, wellX, wellY);
+        setupClaimPeacefullyButton(socket, wellX, wellY, villageData.hobbitCount); // 👈 MOVED HERE
 
         progressSection.classList.add('hidden');
         claimBtn.innerText = "CLAIM PEACEFULLY";
@@ -1819,7 +1819,7 @@ export function openVillageMenu(wellX, wellY, villageData) {
             claimBtn.className = "pixel-btn";
             claimBtn.disabled = true;
         } else {
-            // 🎯 3. SIEGE BRANCH: Clone button to permanently strip any lingering MetaMask listeners!
+            // 🎯 3. SIEGE BRANCH: Clone button to permanently strip any lingering MetaMask listeners
             const newClaimBtn = claimBtn.cloneNode(true);
             claimBtn.parentNode.replaceChild(newClaimBtn, claimBtn);
 
@@ -2643,8 +2643,7 @@ export function setupMultiplayerListeners(s) {
             capturer: null
         });
         openVillageMenu(data.wellX, data.wellY, data);
-        // 🆕 Bind the MetaMask spawner with the exact, proportional workforce count
-    setupClaimPeacefullyButton(socket, data.wellX, data.wellY, data.hobbitCount);   
+        
     });
 
     s.on('villageIntruderAggro', (data) => {
