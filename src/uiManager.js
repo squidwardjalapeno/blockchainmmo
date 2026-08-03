@@ -1228,6 +1228,8 @@ window.claimStoredItem = (index) => {
 
 // src/uiManager.js
 
+// src/uiManager.js
+
 async function executeBurnAndReclaim(tokenId, tbaAddress) {
     const UNI_TOKEN_ADDRESS = "0x8f187aA05619a017077f5308904739877ce9eA21";
     // Deployed SovereignDeed parent contract
@@ -1266,7 +1268,7 @@ async function executeBurnAndReclaim(tokenId, tbaAddress) {
         console.log("Sanitized Signer Address:", signerAddress);
         console.log("Sanitized TBA Address:", cleanTBA);
 
-        // 🕵️ DIAGNOSTIC: Query the TBA's standard ERC-6551 token() parameters
+        // 1. Query the TBA's standard ERC-6551 token() parameters
         const tbaReadContract = new ethers.Contract(cleanTBA, [
             "function token() external view returns (uint256, address, uint256)"
         ], readProvider);
@@ -1283,13 +1285,29 @@ async function executeBurnAndReclaim(tokenId, tbaAddress) {
             console.warn("Could not query standard token() metadata on this TBA:", pollErr.message);
         }
 
+        // 2. Query the parent SVD NFT contract to see who currently owns Token ID 7 on-chain
+        const svdContract = new ethers.Contract(cleanSVD, [
+            "function ownerOf(uint256 tokenId) external view returns (address)"
+        ], readProvider);
+
+        try {
+            const svdOwner = await svdContract.ownerOf(BigInt(tokenId));
+            console.log("--- 🕵️ parent NFT OWNER POLL ---");
+            console.log("SVD Parent Contract Owner of Token #7:", svdOwner);
+            console.log("Your MetaMask Signer Address:", signerAddress);
+            console.log("Is Signer the On-Chain Owner?:", svdOwner.toLowerCase() === signerAddress.toLowerCase());
+            console.log("--------------------------------");
+        } catch (svdErr) {
+            console.warn("Could not query ownerOf on the parent SVD contract:", svdErr.message);
+        }
+
         // Query leftover UNI balance inside the TBA using the stable readProvider
         const uniContract = new ethers.Contract(cleanUNI, ["function balanceOf(address) view returns (uint256)"], readProvider);
         const tbaBalance = await uniContract.balanceOf(cleanTBA);
 
         console.log(`Checking TBA balances... Found: ${ethers.formatEther(tbaBalance)} UNI`);
 
-        // 1. Reclaim UNI if a balance exists (Strictly blocks the burn on failure)
+        // 3. Reclaim UNI if a balance exists (Strictly blocks the burn on failure)
         if (tbaBalance > 0n) {
             console.log("Reclaiming leftover UNI from TBA contract...");
             
@@ -1299,16 +1317,15 @@ async function executeBurnAndReclaim(tokenId, tbaAddress) {
             ]);
             const transferData = erc20Interface.encodeFunctionData("transfer", [signerAddress, tbaBalance]);
 
-            // Manually compile the ERC-6551 execute(...) call
+            // Manually compile the ERC-6551 executeCall(...) call matching your contract's actual ABI
             const tbaInterface = new ethers.Interface([
-                "function execute(address to, uint256 value, bytes data, uint256 operation) external payable returns (bytes)"
+                "function executeCall(address target, uint256 value, bytes data) external payable returns (bytes)"
             ]);
 
-            const executePayload = tbaInterface.encodeFunctionData("execute", [
+            const executePayload = tbaInterface.encodeFunctionData("executeCall", [
                 cleanUNI, 
                 0n, 
-                transferData, 
-                0n
+                transferData
             ]);
 
             console.log("Encoded Execute Payload:", executePayload);
@@ -1327,7 +1344,7 @@ async function executeBurnAndReclaim(tokenId, tbaAddress) {
             console.log("No leftover UNI found inside this TBA. Skipping reclaim step.");
         }
 
-        // 2. Burn the parent Deed NFT (Only executes if the reclaim code block has successfully completed)
+        // 4. Burn the parent Deed NFT (Only executes if the reclaim code block has successfully completed)
         console.log(`Executing on-chain NFT burn for SVD Token #${tokenId}...`);
         const bigTokenId = BigInt(tokenId);
 
