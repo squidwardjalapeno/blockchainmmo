@@ -805,7 +805,7 @@ function updateSimulationTemperatures() {
  * Runs low-frequency background calculations (agriculture, AI, seiges).
  */
 // server.js
-function tickWorld() {
+async function tickWorld() {
     const delta = 0.200; // 200ms tick step
 
     // 1. Update active spatial simulation temperatures (HOT/WARM/COLD)
