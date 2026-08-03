@@ -332,7 +332,9 @@ if (obj) {
         'HOBBIT_MANAGER': 12,
         'GRAND_EXCHANGE': 13, // 👈 Added: Maps to Tile 13 in the transparentTileset
         'HOBBIT_EXCHANGE': 14, // 👈 Added: Maps to Tile 14 of the transparentTileset
-        'UNI_EXCHANGE': 15 // 👈 ADDED: Maps to Tile 15 in transparentTileset
+        'UNI_EXCHANGE': 15, // 👈 ADDED: Maps to Tile 15 in transparentTileset
+        'VILLAGE_VAULT': 16 // 🎯 MAPS TO TILE 16 OF THE TRANSPARENT TILESET
+
 
     };
     const oldMap = { 'SMELTER': 53, 'BEDROLL': 61, 'INT_WALL': 41, 'ANVIL': 54 }; 

@@ -130,6 +130,16 @@ export const STORAGE_CONFIGS = {
         limit: 10,
         transferEvent: 'requestHayTransfer',
         updateEvent: 'updateHayStorage'
+    },
+    VAULT: {
+        title: "🏛️ VILLAGE VAULT",
+        subtitle: "Secure regional storage. High capacity (16 slots).",
+        paneTitle: "VAULT",
+        unloadLabel: "UNLOAD ALL",
+        filter: () => true, // Allows all item types
+        limit: 16,
+        transferEvent: 'requestChestTransfer',
+        updateEvent: 'updateChest'
     }
 };
 
@@ -1674,6 +1684,18 @@ export function initTwoTierMenu(socketInstance) {
 
 export function setupClaimPeacefullyButton(socketInstance, wellX, wellY, hobbitCount) {
     const claimBtn = document.getElementById('village-claim-btn');
+    const syncBtn = document.getElementById('village-sync-btn');
+
+    // 🎯 Bind the Global Sync Button Click Handler
+    if (syncBtn) {
+        syncBtn.onclick = () => {
+            syncBtn.innerText = "SYNCING...";
+            syncBtn.disabled = true;
+            if (socket) {
+                socket.emit('requestSyncVillage', { wellX, wellY });
+            }
+        };
+    }
     if (!claimBtn) return;
 
     const newClaimBtn = claimBtn.cloneNode(true);
@@ -2562,7 +2584,9 @@ export function setupMultiplayerListeners(s) {
     s.on('chestData', (data) => { 
         if (window.chestCache) window.chestCache.set(data.chestId, data.items);
         if (data.chestId === playerRequestedChestId) {
-            openUnifiedStorage(data.chestId, data.items, 'CHEST'); 
+            // 🎯 Route vault_ prefixes to the high capacity VAULT config
+            const storageType = data.chestId.startsWith('vault_') ? 'VAULT' : 'CHEST';
+            openUnifiedStorage(data.chestId, data.items, storageType); 
             setPlayerRequestedChestId(null); 
         }
     });
@@ -2678,6 +2702,16 @@ export function setupMultiplayerListeners(s) {
         });
         updateHUD();
     });
+
+    // uiManager.js - Inside setupMultiplayerListeners()
+s.on('villageSyncCompleted', (data) => {
+    const syncBtn = document.getElementById('village-sync-btn');
+    if (syncBtn) {
+        syncBtn.innerText = "⚡ SYNC SYSTEM STATE";
+        syncBtn.disabled = false;
+    }
+    alert(`System State Synced!\n- Treasury Fund Synced\n- Hobbit Count Synced\n- Vault Delta Synced`);
+});
 
     s.on('wellInteractionMessage', (data) => {
         alert(data.message);

@@ -686,14 +686,19 @@ function updateSimulationTemperatures() {
     }
 }
 
+/**
+ * 🚜 WORLD LOOP (WARM - 5 Hz / 200ms)
+ * Runs low-frequency background calculations (agriculture, AI, seiges).
+ */
 function tickWorld() {
-    const delta = 0.200; 
+    const delta = 0.200; // 200ms tick step
 
-    // Update active spatial temperatures across the map cells
+    // 1. Update active spatial simulation temperatures (HOT/WARM/COLD)
     updateSimulationTemperatures();
 
-    
-
+    // ==========================================
+    // 🏘️ SEIGE & CAPTURE LOGIC
+    // ==========================================
     for (let [key, village] of serverVillages) {
         if (village.owner === null) continue;
 
@@ -701,72 +706,107 @@ function tickWorld() {
 
         if (village.capturer) {
             if (counts.enemies > counts.allies) {
+                // Progress the capture bar forward
                 village.captureProgress = Math.min(100, village.captureProgress + delta * 5);
-                // server.js - inside tickWorld() where captureProgress reaches 100%
+                
+                if (village.captureProgress >= 100) {
+                    const oldOwner = village.owner;
+                    const newOwner = village.capturer;
 
-if (village.captureProgress >= 100) {
-    const oldOwner = village.owner;
-    const newOwner = village.capturer;
+                    console.log(`⚔️ CONQUEST RESOLVED: ${newOwner} has conquered ${oldOwner}'s village!`);
 
-    console.log(`⚔️ CONQUEST RESOLVED: ${newOwner} has conquered ${oldOwner}'s village!`);
+                    // 1. Update database village records (No destructive wipes)
+                    village.owner = newOwner;
+                    village.captureProgress = 0;
+                    village.capturer = null;
 
-    // 1. Update database village records
-    village.owner = newOwner;
-    village.captureProgress = 0;
-    village.capturer = null;
+                    saveVillages(); // Persist changes to disk
 
-    saveVillages(); // 👈 SAVE DATA HERE!
+                    // 2. ⚡ TRIGGER ON-CHAIN FORCE TRANSFER (Standard standard transferFrom)
+                    if (oldOwner && oldOwner.startsWith('0x') && newOwner.startsWith('0x')) {
+                        // Execute asynchronously to prevent main-loop blocking
+                        executeOnChainForceTransfer(oldOwner, newOwner, village.deedTokenId);
+                    }
 
-    // 2. ⚡ TRIGGER ON-CHAIN FORCE TRANSFER
-    if (oldOwner && oldOwner.startsWith('0x') && newOwner.startsWith('0x')) {
-        // Run asynchronously to prevent game-loop blocking
-        executeOnChainForceTransfer(oldOwner, newOwner, village.deedTokenId);
-    }
+                    // 3. Reassign active extraction/minting queues to the conqueror
+                    handleVillageConquestQueues(key, newOwner);
+                    handleVillageConquestHobbitQueues(key, newOwner);
 
-    // 3. Reassign existing worker queues to the conqueror (No new spawns!)
-    handleVillageConquestQueues(key, newOwner);
-    handleVillageConquestHobbitQueues(key, newOwner);
+                    // 4. Update workers' internal visual indicators
+                    serverHobbits.forEach(hob => {
+                        if (hob.villageId === key) {
+                            hob.state = 'idle';
+                            hob.path = [];
+                        }
+                    });
 
-    // 4. Update workers' internal visual indicators
-    if (global.hobbits) {
-        serverHobbits.forEach(hob => {
-            if (hob.villageId === key) {
-                hob.state = 'idle';
-                hob.path = [];
-            }
-        });
-    }
-
-    // 5. Broadcast final updates
-    io.emit('villageOwnerUpdated', { wellX: village.x, wellY: village.y, owner: village.owner, progress: 0 });
-    io.emit('chatMessage', { sender: "SYSTEM", message: `🏘️ Village at [${village.x}, ${village.y}] conquered! Ownership transferred.` });
-} else {
-                    io.emit('villageCaptureProgress', { wellX: village.x, wellY: village.y, progress: village.captureProgress, capturer: village.capturer });
+                    // 5. Broadcast final updates to all clients
+                    io.emit('villageOwnerUpdated', { 
+                        wellX: village.x, 
+                        wellY: village.y, 
+                        owner: village.owner, 
+                        progress: 0,
+                        treasury: village.treasury || 0.0 // Kept intact inside database
+                    });
+                    
+                    io.emit('chatMessage', { 
+                        sender: "SYSTEM", 
+                        message: `🏘️ Village at [${village.x}, ${village.y}] conquered! Ownership transferred.` 
+                    });
+                } else {
+                    io.emit('villageCaptureProgress', { 
+                        wellX: village.x, 
+                        wellY: village.y, 
+                        progress: village.captureProgress, 
+                        capturer: village.capturer 
+                    });
                 }
             } else if (counts.allies > counts.enemies) {
+                // Regress the capture progress back to 0
                 village.captureProgress = Math.max(0, village.captureProgress - delta * 5);
+                
                 if (village.captureProgress === 0) {
                     village.capturer = null; 
-                    io.emit('villageOwnerUpdated', { wellX: village.x, wellY: village.y, owner: village.owner, progress: 0 });
-                    io.emit('chatMessage', { sender: "SYSTEM", message: `🏘️ Village at [${village.x}, ${village.y}] has been secured by the defenders!` });
+                    io.emit('villageOwnerUpdated', { 
+                        wellX: village.x, 
+                        wellY: village.y, 
+                        owner: village.owner, 
+                        progress: 0,
+                        treasury: village.treasury || 0.0
+                    });
+                    io.emit('chatMessage', { 
+                        sender: "SYSTEM", 
+                        message: `🏘️ Village at [${village.x}, ${village.y}] has been secured by the defenders!` 
+                    });
                 } else {
-                    io.emit('villageCaptureProgress', { wellX: village.x, wellY: village.y, progress: village.captureProgress, capturer: village.owner });
+                    io.emit('villageCaptureProgress', { 
+                        wellX: village.x, 
+                        wellY: village.y, 
+                        progress: village.captureProgress, 
+                        capturer: village.owner 
+                    });
                 }
             } else {
-                io.emit('villageCaptureProgress', { wellX: village.x, wellY: village.y, progress: village.captureProgress, contested: true });
+                io.emit('villageCaptureProgress', { 
+                    wellX: village.x, 
+                    wellY: village.y, 
+                    progress: village.captureProgress, 
+                    contested: true 
+                });
             }
         }
     }
 
+    // ==========================================
+    // 🐓 PASTURE ANIMALS AI LOGIC (CHICKENS)
+    // ==========================================
     serverAnimals.forEach(a => {
         const cx = Math.floor(a.x / 1600);
         const cy = Math.floor(a.y / 1600);
         const key = `${cx}_${cy}`;
         
-        // 🎯 Freeze logic ticks in cold unobserved cells
-        if (!cellStates.has(key)) {
-            return; 
-        }
+        // Freeze processing in cold unobserved cells
+        if (!cellStates.has(key)) return; 
 
         if (a.eggTimer === undefined) a.eggTimer = 15;
         if (a.poopTimer === undefined) a.poopTimer = 10;
@@ -779,25 +819,28 @@ if (village.captureProgress >= 100) {
         const tx = Math.floor(a.x / 16);
         const ty = Math.floor(a.y / 16);
 
+        // Egg laying
         if (a.eggTimer <= 0 && a.energy > 30) {
             a.eggTimer = 30 + Math.random() * 30;
             const packedTraits = (1 & 0xFF) | ((16 & 0xFF) << 20); 
             io.emit('syncTile', { gx: tx, gy: ty, traits: packedTraits });
         }
 
+        // Poop laying
         if (a.poopTimer <= 0) {
             a.poopTimer = 20 + Math.random() * 30;
             const packedTraits = (3 & 0xFF) | ((12 & 0xFF) << 8) | ((4 & 0xFF) << 20); 
             io.emit('syncTile', { gx: tx, gy: ty, traits: packedTraits });
         }
 
+        // Target food scanning when hungry
         if (a.energy < 50 && a.goal !== 'eating') {
             let foundFood = false;
 
+            // Search for placed hay
             for (let ox = -5; ox <= 5; ox++) {
                 for (let oy = -5; oy <= 5; oy++) {
                     const checkKey = `${tx + ox}_${ty + oy}`;
-                    
                     if (serverBacteria.has(checkKey)) {
                         const traits = serverBacteria.get(checkKey);
                         const typeID = (traits >> 20) & 0xFF;
@@ -816,6 +859,7 @@ if (village.captureProgress >= 100) {
                 if (foundFood) break;
             }
 
+            // Search for growing plants
             if (!foundFood) {
                 let nearestPlant = null;
                 let nearestDist = Infinity;
@@ -846,6 +890,7 @@ if (village.captureProgress >= 100) {
             }
         }
 
+        // Standard wander trigger
         a.moveTimer -= delta;
         if (a.moveTimer <= 0 && a.goal !== 'eating') {
             a.moveTimer = 2 + Math.random() * 3;
@@ -869,6 +914,7 @@ if (village.captureProgress >= 100) {
             a.goal = 'wander';
         }
 
+        // Execute visual steps
         if (a.targetX !== undefined) {
             const dx = a.targetX - a.x;
             const dy = a.targetY - a.y;
@@ -891,7 +937,6 @@ if (village.captureProgress >= 100) {
 
                         if (serverBacteria.has(a.foodKey)) {
                             let traits = serverBacteria.get(a.foodKey);
-                            
                             let health = traits & 0xFF;
                             health = Math.max(0, health - 10); 
 
@@ -905,7 +950,6 @@ if (village.captureProgress >= 100) {
                                 io.emit('syncTile', { gx: hx, gy: hy, traits: newTraits });
                             }
                             a.energy = 100; 
-                            console.log(` 🌾 Chicken ate Hay at [${hx}, ${hy}]. Health remaining: ${health}`);
                         }
                     } 
                     else if (a.foodType === 'crop') {
@@ -914,7 +958,6 @@ if (village.captureProgress >= 100) {
                             serverPlants.delete(a.foodKey);
                             io.emit('plantRemoved', { gx: plant.gx, gy: plant.gy });
                             a.energy = 100; 
-                            console.log(`🌽 Chicken ate crop at [${a.foodKey}]`);
                         }
                     }
                     a.goal = 'wander';
@@ -923,22 +966,25 @@ if (village.captureProgress >= 100) {
         }
     });
 
+    // ==========================================
+    // 🌽 AGRICULTURE TICK LOOP (PLANTS)
+    // ==========================================
     for (let [plantKey, plant] of serverPlants) {
         const cx = Math.floor(plant.gx / 100);
         const cy = Math.floor(plant.gy / 100);
         const key = `${cx}_${cy}`;
 
-        if (!cellStates.has(key)) {
-            continue; 
-        }
+        if (!cellStates.has(key)) continue; 
 
-        // server.js - inside tickWorld
         if (plant.growth < 100) {
-            const rate = plant.growthRate || SERVER_PLANT_DEFS[plant.type]?.growthRate || 0.4; // 👈 SAFE FALLBACK
+            const rate = plant.growthRate || SERVER_PLANT_DEFS[plant.type]?.growthRate || 0.4;
             plant.growth = Math.min(100, plant.growth + (rate * delta));
         }
     }
 
+    // ==========================================
+    // 🌀 DEBUFF / COMBAT TICK TIMERS (PLAYERS)
+    // ==========================================
     for (let vid in players) {
         const p = players[vid];
         if (p.resonanceTimer > 0) {
@@ -949,9 +995,11 @@ if (village.captureProgress >= 100) {
         }
     }
 
+    // ==========================================
+    // 📡 BROADCAST LOW-FREQUENCY PACKETS
+    // ==========================================
     io.emit('animals', { animals: serverAnimals });
-    io.emit('hobbits_update', { hobbits: serverHobbits }); // 🆕 Added: Synchronizes your Hobbits
-
+    io.emit('hobbits_update', { hobbits: serverHobbits });
 }
 
 setInterval(tickCombat, 33.33); 
@@ -2095,6 +2143,125 @@ socket.on('requestWellState', (data) => {
         }
     });
 
+    // server.js - Add inside the io.on('connection') socket block:
+
+socket.on('requestSyncVillage', async (data) => {
+    const key = `${data.wellX}_${data.wellY}`;
+    const village = serverVillages.get(key);
+    if (!village || !village.owner) {
+        socket.emit('oreMessage', "Sync Aborted: Village is unclaimed or uninitialized.");
+        return;
+    }
+
+    try {
+        console.log(`🌀 INITIATING SATELLITE SYSTEM SYNC FOR VILLAGE [${key}]...`);
+
+        // ==========================================
+        // 1. SYNC TREASURY FUNDS
+        // ==========================================
+        const virtualTreasury = parseFloat(village.treasury) || 0.0;
+        if (virtualTreasury > 0 && village.tbaAddress) {
+            await settleTreasuryToTBA(village.tbaAddress, virtualTreasury);
+            village.treasury = 0.0; // Reset virtual as it is now secured on-chain
+        }
+
+        // ==========================================
+        // 2. SYNC HOBBIT WORKFORCE COUNTS
+        // ==========================================
+        // Count standard living hobbits physically assigned to this village
+        const livingHobbits = serverHobbits.filter(h => h.villageId === key && h.hp > 0);
+        
+        // Query current on-chain balance of Hobbit NFTs owned by this village's TBA
+        const hobbitContract = new ethers.Contract(
+            process.env.SOVEREIGN_HOBBIT_ADDRESS,
+            ["function balanceOf(address owner) view returns (uint256)", "function mintHobbit(address to) external returns (uint256)"],
+            adminWalletSigner
+        );
+        const onChainHobbitCount = parseInt((await hobbitContract.balanceOf(village.tbaAddress)).toString());
+
+        console.log(`🧝 Workforce Sync: Database Alive: ${livingHobbits.length} | On-Chain: ${onChainHobbitCount}`);
+
+        // If any hobbits died, we do not need to burn them (they stay as locked property of the TBA),
+        // but if database count is larger than on-chain count, mint the difference to the TBA!
+        if (livingHobbits.length > onChainHobbitCount) {
+            const diff = livingHobbits.length - onChainHobbitCount;
+            for (let i = 0; i < diff; i++) {
+                const tx = await hobbitContract.mintHobbit(village.tbaAddress);
+                await tx.wait();
+            }
+        }
+
+        // ==========================================
+        // 3. NET DELTA VAULT ITEMS SYNC
+        // ==========================================
+        const vaultId = `vault_${data.wellX}_${data.wellY}`;
+        const dbItems = chestDb[vaultId] || [];
+
+        // Build list of valid item types and their numeric IDs to evaluate
+        const syncedItemTypes = ["iron_ore", "iron_ingot", "weapon_dagger", "tool_pickaxe"];
+        const tbaAccounts = Array(syncedItemTypes.length).fill(village.tbaAddress);
+        const tokenIds = syncedItemTypes.map(type => getItemTypeId(type));
+
+        // Batch query current on-chain balances of the TBA
+        const stakedStorageContract = new ethers.Contract(
+            process.env.STAKED_STORAGE_ADDRESS,
+            [
+                "function balanceOfBatch(address[] memory accounts, uint256[] memory ids) view returns (uint256[] memory)",
+                "function mint(address to, uint256 id, uint256 amount, bytes memory data) external",
+                "function melt(address from, uint256 id, uint256 amount) external"
+            ],
+            adminWalletSigner
+        );
+        
+        const rawOnChainBalances = await stakedStorageContract.balanceOfBatch(tbaAccounts, tokenIds);
+        const onChainBalances = rawOnChainBalances.map(b => parseInt(b.toString()));
+
+        // Calculate differences and execute necessary transactions
+        for (let i = 0; i < syncedItemTypes.length; i++) {
+            const itemType = syncedItemTypes[i];
+            const tokenId = tokenIds[i];
+            const onChainCount = onChainBalances[i];
+            
+            const dbItem = dbItems.find(item => item.seedType === itemType);
+            const dbCount = dbItem ? dbItem.count : 0;
+
+            const delta = dbCount - onChainCount;
+
+            if (delta > 0) {
+                // Database has more items than the TBA: Mint the difference to the TBA
+                console.log(`➕ Minting ${delta}x ${itemType} (ID: ${tokenId}) into TBA...`);
+                const tx = await stakedStorageContract.mint(village.tbaAddress, tokenId, delta, "0x");
+                await tx.wait();
+            } 
+            else if (delta < 0) {
+                // Database has fewer items than the TBA: Burn (melt) the difference
+                console.log(`➖ Melting ${Math.abs(delta)}x ${itemType} (ID: ${tokenId}) from TBA...`);
+                const tx = await stakedStorageContract.melt(village.tbaAddress, tokenId, Math.abs(delta));
+                await tx.wait();
+            }
+        }
+
+        // Save state changes
+        saveVillages();
+
+        // Broadcast completion back to clients
+        io.emit('villageOwnerUpdated', {
+            wellX: village.x,
+            wellY: village.y,
+            owner: village.owner,
+            progress: village.captureProgress,
+            treasury: 0.0 // virtual treasury is now 0 as it has been moved on-chain
+        });
+
+        socket.emit('villageSyncCompleted', { success: true });
+        console.log(`✅ SATELLITE SYSTEM SYNC RESOLVED SUCCESSFULLY FOR [${key}].`);
+
+    } catch (err) {
+        console.error("❌ Satellite Sync failed:", err);
+        socket.emit('oreMessage', "Sync failed due to RPC or contract timeout. Try again.");
+    }
+});
+
     socket.on('requestEquip', (data) => {
         const { index, currentEnergy } = data; 
         const player = players[socket.id];
@@ -2210,8 +2377,10 @@ socket.on('requestWellState', (data) => {
             const item = player.inventory[index];
             if (!item) return;
 
-            if (chestItems.length >= 8) {
-                socket.emit('oreMessage', "This chest is full! Maximum 8 slots.");
+            // 🎯 Enforce 16-slot limit for Vaults, 8-slot limit for normal Chests
+            const limit = chestId.startsWith('vault_') ? 16 : 8;
+            if (chestItems.length >= limit) {
+                socket.emit('oreMessage', "This storage is full!");
                 return;
             }
 

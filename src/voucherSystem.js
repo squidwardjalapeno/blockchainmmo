@@ -33,7 +33,8 @@ const domain = {
     name: "bankUNI",
     version: "1",
     chainId: 130, // Unichain Mainnet
-    verifyingContract: "0xb762c3B3f544B04D0eAD51Fa1883Ee0f0Ec87cE4" 
+    // 🎯 DYNAMIC: Reads directly from your Render environment variable!
+    verifyingContract: process.env.BANK_UNI_ADDRESS || "0xE0A6BF5478ff603aEe15Bdf4a31D6590497Bbe49"
 };
 
 const types = {

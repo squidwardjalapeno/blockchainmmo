@@ -5,7 +5,8 @@ if (typeof window !== 'undefined') {
     if (window.logStep) logStep("blockchainManager.js loaded");
 }
 
-let bankUNI_ADDRESS = "0xb762c3B3f544B04D0eAD51Fa1883Ee0f0Ec87cE4";
+// 🎯 UPDATED: Changed from the old address to your newly deployed bank contract
+let bankUNI_ADDRESS = "0xE0A6BF5478ff603aEe15Bdf4a31D6590497Bbe49";
 
 const bankUNI_ABI = [
     "function cashOut(uint256 amount, uint256 nonce, bytes signature) external"

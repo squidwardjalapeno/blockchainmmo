@@ -249,6 +249,9 @@ export function drawVillageHall(gx, gy, worldMatrix, roomMatrix, fertilityMatrix
     }
 
     registerObject(gx + 2, gy - 7, 'HOBBIT_MANAGER', { houseId: currentId });
+    // 🎯 NEW: Place the Village Vault directly next to the Hobbit Manager
+    registerObject(gx + 3, gy - 7, 'VILLAGE_VAULT', { houseId: currentId });
+
     registerObject(gx + 8, gy - 7, 'ARMORY', { houseId: currentId });
     registerObject(gx + 2, gy - 2, 'KITCHEN', { houseId: currentId });
     registerObject(gx + 8, gy - 2, 'MAP_TABLE', { houseId: currentId });

@@ -193,6 +193,23 @@ if (obj.type === 'HOBBIT_EXCHANGE') {
     return;
 }
 
+// 🎯 VILLAGE VAULT INTERACTION
+            if (obj.type === 'VILLAGE_VAULT') {
+                import('./cellDecorator.js').then(m => {
+                    const well = m.getVillageAt(tx, ty);
+                    if (well && socket) {
+                        const vaultId = `vault_${well.x}_${well.y}`;
+                        import('./multiplayer.js').then(mult => {
+                            mult.setPlayerRequestedChestId(vaultId);
+                            mult.socket.emit('requestChest', vaultId);
+                        });
+                    }
+                });
+                inputState.interact = false;
+                inputState.action = false;
+                return;
+            }
+
             if (obj.type === 'BEDROLL') {
                 if (confirm("🛌 Do you want to sleep here and safely log out?")) {
                     if (socket) {
