@@ -23,8 +23,21 @@ export function isWalkableForHobbit(tx, ty, worldMatrix, roomMatrix, hobbit = nu
     const data = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix);
     if (!data || data.tileID === undefined) return false;
 
-    const absoluteWalls = [40, 50, 52, 1, 3, 5, 41, 43, 27, 46, 47, 17, 18, 19, 21, 24, 11, 48];
-    if (absoluteWalls.includes(data.tileID)) return false;
+    // 🎯 ROOM ID BYPASS FOR PATHFINDING
+    // If the hobbit is currently inside a room, allow them to walk on interior tiles (like 48, 1, 3, 5, 50, 52)
+    // and only block them if the target tile is in the hardSolids list.
+    const currentRoomID = hobbit ? getTileData(hobbit.x + 8, hobbit.y + 15, worldMatrix, roomMatrix).roomID : 0;
+    const isInsideRoom = (currentRoomID !== 0 && currentRoomID !== 9999);
+
+    if (isInsideRoom && data.roomID === currentRoomID) {
+        // Match the hardSolids list from physics.js
+        const hardSolids = [40, 41, 43, 27, 46, 47]; 
+        if (hardSolids.includes(data.tileID)) return false;
+    } else {
+        // Standard outside/world collision rules
+        const absoluteWalls = [40, 50, 52, 1, 3, 5, 41, 43, 27, 46, 47, 17, 18, 19, 21, 24, 11, 48];
+        if (absoluteWalls.includes(data.tileID)) return false;
+    }
 
     // Doorway and room transitions logic
     if (fromX !== null && fromY !== null) {
