@@ -2354,6 +2354,7 @@ socket.on('villageClaimed', async (data) => {
 
     // server.js - Add inside the io.on('connection') socket block:
 
+// server.js (inside io.on('connection', (socket) => { ... }))
 socket.on('requestSyncVillage', async (data) => {
     const key = `${data.wellX}_${data.wellY}`;
     const village = serverVillages.get(key);
@@ -2431,8 +2432,10 @@ socket.on('requestSyncVillage', async (data) => {
             const tokenId = tokenIds[i];
             const onChainCount = onChainBalances[i];
             
-            const dbItem = dbItems.find(item => item.seedType === itemType);
-            const dbCount = dbItem ? dbItem.count : 0;
+            // 🎯 FIX: Sum up the counts of ALL slots matching the itemType to handle non-stackables correctly
+            const dbCount = dbItems
+                .filter(item => item.seedType === itemType)
+                .reduce((sum, item) => sum + (item.count !== undefined ? item.count : 1), 0);
 
             const delta = dbCount - onChainCount;
 
