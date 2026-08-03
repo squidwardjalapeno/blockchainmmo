@@ -2363,17 +2363,41 @@ socket.on('requestWellState', (data) => {
         const pointsPerSeed = effectiveTGV / 640000;
         const totalPoints = pointsPerSeed * requestedCount; 
 
-        player.inGameUni = (parseFloat(player.inGameUni) || 0.0) + totalPoints;
-        globalDebt = (parseFloat(globalDebt) || 0.0) + totalPoints;
-        
-        saveDebt();
-        syncPlayerAndSave(socket.id); 
-        
-        socket.emit('balanceUpdated', { inGameUni: player.inGameUni });
+        // 🎯 REAL-TIME VILLAGE WALLET FUNDING ENGINE
+        if (data.isVillageWalletFund && data.villageId) {
+            const village = serverVillages.get(data.villageId);
+            if (village && village.owner) {
+                // Credit the treasury
+                village.treasury = (parseFloat(village.treasury) || 0.0) + totalPoints;
+                saveVillages(); // Persist database to disk
+                
+                // Broadcast the updated state to all players instantly
+                io.emit('villageOwnerUpdated', {
+                    wellX: village.x,
+                    wellY: village.y,
+                    owner: village.owner,
+                    progress: village.captureProgress,
+                    treasury: village.treasury
+                });
+                
+                console.log(`💎 Village Altar [${data.villageId}] funded by Usher with ${totalPoints.toFixed(8)} UNI.`);
+            }
+        } else {
+            // Standard Player Personal Wallet sacrifices
+            player.inGameUni = (parseFloat(player.inGameUni) || 0.0) + totalPoints;
+            globalDebt = (parseFloat(globalDebt) || 0.0) + totalPoints;
+            
+            saveDebt();
+            syncPlayerAndSave(socket.id); 
+            
+            socket.emit('balanceUpdated', { inGameUni: player.inGameUni });
+        }
         
         if (typeof broadcastEffectiveTGV === 'function') broadcastEffectiveTGV();
+        
         if (typeof logActivity === 'function') {
-            logActivity('SACRIFICE', socket.wallet || socket.id, `Sacrificed ${requestedCount}x ${data.itemType} for ${totalPoints.toFixed(8)} UNI`);
+            const logUser = data.isVillageWalletFund ? `Usher (${data.villageId})` : (socket.wallet || socket.id);
+            logActivity('SACRIFICE', logUser, `Sacrificed ${requestedCount}x ${data.itemType} for ${totalPoints.toFixed(8)} UNI`);
         }
 
         console.log(`💎 ${socket.wallet || socket.id} sacrificed ${requestedCount}x ${data.itemType}`);

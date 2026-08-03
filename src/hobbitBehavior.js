@@ -578,7 +578,8 @@ export function runUsherBehavior(hobbit, modifier, worldMatrix, roomMatrix) {
                         socket.emit('sacrificeItem', { 
                             itemType: seed.seedType, 
                             count: seed.count,
-                            isVillageWalletFund: true 
+                            isVillageWalletFund: true,
+                            villageId: `${village.x}_${village.y}` // 🎯 PASS VILLAGE ID
                         });
                     });
                 }
