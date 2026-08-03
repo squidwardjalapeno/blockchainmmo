@@ -163,7 +163,8 @@ export function initMultiplayer() {
                             serverHobbit.homeX, 
                             serverHobbit.homeY, 
                             serverHobbit.job,
-                            serverHobbit.id 
+                            serverHobbit.id,
+                            serverHobbit.name // 🎯 PASS SERVER-GENERATED NAME
                         );
                     }
                 });

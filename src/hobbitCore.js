@@ -79,13 +79,22 @@ export const YIELD_MAP = {
 /**
  * Instantiates a new hobbit structure and appends it to the active simulation array
  */
-export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null, defaultJob = 'Forager', id = null) { // 🎯 Added 'id' parameter
+// hobbitCore.js
+
+/**
+ * Instantiates a new hobbit structure and appends it to the active simulation array.
+ * Dynamically resolves names, home anchors, and unique room IDs on-the-fly.
+ */
+export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null, defaultJob = 'Forager', id = null, name = null) {
     const seed = (gx * 31) + gy;
     const hash = Math.abs(Math.sin(seed) * 10000);
     const firstName = HOBBIT_FIRST_NAMES[Math.floor(hash) % HOBBIT_FIRST_NAMES.length];
     const lastName = HOBBIT_LAST_NAMES[Math.floor(hash * 10) % HOBBIT_LAST_NAMES.length];
-    const proceduralName = `${firstName} ${lastName}`;
+    
+    // 🎯 Use the server's randomized name if passed, otherwise fall back to deterministic
+    const proceduralName = name || `${firstName} ${lastName}`;
 
+    // Standard key item representation if assigned to a building
     const keyItem = houseId ? {
         name: `Key to House #${houseId}`,
         seedType: "key",
@@ -101,7 +110,7 @@ export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null, 
     } : null;
 
     hobbits.push({
-        // 🎯 FIX: Assign the standard server ID immediately to prevent deletion desyncs
+        // 🎯 Assign standard server ID immediately to prevent deletion desyncs
         id: id || ('hobbit_' + Math.random().toString(36).substr(2, 9)),
         name: proceduralName, 
         job: defaultJob,       

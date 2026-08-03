@@ -384,17 +384,114 @@ initServerAnimals();
 /**
  * Instantiates a virtual Hobbit in the server database and broadcasts it to all clients.
  */
-function spawnDatabaseHobbit(x, y, villageId, jobType) {
+// server.js
+
+/**
+ * Scans the database structures (houses, general stores, and barns) within the
+ * village perimeter and returns their exact coordinates and functional job types.
+ */
+function getVillageStructures(wellX, wellY) {
+    const wellTX = Math.floor(wellX / 16);
+    const wellTY = Math.floor(wellY / 16);
+    const structures = [];
+
+    // 1. Scan chestDb for standard residential houses (Foragers)
+    for (let key in chestDb) {
+        const coords = key.split('_');
+        if (coords[0] !== 'chest') continue;
+
+        const tx = parseInt(coords[1]);
+        const ty = parseInt(coords[2]);
+        const dist = Math.hypot(tx - wellTX, ty - wellTY);
+
+        if (dist <= 40) {
+            structures.push({ tx, ty, type: 'HOUSE', job: 'Forager' });
+        }
+    }
+
+    // 2. Scan storeDb for General Store counters (Traders)
+    for (let key in storeDb) {
+        const coords = key.split('_');
+        if (coords[0] !== 'store') continue;
+
+        const tx = parseInt(coords[1]);
+        const ty = parseInt(coords[2]);
+        const dist = Math.hypot(tx - wellTX, ty - wellTY);
+
+        if (dist <= 40) {
+            structures.push({ tx, ty, type: 'STORE', job: 'Trader' });
+        }
+    }
+
+    // 3. Scan hayDb for agricultural barns/ranches (Farmers)
+    for (let key in hayDb) {
+        const coords = key.split('_');
+        if (coords[0] !== 'hay') continue;
+
+        const tx = parseInt(coords[1]);
+        const ty = parseInt(coords[2]);
+        const dist = Math.hypot(tx - wellTX, ty - wellTY);
+
+        if (dist <= 40) {
+            structures.push({ tx, ty, type: 'BARN', job: 'Farmer' });
+        }
+    }
+
+    return structures;
+}
+
+/**
+ * Instantiates a virtual Hobbit in the server database, assigns them to a vacant
+ * building structure, and sets their job based on the assigned building type.
+ */
+function spawnDatabaseHobbit(wellX, wellY, villageId, defaultJobType) {
     const hobbitId = 'hobbit_' + Math.random().toString(36).substr(2, 9);
     const proceduralName = getRandomHobbitName();
+
+    const wellTX = Math.floor(wellX / 16);
+    const wellTY = Math.floor(wellY / 16);
+
+    // Scan for all registered structures in this village
+    const structures = getVillageStructures(wellX, wellY);
+    
+    let assignedHouseId = null;
+    let assignedHomeX = wellTX + 2;
+    let assignedHomeY = wellTY + 2;
+    let job = defaultJobType;
+
+    // Filter out structures that are already occupied by other living server hobbits
+    const vacantStructures = structures.filter(s => {
+        return !serverHobbits.some(h => h.homeX === s.tx && h.homeY === s.ty);
+    });
+
+    if (vacantStructures.length > 0) {
+        const targetStructure = vacantStructures[0];
+        
+        // Generate a standard unique room/house ID based on the coordinates
+        assignedHouseId = (targetStructure.tx * 1000) + targetStructure.ty;
+        assignedHomeX = targetStructure.tx;
+        assignedHomeY = targetStructure.ty;
+        job = targetStructure.job; // 🎯 Assign job based on building type!
+    } else {
+        // If all residential and commercial buildings are full, assign them to the Temple (Usher)
+        const activeUshers = serverHobbits.filter(h => h.villageId === villageId && h.job === 'Usher');
+        if (activeUshers.length === 0) {
+            job = 'Usher';
+            // Anchor the Usher directly in front of the Temple Altar (relative to well)
+            assignedHomeX = wellTX + 2;
+            assignedHomeY = wellTY - 5; 
+            assignedHouseId = (assignedHomeX * 1000) + assignedHomeY;
+        }
+    }
 
     const newHobbit = {
         id: hobbitId,
         name: proceduralName,
-        job: jobType,
+        job: job,
         isHobbit: true,
-        x: x,
-        y: y,
+        // Spawn them physically standing inside their assigned structure coordinates
+        x: assignedHomeX * 16,
+        y: assignedHomeY * 16,
         floor: 1,
         speed: 35,
         hp: 40,
@@ -404,6 +501,10 @@ function spawnDatabaseHobbit(x, y, villageId, jobType) {
         maxEnergy: 100,
         inventory: [],
         villageId: villageId,
+        
+        houseId: assignedHouseId,
+        homeX: assignedHomeX,
+        homeY: assignedHomeY,
         
         state: 'idle',
         goal: 'wander',
@@ -420,7 +521,7 @@ function spawnDatabaseHobbit(x, y, villageId, jobType) {
     
     // Broadcast the new worker to all connected clients in real-time
     io.emit('hobbitSpawned', newHobbit);
-    console.log(`🧝 Database Hobbit Initialized: ${proceduralName} (ID: ${hobbitId}) in Village: ${villageId}`);
+    console.log(`🧝 Distributed Worker Initialized: ${proceduralName} (${job}) assigned to House #${assignedHouseId} in Village: ${villageId}`);
     
     return newHobbit;
 }
