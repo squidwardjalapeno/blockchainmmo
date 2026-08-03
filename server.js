@@ -1825,15 +1825,22 @@ socket.on('villageClaimed', async (data) => {
         socket.emit('fishingFinished'); 
     });
 
-    socket.on('requestChest', (chestId) => {
-        if (!chestDb[chestId]) {
-            const pick = createItem(ITEM_TYPES.PICKAXE);
-            const tomato = createItem(ITEM_TYPES.TOMATO_ITEM);
-            tomato.count = 8; 
-            chestDb[chestId] = [pick, tomato];
-        }
-        socket.emit('chestData', { chestId, items: chestDb[chestId] });
-    });
+    // server.js (inside io.on('connection', (socket) => { ... }))
+socket.on('requestChest', (chestId) => {
+    if (!chestDb[chestId]) {
+        // 🎯 FIX: Replace tomatoes with 8x Iron Ingots and add a Rusty Dagger to all starting chests
+        const pick = createItem(ITEM_TYPES.PICKAXE);
+        
+        const ingot = createItem(ITEM_TYPES.IRON_INGOT);
+        ingot.count = 8; 
+        
+        const dagger = createItem(ITEM_TYPES.DAGGER);
+        dagger.count = 1;
+
+        chestDb[chestId] = [pick, ingot, dagger];
+    }
+    socket.emit('chestData', { chestId, items: chestDb[chestId] });
+});
 
     socket.on('updateChest', (data) => {
         if (data.items && data.items.length > 8) {
