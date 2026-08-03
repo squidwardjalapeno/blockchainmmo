@@ -456,7 +456,7 @@ export function runUsherBehavior(hobbit, modifier, worldMatrix, roomMatrix) {
     const seedInventory = hobbit.inventory.filter(item => item.seedType && item.seedType.includes('_seed'));
     const totalSeeds = seedInventory.reduce((acc, item) => acc + item.count, 0);
 
-    if (totalSeeds < 64) {
+    if (totalSeeds < 10) {
         hobbit.goal = 'collect_seeds';
         
         // Find all chests in the village
