@@ -1325,6 +1325,8 @@ socket.on('claimVillageTreasury', async (data) => {
 
     // server.js - inside requestWellState listener:
 
+// server.js
+
 socket.on('requestWellState', async (data) => {
     const key = `${data.wellX}_${data.wellY}`;
     
@@ -1373,13 +1375,16 @@ socket.on('requestWellState', async (data) => {
     
     const dynamicCount = calculateProportionalHobbits(data.wellX, data.wellY);
 
-    socket.emit('wellStateResponse', { 
-        wellX: data.wellX, 
-        wellY: data.wellY, 
-        owner: v.owner, 
-        progress: v.captureProgress,
-        hobbitCount: dynamicCount
-    });
+    // 🎯 FIX: Only send the menu popup response if the client's request was NOT silent
+    if (!data.isSilent) {
+        socket.emit('wellStateResponse', { 
+            wellX: data.wellX, 
+            wellY: data.wellY, 
+            owner: v.owner, 
+            progress: v.captureProgress,
+            hobbitCount: dynamicCount
+        });
+    }
 });
 
     socket.on('requestWellInteraction', (data) => {

@@ -2016,6 +2016,8 @@ function isAreaClear(gx, gy, w, h, worldMatrix, roomMatrix, worldMap) {
     return true;
 }
 
+// src/cellDecorator.js
+
 export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     const cellKey = `${cx}_${cy}`;
     const zone = zoneLookup.get(cellKey);
@@ -2031,6 +2033,11 @@ export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertility
     generateWellSpokes(zoneWell);
 
     console.log(`🎪 LAZY INITIALIZING SETTLEMENT at Well [${zoneWell.x}, ${zoneWell.y}]`);
+
+    // 🎯 FIX: Automatically and silently initialize the well state on the server
+    if (socket && socket.connected) {
+        socket.emit('requestWellState', { wellX: zoneWell.x, wellY: zoneWell.y, isSilent: true });
+    }
 
     zone.forEach(c => {
         const chunkKey = `${c.cx}_${c.cy}`;
