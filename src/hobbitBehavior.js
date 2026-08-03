@@ -748,14 +748,32 @@ function executeHarvestLogic(hobbit, nearestPlant, currTX, currTY, worldMatrix, 
             const dist = Math.hypot((livePlant.gx * 16 + 8) - (hobbit.x + 8), (livePlant.gy * 16 + 8) - (hobbit.y + 8));
 
             if (dist <= 24) {
+                // 1. Give standard crop/foliage yield
                 const keyName = YIELD_MAP[livePlant.type];
                 if (keyName && ITEM_TYPES[keyName]) {
                     giveItemToHobbit(hobbit, createItem(ITEM_TYPES[keyName]));
                 }
+
+                // 🎯 2. SEED DROP LOGIC FOR FORAGERS
+                // If the harvested plant is a wild crop (not a farm crop), roll for 1-2 seeds
+                const farmCrops = ['turnip', 'tomato', 'eggplant', 'strawberry', 'pumpkin', 'watermelon', 'corn', 'pineapple', 'potato', 'wheat'];
+                if (!farmCrops.includes(livePlant.type)) {
+                    const seedConstName = `${livePlant.type.toUpperCase()}_SEED`;
+                    const seedTemplate = ITEM_TYPES[seedConstName];
+                    if (seedTemplate) {
+                        const seedCount = Math.floor(Math.random() * 2) + 1; // Generates 1 or 2 seeds
+                        const seedItem = createItem(seedTemplate);
+                        seedItem.count = seedCount;
+                        giveItemToHobbit(hobbit, seedItem);
+                    }
+                }
+
+                // 3. Clear the tile and notify the server
                 plants.delete(plantKey);
                 if (socket && socket.connected) {
                     socket.emit('syncTile', { gx: livePlant.gx, gy: livePlant.gy, traits: 0 });
                 }
+                
                 hobbit.targetPlant = null;
                 hobbit.path = [];
                 hobbit.state = 'idle';
