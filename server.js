@@ -224,11 +224,16 @@ const VILLAGES_FILE = 'villages.json';
 
 const serverVillages = new Map(); 
 
-// 💾 Load existing villages from persistence file
+// 💾 Load existing villages safely from persistence file
 if (fs.existsSync(VILLAGES_FILE)) {
     try {
         const rawData = JSON.parse(fs.readFileSync(VILLAGES_FILE, 'utf8'));
-        serverVillages = new Map(Object.entries(rawData));
+        
+        serverVillages.clear(); // Safely clear any default entries
+        Object.entries(rawData).forEach(([key, value]) => {
+            serverVillages.set(key, value);
+        });
+        
         console.log(`✅ Loaded ${serverVillages.size} registered villages from database.`);
     } catch (err) {
         console.error("❌ Failed to load villages database:", err);
@@ -2883,6 +2888,10 @@ function filterEntitiesByVision(socket, originalPlayers, originalProjectiles) {
  * Automates the on-chain transfer of a conquered village Deed NFT
  * from the defeated player to the conqueror.
  */
+/**
+ * Automates the on-chain transfer of a conquered village Deed NFT
+ * from the defeated player to the conqueror using standard transferFrom.
+ */
 async function executeOnChainForceTransfer(fromAddress, toAddress, tokenId) {
     if (!tokenId) {
         console.warn("⚠️ Aborting Force Transfer: No Deed Token ID is associated with this village record.");
@@ -2892,18 +2901,19 @@ async function executeOnChainForceTransfer(fromAddress, toAddress, tokenId) {
     try {
         console.log(`⚡ INITIATING ON-CHAIN FORCE TRANSFER: Moving Deed #${tokenId} from ${fromAddress} to ${toAddress}...`);
 
-        // Connect to your Sovereign Deed contract using the secure server admin wallet
+        // Connect to your Sovereign Deed contract using the standard ERC-721 interface
         const deedContractWithSigner = new ethers.Contract(
             process.env.SOVEREIGN_DEED_ADDRESS,
             [
-                // The admin-only override transfer function on your smart contract
-                "function forceTransfer(address from, address to, uint256 tokenId) external"
+                // Standard ERC-721 transfer function
+                "function transferFrom(address from, address to, uint256 tokenId) external"
             ],
             adminWalletSigner
         );
 
-        // Execute the transfer bypass
-        const tx = await deedContractWithSigner.forceTransfer(
+        // Execute the transfer. Your custom _isAuthorized override in SovereignDeed.sol 
+        // will automatically validate this call from your server's wallet.
+        const tx = await deedContractWithSigner.transferFrom(
             ethers.getAddress(fromAddress),
             ethers.getAddress(toAddress),
             BigInt(tokenId),
