@@ -451,12 +451,14 @@ function getVillageStructures(wellX, wellY) {
  * building structure, and sets their job based on the assigned building type.
  */
 // server.js
+// server.js
 function spawnDatabaseHobbit(wellX, wellY, villageId, defaultJobType, assignedStructure = null) {
     const hobbitId = 'hobbit_' + Math.random().toString(36).substr(2, 9);
     const proceduralName = getRandomHobbitName();
 
-    const wellTX = Math.floor(wellX / 16);
-    const wellTY = Math.floor(wellY / 16);
+    // 🎯 wellX and wellY are already tile coordinates. Do not divide them by 16 again!
+    const wellTX = wellX;
+    const wellTY = wellY;
 
     let assignedHouseId = null;
     let assignedHomeX = wellTX + 2;
@@ -472,7 +474,7 @@ function spawnDatabaseHobbit(wellX, wellY, villageId, defaultJobType, assignedSt
         assignedHouseId = (assignedStructure.tx * 1000) + assignedStructure.ty;
         job = assignedStructure.job;
         
-        // Spawn them directly inside on structural activity points
+        // Spawn them physically inside on structural activity points
         if (assignedStructure.type === 'HOUSE') {
             startTX = assignedStructure.tx + 3;
             startTY = assignedStructure.ty - 1; // Bedroll
@@ -516,7 +518,7 @@ function spawnDatabaseHobbit(wellX, wellY, villageId, defaultJobType, assignedSt
         ad: 2,
         energy: 100,
         maxEnergy: 100,
-        inventory: keyItem ? [keyItem] : [], // Server authoritatively grants key item
+        inventory: keyItem ? [keyItem] : [],
         villageId: villageId,
         
         houseId: assignedHouseId,
@@ -802,6 +804,7 @@ function updateSimulationTemperatures() {
  * 🚜 WORLD LOOP (WARM - 5 Hz / 200ms)
  * Runs low-frequency background calculations (agriculture, AI, seiges).
  */
+// server.js
 function tickWorld() {
     const delta = 0.200; // 200ms tick step
 
@@ -809,7 +812,7 @@ function tickWorld() {
     updateSimulationTemperatures();
 
     // ==========================================
-    // 🏘️ SEIGE & CAPTURE LOGIC
+    // 🏘️ SIEGE & CAPTURE LOGIC
     // ==========================================
     for (let [key, village] of serverVillages) {
         if (village.owner === null) continue;
@@ -827,24 +830,39 @@ function tickWorld() {
 
                     console.log(`⚔️ CONQUEST RESOLVED: ${newOwner} has conquered ${oldOwner}'s village!`);
 
-                    // 1. Update database village records (No destructive wipes)
+                    // 1. 🏦 AUTOMATED TBA SETTLEMENT ON CONQUEST
+                    const virtualTreasury = parseFloat(village.treasury) || 0.0;
+                    if (virtualTreasury > 0 && village.tbaAddress) {
+                        console.log(`🏦 CONQUEST SETTLEMENT: Settling ${virtualTreasury.toFixed(8)} UNI from Bank to TBA [${village.tbaAddress}]...`);
+                        try {
+                            // Authoritatively settle virtual funds onto the Unichain Mainnet TBA
+                            await settleTreasuryToTBA(village.tbaAddress, virtualTreasury);
+                            village.treasury = 0.0; // Wipe the virtual database record
+                            console.log(`✅ Conquest Settlement complete. Virtual treasury wiped.`);
+                        } catch (settleErr) {
+                            console.error("❌ Conquest Settlement failed to verify on-chain:", settleErr.message);
+                            // Do not clear the virtual treasury on failure so the user can manually attempt sync again
+                        }
+                    }
+
+                    // 2. Update database village records (No destructive wipes)
                     village.owner = newOwner;
                     village.captureProgress = 0;
                     village.capturer = null;
 
                     saveVillages(); // Persist changes to disk
 
-                    // 2. ⚡ TRIGGER ON-CHAIN FORCE TRANSFER (Standard standard transferFrom)
+                    // 3. ⚡ TRIGGER ON-CHAIN FORCE TRANSFER (Standard transferFrom)
                     if (oldOwner && oldOwner.startsWith('0x') && newOwner.startsWith('0x')) {
                         // Execute asynchronously to prevent main-loop blocking
                         executeOnChainForceTransfer(oldOwner, newOwner, village.deedTokenId);
                     }
 
-                    // 3. Reassign active extraction/minting queues to the conqueror
+                    // 4. Reassign active extraction/minting queues to the conqueror
                     handleVillageConquestQueues(key, newOwner);
                     handleVillageConquestHobbitQueues(key, newOwner);
 
-                    // 4. Update workers' internal visual indicators
+                    // 5. Update workers' internal visual indicators
                     serverHobbits.forEach(hob => {
                         if (hob.villageId === key) {
                             hob.state = 'idle';
@@ -852,7 +870,7 @@ function tickWorld() {
                         }
                     });
 
-                    // 5. Broadcast final updates to all clients
+                    // 6. Broadcast final updates to all clients
                     io.emit('villageOwnerUpdated', { 
                         wellX: village.x, 
                         wellY: village.y, 
@@ -1020,98 +1038,98 @@ function tickWorld() {
                 targetY = a.y + Math.sin(angle) * dist;
             }
 
-            a.targetX = targetX;
-            a.targetY = targetY;
-            a.state = 'walking';
-            a.goal = 'wander';
-        }
-
-        // Execute visual steps
-        if (a.targetX !== undefined) {
-            const dx = a.targetX - a.x;
-            const dy = a.targetY - a.y;
-            const dist = Math.hypot(dx, dy);
-            
-            if (dist > 4) {
-                a.x += (dx / dist) * a.speed * delta;
-                a.y += (dy / dist) * a.speed * delta;
-                a.dir = dx > 0 ? 'East' : 'West';
-                a.state = 'walking';
-            } else {
-                a.state = 'idle';
-                a.targetX = undefined;
-                a.targetY = undefined;
-
-                if (a.goal === 'eating') {
-                    if (a.foodType === 'hay') {
-                        const coords = a.foodKey.split('_');
-                        const hx = parseInt(coords[0]), hy = parseInt(coords[1]);
-
-                        if (serverBacteria.has(a.foodKey)) {
-                            let traits = serverBacteria.get(a.foodKey);
-                            let health = traits & 0xFF;
-                            health = Math.max(0, health - 10); 
-
-                            if (health <= 0) {
-                                serverBacteria.delete(a.foodKey); 
-                                io.emit('syncTile', { gx: hx, gy: hy, traits: 0 });
-                            } else {
-                                const typeID = (traits >> 20) & 0xFF;
-                                const newTraits = ((health & 0xFF) | ((typeID & 0xFF) << 20)) >>> 0;
-                                serverBacteria.set(a.foodKey, newTraits);
-                                io.emit('syncTile', { gx: hx, gy: hy, traits: newTraits });
-                            }
-                            a.energy = 100; 
-                        }
-                    } 
-                    else if (a.foodType === 'crop') {
-                        if (serverPlants.has(a.foodKey)) {
-                            const plant = serverPlants.get(a.foodKey);
-                            serverPlants.delete(a.foodKey);
-                            io.emit('plantRemoved', { gx: plant.gx, gy: plant.gy });
-                            a.energy = 100; 
-                        }
-                    }
+                    a.targetX = targetX;
+                    a.targetY = targetY;
+                    a.state = 'walking';
                     a.goal = 'wander';
                 }
+
+                // Execute visual steps
+                if (a.targetX !== undefined) {
+                    const dx = a.targetX - a.x;
+                    const dy = a.targetY - a.y;
+                    const dist = Math.hypot(dx, dy);
+                    
+                    if (dist > 4) {
+                        a.x += (dx / dist) * a.speed * delta;
+                        a.y += (dy / dist) * a.speed * delta;
+                        a.dir = dx > 0 ? 'East' : 'West';
+                        a.state = 'walking';
+                    } else {
+                        a.state = 'idle';
+                        a.targetX = undefined;
+                        a.targetY = undefined;
+
+                        if (a.goal === 'eating') {
+                            if (a.foodType === 'hay') {
+                                const coords = a.foodKey.split('_');
+                                const hx = parseInt(coords[0]), hy = parseInt(coords[1]);
+
+                                if (serverBacteria.has(a.foodKey)) {
+                                    let traits = serverBacteria.get(a.foodKey);
+                                    let health = traits & 0xFF;
+                                    health = Math.max(0, health - 10); 
+
+                                    if (health <= 0) {
+                                        serverBacteria.delete(a.foodKey); 
+                                        io.emit('syncTile', { gx: hx, gy: hy, traits: 0 });
+                                    } else {
+                                        const typeID = (traits >> 20) & 0xFF;
+                                        const newTraits = ((health & 0xFF) | ((typeID & 0xFF) << 20)) >>> 0;
+                                        serverBacteria.set(a.foodKey, newTraits);
+                                        io.emit('syncTile', { gx: hx, gy: hy, traits: newTraits });
+                                    }
+                                    a.energy = 100; 
+                                }
+                            } 
+                            else if (a.foodType === 'crop') {
+                                if (serverPlants.has(a.foodKey)) {
+                                    const plant = serverPlants.get(a.foodKey);
+                                    serverPlants.delete(a.foodKey);
+                                    io.emit('plantRemoved', { gx: plant.gx, gy: plant.gy });
+                                    a.energy = 100; 
+                                }
+                            }
+                            a.goal = 'wander';
+                        }
+                    }
+                }
+            });
+
+            // ==========================================
+            // 🌽 AGRICULTURE TICK LOOP (PLANTS)
+            // ==========================================
+            for (let [plantKey, plant] of serverPlants) {
+                const cx = Math.floor(plant.gx / 100);
+                const cy = Math.floor(plant.gy / 100);
+                const key = `${cx}_${cy}`;
+
+                if (!cellStates.has(key)) continue; 
+
+                if (plant.growth < 100) {
+                    const rate = plant.growthRate || SERVER_PLANT_DEFS[plant.type]?.growthRate || 0.4;
+                    plant.growth = Math.min(100, plant.growth + (rate * delta));
+                }
             }
-        }
-    });
 
-    // ==========================================
-    // 🌽 AGRICULTURE TICK LOOP (PLANTS)
-    // ==========================================
-    for (let [plantKey, plant] of serverPlants) {
-        const cx = Math.floor(plant.gx / 100);
-        const cy = Math.floor(plant.gy / 100);
-        const key = `${cx}_${cy}`;
-
-        if (!cellStates.has(key)) continue; 
-
-        if (plant.growth < 100) {
-            const rate = plant.growthRate || SERVER_PLANT_DEFS[plant.type]?.growthRate || 0.4;
-            plant.growth = Math.min(100, plant.growth + (rate * delta));
-        }
-    }
-
-    // ==========================================
-    // 🌀 DEBUFF / COMBAT TICK TIMERS (PLAYERS)
-    // ==========================================
-    for (let vid in players) {
-        const p = players[vid];
-        if (p.resonanceTimer > 0) {
-            p.resonanceTimer -= delta;
-            if (p.resonanceTimer <= 0) {
-                io.emit('playerCC', { victimId: vid, ccType: 'resonanceFade' });
+            // ==========================================
+            // 🌀 DEBUFF / COMBAT TICK TIMERS (PLAYERS)
+            // ==========================================
+            for (let vid in players) {
+                const p = players[vid];
+                if (p.resonanceTimer > 0) {
+                    p.resonanceTimer -= delta;
+                    if (p.resonanceTimer <= 0) {
+                        io.emit('playerCC', { victimId: vid, ccType: 'resonanceFade' });
+                    }
+                }
             }
-        }
-    }
 
-    // ==========================================
-    // 📡 BROADCAST LOW-FREQUENCY PACKETS
-    // ==========================================
-    io.emit('animals', { animals: serverAnimals });
-}
+            // ==========================================
+            // 📡 BROADCAST LOW-FREQUENCY PACKETS
+            // ==========================================
+            io.emit('animals', { animals: serverAnimals });
+        }
 
 setInterval(tickCombat, 33.33); 
 setInterval(tickWorld, 200.00); 
@@ -1443,6 +1461,7 @@ socket.on('claimVillageTreasury', async (data) => {
 // server.js - inside requestWellState listener:
 // server.js - inside requestWellState listener:
 
+// server.js (inside io.on('connection', (socket) => { ... }))
 socket.on('requestWellState', async (data) => {
     const key = `${data.wellX}_${data.wellY}`;
     
@@ -1457,7 +1476,7 @@ socket.on('requestWellState', async (data) => {
             treasury: 0.0,
             structures: [],
             isSpawning: false,
-            isWorkforceSpawned: false // 🎯 NEW: Permanent workforce spawning guard
+            isWorkforceSpawned: false // Permanent workforce spawning guard
         });
         saveVillages();
     }
@@ -1472,8 +1491,8 @@ socket.on('requestWellState', async (data) => {
 
     let existingHobbits = serverHobbits.filter(h => h.villageId === key);
 
-    // 🎯 SECURE ATOMIC GUARD: Only spawn if the database explicitly says they have never been spawned
-    if (!v.isWorkforceSpawned && !v.isSpawning && existingHobbits.length === 0) {
+    // 🎯 ATOMIC GUARD: Spawns if never registered, OR if the in-memory array is empty (after a restart)
+    if ((!v.isWorkforceSpawned || existingHobbits.length === 0) && !v.isSpawning) {
         v.isSpawning = true; // Set concurrency lock
 
         if (v.owner && v.tbaAddress) {
@@ -1501,7 +1520,7 @@ socket.on('requestWellState', async (data) => {
             }
         }
         
-        v.isWorkforceSpawned = true; // 🎯 Set permanent database guard
+        v.isWorkforceSpawned = true; // Set permanent database guard
         saveVillages(); // Save updated JSON database to disk
         
         v.isSpawning = false; // Release lock
