@@ -220,7 +220,24 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     
     if (cRoom !== tRoom) {
         const openDoors = [35, 13, 23, 20];
-        if (!openDoors.includes(target.tileID) && !openDoors.includes(current.tileID)) {
+        
+        // 🎯 DYNAMIC TRANSITION OVERRIDE
+        // If standard closed doors (49, 12) are unlocked or the unit holds the key,
+        // we add them to the allowed transit list, preventing units from getting stuck.
+        const hasKeyCurrent = entity.inventory && entity.inventory.some(item => item.isKey && item.houseId === current.roomID);
+        const hasKeyTarget = entity.inventory && entity.inventory.some(item => item.isKey && item.houseId === target.roomID);
+        const isCurrentUnlocked = isDoorUnlocked(current.gx, current.gy);
+        const isTargetUnlocked = isDoorUnlocked(target.gx, target.gy);
+
+        const allowedDoors = [...openDoors];
+        if (hasKeyCurrent || isCurrentUnlocked) {
+            allowedDoors.push(49); allowedDoors.push(12);
+        }
+        if (hasKeyTarget || isTargetUnlocked) {
+            allowedDoors.push(49); allowedDoors.push(12);
+        }
+
+        if (!allowedDoors.includes(target.tileID) && !allowedDoors.includes(current.tileID)) {
             return false;
         }
     }
