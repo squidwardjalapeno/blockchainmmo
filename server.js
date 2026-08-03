@@ -1325,33 +1325,52 @@ socket.on('claimVillageTreasury', async (data) => {
 
     // server.js - inside requestWellState listener:
 
-socket.on('requestWellState', (data) => {
-    const key = `${data.wellX}_${data.wellY}`;
-    
-    // 🎯 FIX: Only instantiate if completely missing from villages.json
-    if (!serverVillages.has(key)) {
-        serverVillages.set(key, { 
-            x: data.wellX, 
-            y: data.wellY, 
-            owner: null, 
-            captureProgress: 0, 
-            capturer: null,
-            treasury: 0.0
-        });
-        saveVillages();
-    }
-    
-    const v = serverVillages.get(key);
-    const dynamicCount = calculateProportionalHobbits(data.wellX, data.wellY);
+socket.on('requestWellState', async (data) => {
+        const key = `${data.wellX}_${data.wellY}`;
+        
+        // Initialize the village record if completely missing from villages.json
+        if (!serverVillages.has(key)) {
+            serverVillages.set(key, { 
+                x: data.wellX, 
+                y: data.wellY, 
+                owner: null, 
+                captureProgress: 0, 
+                capturer: null,
+                treasury: 0.0
+            });
+            saveVillages();
+        }
+        
+        const v = serverVillages.get(key);
 
-    socket.emit('wellStateResponse', { 
-        wellX: data.wellX, 
-        wellY: data.wellY, 
-        owner: v.owner, 
-        progress: v.captureProgress,
-        hobbitCount: dynamicCount
+        // 🎯 REAL-TIME WORKFORCE RESTORATION ENGINE
+        // If the village is owned on-chain but has 0 active virtual hobbits in memory,
+        // query the blockchain for the TBA's NFT count and restore them on-the-fly.
+        const existingHobbits = serverHobbits.filter(h => h.villageId === key);
+        if (existingHobbits.length === 0 && v.owner && v.tbaAddress) {
+            try {
+                const onChainCount = await queryOnChainHobbitCount(v.tbaAddress);
+                console.log(`📡 SATELLITE RESTORATION: Spawning ${onChainCount} on-chain workers for TBA [${v.tbaAddress}]...`);
+                
+                for (let i = 0; i < onChainCount; i++) {
+                    const jobType = (i === 0) ? 'Forager' : (i === 1) ? 'Farmer' : 'Guard';
+                    spawnDatabaseHobbit(v.x + 2, v.y + 2, key, jobType);
+                }
+            } catch (restoreErr) {
+                console.warn("⚠️ Failed to restore on-chain workforce:", restoreErr.message);
+            }
+        }
+        
+        const dynamicCount = calculateProportionalHobbits(data.wellX, data.wellY);
+
+        socket.emit('wellStateResponse', { 
+            wellX: data.wellX, 
+            wellY: data.wellY, 
+            owner: v.owner, 
+            progress: v.captureProgress,
+            hobbitCount: dynamicCount
+        });
     });
-});
 
     socket.on('requestWellInteraction', (data) => {
         const { wellX, wellY } = data;
@@ -3090,6 +3109,26 @@ function filterEntitiesByVision(socket, originalPlayers, originalProjectiles) {
     }
 
     return { players: filteredPlayers, projectiles: filteredProjectiles };
+}
+
+/**
+ * Queries the blockchain directly to find out how many worker NFTs 
+ * are held inside a village's Token Bound Account (TBA) address.
+ */
+async function queryOnChainHobbitCount(tbaAddress) {
+    if (!tbaAddress) return 0;
+    try {
+        const contract = new ethers.Contract(
+            process.env.SOVEREIGN_HOBBIT_ADDRESS,
+            ["function balanceOf(address owner) view returns (uint256)"],
+            provider
+        );
+        const balance = await contract.balanceOf(tbaAddress);
+        return parseInt(balance.toString());
+    } catch (err) {
+        console.error("❌ Failed to query on-chain hobbit count:", err.message);
+        return 0;
+    }
 }
 
 /**

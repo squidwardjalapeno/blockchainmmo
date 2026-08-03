@@ -128,21 +128,56 @@ export function initMultiplayer() {
     });
 
     // 🆕 2. Listen for the WARM loop coordinate and state updates
-    socket.on('hobbits_update', (data) => {
-        if (window.hobbits) {
-            data.hobbits.forEach(serverHobbit => {
-                const localHobbit = window.hobbits.find(h => h.id === serverHobbit.id);
-                if (localHobbit) {
-                    // Smoothly update local coordinates and states based on server truth
-                    localHobbit.x = serverHobbit.x;
-                    localHobbit.y = serverHobbit.y;
-                    localHobbit.job = serverHobbit.job;
-                    localHobbit.energy = serverHobbit.energy;
-                    localHobbit.state = serverHobbit.state;
+    // multiplayer.js - Inside initMultiplayer() / setupMultiplayerListeners()
+
+        socket.on('hobbits_update', (data) => {
+            if (window.hobbits) {
+                // 1. Remove local hobbits that are no longer present on the server (e.g. dead, packaged, or synced)
+                for (let i = window.hobbits.length - 1; i >= 0; i--) {
+                    const localH = window.hobbits[i];
+                    if (!data.hobbits.some(h => h.id === localH.id)) {
+                        window.hobbits.splice(i, 1);
+                    }
                 }
-            });
-        }
-    });
+
+                // 2. Add or update server hobbits dynamically
+                data.hobbits.forEach(serverHobbit => {
+                    const localHobbit = window.hobbits.find(h => h.id === serverHobbit.id);
+                    if (localHobbit) {
+                        // Smoothly update local coordinates and states based on server truth
+                        localHobbit.x = serverHobbit.x;
+                        localHobbit.y = serverHobbit.y;
+                        localHobbit.job = serverHobbit.job;
+                        localHobbit.energy = serverHobbit.energy;
+                        localHobbit.state = serverHobbit.state;
+                        localHobbit.goal = serverHobbit.goal;
+                    } else {
+                        // 🎯 NEW: If the hobbit is not in our local list, instantiate/spawn them locally!
+                        import('./hobbitCore.js').then(m => {
+                            m.spawnHobbit(
+                                Math.floor(serverHobbit.x / 16), 
+                                Math.floor(serverHobbit.y / 16), 
+                                serverHobbit.houseId, 
+                                serverHobbit.homeX, 
+                                serverHobbit.homeY, 
+                                serverHobbit.job
+                            );
+                            
+                            // Bind the correct ID and server properties back to the newly created local hobbit
+                            const newlyCreated = window.hobbits[window.hobbits.length - 1];
+                            if (newlyCreated) {
+                                newlyCreated.id = serverHobbit.id;
+                                newlyCreated.x = serverHobbit.x;
+                                newlyCreated.y = serverHobbit.y;
+                                newlyCreated.energy = serverHobbit.energy;
+                                newlyCreated.state = serverHobbit.state;
+                                newlyCreated.goal = serverHobbit.goal;
+                            }
+                        });
+                    }
+                });
+            }
+        });
 
         socket.on('forcedMovement', (data) => {
             const p = (data.id === myID) ? hero : remotePlayers.get(data.id);
