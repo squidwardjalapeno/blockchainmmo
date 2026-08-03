@@ -2514,6 +2514,8 @@ socket.on('requestSyncVillage', async (data) => {
 
     // server.js - Inside the io.on('connection') socket block:
 
+    // server.js - Inside the io.on('connection') socket block:
+
     socket.on('sacrificeItem', (data) => {
         const player = players[socket.id];
         if (!player) return;
