@@ -1241,52 +1241,46 @@ async function executeBurnAndReclaim(tokenId, tbaAddress) {
         return;
     }
 
-    try {
-        const ethersModule = await import("https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.min.js");
-        const ethers = ethersModule.ethers;
+    // src/uiManager.js (inside executeBurnAndReclaim)
+try {
+    const ethersModule = await import("https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.min.js");
+    const ethers = ethersModule.ethers;
 
-        // 1. Decouple Reads: Use stable public RPC provider for reads to avoid MetaMask state conflicts
-        const readProvider = new ethers.JsonRpcProvider("https://unichain.drpc.org", 130);
+    const readProvider = new ethers.JsonRpcProvider("https://unichain.drpc.org", 130);
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const signerAddress = await signer.getAddress();
+
+    const cleanTBA = ethers.getAddress(tbaAddress);
+    const cleanUNI = ethers.getAddress(UNI_TOKEN_ADDRESS);
+    const cleanSVD = ethers.getAddress(SVD_CONTRACT_ADDRESS);
+
+    const uniContract = new ethers.Contract(cleanUNI, ["function balanceOf(address) view returns (uint256)"], readProvider);
+    const tbaBalance = await uniContract.balanceOf(cleanTBA);
+
+    console.log("Sanitized Signer Address:", signerAddress);
+    console.log("Sanitized TBA Address:", cleanTBA);
+    console.log(`Checking TBA balances... Found: ${ethers.formatEther(tbaBalance)} UNI`);
+
+    if (tbaBalance > 0n) {
+        console.log("Reclaiming leftover UNI from TBA contract...");
         
-        // BrowserProvider is reserved strictly for write signatures
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await provider.getSigner();
-        const signerAddress = await signer.getAddress();
+        // 🎯 FIX: Declare 'operation' as uint256 to match the standard ERC-6551 signature
+        const tbaContract = new ethers.Contract(cleanTBA, [
+            "function execute(address to, uint256 value, bytes calldata data, uint256 operation) external payable returns (bytes memory)"
+        ], signer);
 
-        // Checksum the addresses to format them correctly for Ethers v6
-        const cleanTBA = ethers.getAddress(tbaAddress);
-        const cleanUNI = ethers.getAddress(UNI_TOKEN_ADDRESS);
-        const cleanSVD = ethers.getAddress(SVD_CONTRACT_ADDRESS);
+        const erc20Interface = new ethers.Interface([
+            "function transfer(address to, uint256 value) returns (bool)"
+        ]);
+        const transferData = erc20Interface.encodeFunctionData("transfer", [signerAddress, tbaBalance]);
 
-        console.log("Sanitized Signer Address:", signerAddress);
-        console.log("Sanitized TBA Address:", cleanTBA);
-
-        // Query leftover UNI balance inside the TBA using the stable readProvider
-        const uniContract = new ethers.Contract(cleanUNI, ["function balanceOf(address) view returns (uint256)"], readProvider);
-        const tbaBalance = await uniContract.balanceOf(cleanTBA);
-
-        console.log(`Checking TBA balances... Found: ${ethers.formatEther(tbaBalance)} UNI`);
-
-        // 2. Reclaim UNI if a balance exists
-        if (tbaBalance > 0n) {
-            console.log("Reclaiming leftover UNI from TBA contract...");
-            const tbaContract = new ethers.Contract(cleanTBA, [
-                "function execute(address to, uint256 value, bytes calldata data, uint8 operation) external payable returns (bytes memory)"
-            ], signer);
-
-            // Encode the ERC20 transfer(signerAddress, tbaBalance) call
-            const erc20Interface = new ethers.Interface([
-                "function transfer(address to, uint256 value) returns (bool)"
-            ]);
-            const transferData = erc20Interface.encodeFunctionData("transfer", [signerAddress, tbaBalance]);
-
-            // Call execute on the TBA (op 0 is a standard CALL) using explicit BigInts and manual gas limit
-            const reclaimTx = await tbaContract.execute(cleanUNI, 0n, transferData, 0, { gasLimit: 120000 });
-            await reclaimTx.wait();
-            console.log("UNI successfully reclaimed to your wallet.");
-        } else {
-            console.log("No leftover UNI found inside this TBA. Skipping reclaim step.");
-        }
+        // Explicitly pass 0 as BigInt for the uint256 operation parameter
+        const reclaimTx = await tbaContract.execute(cleanUNI, 0n, transferData, 0n, { gasLimit: 150000 });
+        console.log("Transaction Hash:", reclaimTx.hash);
+        await reclaimTx.wait();
+        console.log("✅ Leftover UNI reclaimed to personal wallet successfully.");
+    }
 
         // 3. Burn the parent Deed NFT (Try native burn, fallback to soft-burn if unsupported)
         console.log(`Executing on-chain NFT burn for SVD Token #${tokenId}...`);
