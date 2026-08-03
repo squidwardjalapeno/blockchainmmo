@@ -2018,6 +2018,47 @@ function isAreaClear(gx, gy, w, h, worldMatrix, roomMatrix, worldMap) {
 
 // src/cellDecorator.js
 
+// cellDecorator.js
+
+/**
+ * Filters the planned overworld structures to compile the coordinates
+ * of standard houses, general stores, barns, and temples near the well.
+ */
+export function getPlannedStructuresForWell(wellX, wellY) {
+    const structures = [];
+
+    // 1. Scan planned unique and residential buildings (within 100 tiles)
+    plannedBuildings.forEach(b => {
+        const tx = b.args[0];
+        const ty = b.args[1];
+        const dist = Math.hypot(tx - wellX, ty - wellY);
+
+        if (dist <= 100) {
+            let type = 'HOUSE';
+            let job = 'Forager';
+            
+            if (b.func === drawTemple) { type = 'TEMPLE'; job = 'Usher'; }
+            else if (b.func === drawGeneralStore) { type = 'STORE'; job = 'Trader'; }
+            else if (b.func === drawHouse) { type = 'HOUSE'; job = 'Forager'; }
+            else if (b.func === drawRootCellar) return; // Skip cellars as requested
+
+            structures.push({ tx, ty, type, job });
+        }
+    });
+
+    // 2. Scan planned agricultural barns near the well
+    plannedRanches.forEach(r => {
+        if (r.wellX === wellX && r.wellY === wellY && (r.barnType === 'BARN' || r.barnType === 'LARGE_BARN')) {
+            // Anchor standard farmer inside the barn structure
+            const bX = r.gx + 2; 
+            const bY = r.gy - 1;
+            structures.push({ tx: bX, ty: bY, type: 'BARN', job: 'Farmer' });
+        }
+    });
+
+    return structures;
+}
+
 export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     const cellKey = `${cx}_${cy}`;
     const zone = zoneLookup.get(cellKey);
@@ -2034,9 +2075,15 @@ export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertility
 
     console.log(`🎪 LAZY INITIALIZING SETTLEMENT at Well [${zoneWell.x}, ${zoneWell.y}]`);
 
-    // 🎯 FIX: Automatically and silently initialize the well state on the server
+    // 🎯 TRANSMIT PLANNED STRUCTURES LIST ON ZONE BOOTSTRAP
     if (socket && socket.connected) {
-        socket.emit('requestWellState', { wellX: zoneWell.x, wellY: zoneWell.y, isSilent: true });
+        const structs = getPlannedStructuresForWell(zoneWell.x, zoneWell.y);
+        socket.emit('requestWellState', { 
+            wellX: zoneWell.x, 
+            wellY: zoneWell.y, 
+            isSilent: true,
+            structures: structs // Silently register structures on the server
+        });
     }
 
     zone.forEach(c => {

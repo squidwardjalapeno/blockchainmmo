@@ -444,44 +444,30 @@ function getVillageStructures(wellX, wellY) {
  * Instantiates a virtual Hobbit in the server database, assigns them to a vacant
  * building structure, and sets their job based on the assigned building type.
  */
-function spawnDatabaseHobbit(wellX, wellY, villageId, defaultJobType) {
+// server.js - replace spawnDatabaseHobbit with this version:
+
+/**
+ * Instantiates a virtual Hobbit in the server database, assigns them to a vacant
+ * building structure, and sets their job based on the assigned building type.
+ */
+function spawnDatabaseHobbit(wellX, wellY, villageId, defaultJobType, assignedStructure = null) {
     const hobbitId = 'hobbit_' + Math.random().toString(36).substr(2, 9);
     const proceduralName = getRandomHobbitName();
 
     const wellTX = Math.floor(wellX / 16);
     const wellTY = Math.floor(wellY / 16);
 
-    // Scan for all registered structures in this village
-    const structures = getVillageStructures(wellX, wellY);
-    
     let assignedHouseId = null;
     let assignedHomeX = wellTX + 2;
     let assignedHomeY = wellTY + 2;
     let job = defaultJobType;
 
-    // Filter out structures that are already occupied by other living server hobbits
-    const vacantStructures = structures.filter(s => {
-        return !serverHobbits.some(h => h.homeX === s.tx && h.homeY === s.ty);
-    });
-
-    if (vacantStructures.length > 0) {
-        const targetStructure = vacantStructures[0];
-        
-        // Generate a standard unique room/house ID based on the coordinates
-        assignedHouseId = (targetStructure.tx * 1000) + targetStructure.ty;
-        assignedHomeX = targetStructure.tx;
-        assignedHomeY = targetStructure.ty;
-        job = targetStructure.job; // 🎯 Assign job based on building type!
-    } else {
-        // If all residential and commercial buildings are full, assign them to the Temple (Usher)
-        const activeUshers = serverHobbits.filter(h => h.villageId === villageId && h.job === 'Usher');
-        if (activeUshers.length === 0) {
-            job = 'Usher';
-            // Anchor the Usher directly in front of the Temple Altar (relative to well)
-            assignedHomeX = wellTX + 2;
-            assignedHomeY = wellTY - 5; 
-            assignedHouseId = (assignedHomeX * 1000) + assignedHomeY;
-        }
+    // 🎯 If a planned structure is provided, position them inside it and assign the job role
+    if (assignedStructure) {
+        assignedHomeX = assignedStructure.tx;
+        assignedHomeY = assignedStructure.ty;
+        assignedHouseId = (assignedStructure.tx * 1000) + assignedStructure.ty;
+        job = assignedStructure.job; // House -> Forager, Barn -> Farmer, Store -> Trader, Temple -> Usher
     }
 
     const newHobbit = {
@@ -1426,6 +1412,7 @@ socket.on('claimVillageTreasury', async (data) => {
 
 // server.js - inside io.on('connection') socket block:
 
+// server.js - inside requestWellState listener:
 socket.on('requestWellState', async (data) => {
     const key = `${data.wellX}_${data.wellY}`;
     
@@ -1437,12 +1424,19 @@ socket.on('requestWellState', async (data) => {
             owner: null, 
             captureProgress: 0, 
             capturer: null,
-            treasury: 0.0
+            treasury: 0.0,
+            structures: [] // Initialize empty structures array
         });
-        saveVillages();
     }
     
     const v = serverVillages.get(key);
+    
+    // 🎯 Save the client's transmitted planned structures if provided
+    if (data.structures && data.structures.length > 0) {
+        v.structures = data.structures;
+        saveVillages();
+    }
+
     let existingHobbits = serverHobbits.filter(h => h.villageId === key);
 
     // If there are no active in-memory hobbits for this village, determine the spawn path
@@ -1453,28 +1447,29 @@ socket.on('requestWellState', async (data) => {
                 const onChainCount = await queryOnChainHobbitCount(v.tbaAddress);
                 console.log(`📡 SATELLITE RESTORATION: Spawning ${onChainCount} on-chain workers for TBA [${v.tbaAddress}]...`);
                 
-                for (let i = 0; i < onChainCount; i++) {
-                    const jobType = (i === 0) ? 'Forager' : (i === 1) ? 'Farmer' : 'Guard';
-                    spawnDatabaseHobbit((v.x + 2) * 16, (v.y + 2) * 16, key, jobType);
+                const spawnCount = Math.min(onChainCount, v.structures.length);
+                for (let i = 0; i < spawnCount; i++) {
+                    spawnDatabaseHobbit(v.x, v.y, key, 'Forager', v.structures[i]);
                 }
             } catch (restoreErr) {
                 console.warn("⚠️ Failed to restore on-chain workforce:", restoreErr.message);
             }
         } else {
-            // Path B: Neutral / Unclaimed Village. Spawn the baseline starter workforce.
-            const baselineCount = calculateProportionalHobbits(data.wellX, data.wellY);
-            console.log(`📡 NEUTRAL SATELLITE: Spawning ${baselineCount} baseline starter units for village [${key}]...`);
+            // Path B: Neutral / Unclaimed Village. Spawn exactly 1 hobbit per planned structure.
+            const spawnCount = v.structures.length > 0 ? v.structures.length : 3;
+            console.log(`📡 NEUTRAL SATELLITE: Spawning ${spawnCount} structural workers for village [${key}]...`);
             
-            for (let i = 0; i < baselineCount; i++) {
-                const jobType = (i === 0) ? 'Forager' : (i === 1) ? 'Farmer' : 'Guard';
-                spawnDatabaseHobbit((v.x + 2) * 16, (v.y + 2) * 16, key, jobType);
+            for (let i = 0; i < spawnCount; i++) {
+                const assignedStruct = v.structures[i] || null;
+                const fallbackJob = (i === 0) ? 'Forager' : (i === 1) ? 'Farmer' : 'Trader';
+                spawnDatabaseHobbit(v.x, v.y, key, fallbackJob, assignedStruct);
             }
         }
-        // Refresh reference after spawning
+        // Refresh references after spawning
         existingHobbits = serverHobbits.filter(h => h.villageId === key);
     }
     
-    // 🎯 TARGETED WORKFORCE SYNC: Tell this specific client about existing village hobbits
+    // TARGETED WORKFORCE SYNC: Tell this specific client about existing village hobbits
     socket.emit('hobbits_update', { hobbits: existingHobbits });
 
     const dynamicCount = calculateProportionalHobbits(data.wellX, data.wellY);
@@ -1490,7 +1485,6 @@ socket.on('requestWellState', async (data) => {
         });
     }
 });
-
     socket.on('requestWellInteraction', (data) => {
         const { wellX, wellY } = data;
         const key = `${wellX}_${wellY}`;
