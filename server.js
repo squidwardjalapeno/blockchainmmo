@@ -1326,28 +1326,28 @@ socket.on('claimVillageTreasury', async (data) => {
     // server.js - inside requestWellState listener:
 
 socket.on('requestWellState', async (data) => {
-        const key = `${data.wellX}_${data.wellY}`;
-        
-        // Initialize the village record if completely missing from villages.json
-        if (!serverVillages.has(key)) {
-            serverVillages.set(key, { 
-                x: data.wellX, 
-                y: data.wellY, 
-                owner: null, 
-                captureProgress: 0, 
-                capturer: null,
-                treasury: 0.0
-            });
-            saveVillages();
-        }
-        
-        const v = serverVillages.get(key);
+    const key = `${data.wellX}_${data.wellY}`;
+    
+    // Initialize the village record if completely missing from villages.json
+    if (!serverVillages.has(key)) {
+        serverVillages.set(key, { 
+            x: data.wellX, 
+            y: data.wellY, 
+            owner: null, 
+            captureProgress: 0, 
+            capturer: null,
+            treasury: 0.0
+        });
+        saveVillages();
+    }
+    
+    const v = serverVillages.get(key);
+    const existingHobbits = serverHobbits.filter(h => h.villageId === key);
 
-        // 🎯 REAL-TIME WORKFORCE RESTORATION ENGINE
-        // If the village is owned on-chain but has 0 active virtual hobbits in memory,
-        // query the blockchain for the TBA's NFT count and restore them on-the-fly.
-        const existingHobbits = serverHobbits.filter(h => h.villageId === key);
-        if (existingHobbits.length === 0 && v.owner && v.tbaAddress) {
+    // If there are no active in-memory hobbits for this village, determine the spawn path
+    if (existingHobbits.length === 0) {
+        if (v.owner && v.tbaAddress) {
+            // Path A: Owned Village. Query Unichain and restore the exact workforce.
             try {
                 const onChainCount = await queryOnChainHobbitCount(v.tbaAddress);
                 console.log(`📡 SATELLITE RESTORATION: Spawning ${onChainCount} on-chain workers for TBA [${v.tbaAddress}]...`);
@@ -1359,18 +1359,28 @@ socket.on('requestWellState', async (data) => {
             } catch (restoreErr) {
                 console.warn("⚠️ Failed to restore on-chain workforce:", restoreErr.message);
             }
+        } else {
+            // Path B: Neutral / Unclaimed Village. Spawn the baseline starter workforce.
+            const baselineCount = calculateProportionalHobbits(data.wellX, data.wellY);
+            console.log(`📡 NEUTRAL SATELLITE: Spawning ${baselineCount} baseline starter units for village [${key}]...`);
+            
+            for (let i = 0; i < baselineCount; i++) {
+                const jobType = (i === 0) ? 'Forager' : (i === 1) ? 'Farmer' : 'Guard';
+                spawnDatabaseHobbit(v.x + 2, v.y + 2, key, jobType);
+            }
         }
-        
-        const dynamicCount = calculateProportionalHobbits(data.wellX, data.wellY);
+    }
+    
+    const dynamicCount = calculateProportionalHobbits(data.wellX, data.wellY);
 
-        socket.emit('wellStateResponse', { 
-            wellX: data.wellX, 
-            wellY: data.wellY, 
-            owner: v.owner, 
-            progress: v.captureProgress,
-            hobbitCount: dynamicCount
-        });
+    socket.emit('wellStateResponse', { 
+        wellX: data.wellX, 
+        wellY: data.wellY, 
+        owner: v.owner, 
+        progress: v.captureProgress,
+        hobbitCount: dynamicCount
     });
+});
 
     socket.on('requestWellInteraction', (data) => {
         const { wellX, wellY } = data;

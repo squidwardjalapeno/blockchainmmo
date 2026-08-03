@@ -4,6 +4,7 @@ import { images } from './assetLoader.js';
 import { hero } from './entities.js'; 
 import { setContractAddress } from './blockchainManager.js';
 import { handleRemoteTileUpdate } from './bacteria.js';
+import { hobbits, spawnHobbit } from './hobbitCore.js';
 
 export const remotePlayers = new Map(); 
 export let socket = null;
@@ -132,45 +133,42 @@ export function initMultiplayer() {
 
         // multiplayer.js - Inside setupMultiplayerListeners()
 
-    // 1. Update the hobbits_update listener
     socket.on('hobbits_update', (data) => {
-        if (window.hobbits) {
-            // Remove local hobbits that are no longer present on the server
-            for (let i = window.hobbits.length - 1; i >= 0; i--) {
-                const localH = window.hobbits[i];
-                if (!data.hobbits.some(h => h.id === localH.id)) {
-                    window.hobbits.splice(i, 1);
+            if (hobbits) {
+                // Remove local hobbits that are no longer present on the server
+                for (let i = hobbits.length - 1; i >= 0; i--) {
+                    const localH = hobbits[i];
+                    if (!data.hobbits.some(h => h.id === localH.id)) {
+                        hobbits.splice(i, 1);
+                    }
                 }
-            }
 
-            // Add or update server hobbits dynamically
-            data.hobbits.forEach(serverHobbit => {
-                const localHobbit = window.hobbits.find(h => h.id === serverHobbit.id);
-                if (localHobbit) {
-                    // Smoothly update local coordinates and states based on server truth
-                    localHobbit.x = serverHobbit.x;
-                    localHobbit.y = serverHobbit.y;
-                    localHobbit.job = serverHobbit.job;
-                    localHobbit.energy = serverHobbit.energy;
-                    localHobbit.state = serverHobbit.state;
-                    localHobbit.goal = serverHobbit.goal;
-                } else {
-                    // 🎯 FIX: Pass the server's specific ID to prevent the deletion desync
-                    import('./hobbitCore.js').then(m => {
-                        m.spawnHobbit(
+                // Add or update server hobbits dynamically
+                data.hobbits.forEach(serverHobbit => {
+                    const localHobbit = hobbits.find(h => h.id === serverHobbit.id);
+                    if (localHobbit) {
+                        // Smoothly update positions and activities
+                        localHobbit.x = serverHobbit.x;
+                        localHobbit.y = serverHobbit.y;
+                        localHobbit.job = serverHobbit.job;
+                        localHobbit.energy = serverHobbit.energy;
+                        localHobbit.state = serverHobbit.state;
+                        localHobbit.goal = serverHobbit.goal;
+                    } else {
+                        // Spawn new server-recognized hobbits with matching server IDs
+                        spawnHobbit(
                             Math.floor(serverHobbit.x / 16), 
                             Math.floor(serverHobbit.y / 16), 
                             serverHobbit.houseId, 
                             serverHobbit.homeX, 
                             serverHobbit.homeY, 
                             serverHobbit.job,
-                            serverHobbit.id // 👈 Pass the ID here
+                            serverHobbit.id 
                         );
-                    });
-                }
-            });
-        }
-    });
+                    }
+                });
+            }
+        });
 
     // 2. Update the hobbitSpawned listener
     socket.on('hobbitSpawned', (data) => {
