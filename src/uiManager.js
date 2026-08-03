@@ -680,6 +680,7 @@ function handleStorageDrop(e, targetSource) {
     }
 }
 
+// src/uiManager.js (around line 1435)
 function transferStorageItem(index, source) {
     if (!activeStorageContext.id) return;
     const config = STORAGE_CONFIGS[activeStorageContext.type];
@@ -699,29 +700,27 @@ function transferStorageItem(index, source) {
                 return;
             }
         }
-
-        if (socket) {
-            socket.emit(config.transferEvent, {
-                [activeStorageContext.type === 'CHEST' ? 'chestId' : 
-                 activeStorageContext.type === 'CELLAR' ? 'cellarId' : 'hayStorageId']: activeStorageContext.id,
-                index: index,
-                direction: activeStorageContext.type === 'CHEST' ? 'to_chest' : 
-                           activeStorageContext.type === 'CELLAR' ? 'to_cellar' : 'to_storage'
-            });
-        }
     } else {
         if (hero.inventory.length >= hero.maxSlots) {
             alert("Your backpack is full!");
             return;
         }
-        if (socket) {
-            socket.emit(config.transferEvent, {
-                [activeStorageContext.type === 'CHEST' ? 'chestId' : 
-                 activeStorageContext.type === 'CELLAR' ? 'cellarId' : 'hayStorageId']: activeStorageContext.id,
-                index: index,
-                direction: 'to_hero'
-            });
-        }
+    }
+
+    // 🎯 FIX: Correctly map both 'CHEST' and 'VAULT' types to 'chestId'
+    const idKey = (activeStorageContext.type === 'CHEST' || activeStorageContext.type === 'VAULT') ? 'chestId' :
+                  (activeStorageContext.type === 'CELLAR') ? 'cellarId' : 'hayStorageId';
+
+    const directionValue = (source === 'hero') ? 
+        ((activeStorageContext.type === 'CHEST' || activeStorageContext.type === 'VAULT') ? 'to_chest' : 
+         activeStorageContext.type === 'CELLAR' ? 'to_cellar' : 'to_storage') : 'to_hero';
+
+    if (socket) {
+        socket.emit(config.transferEvent, {
+            [idKey]: activeStorageContext.id,
+            index: index,
+            direction: directionValue
+        });
     }
 }
 

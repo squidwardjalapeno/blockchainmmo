@@ -2577,72 +2577,89 @@ socket.on('requestSyncVillage', async (data) => {
         socket.emit('updateInventory', player.inventory);
     });
 
-    socket.on('requestChestTransfer', (data) => {
-        const { chestId, index, direction } = data;
-        const player = players[socket.id];
-        if (!player || !player.inventory) return;
+    // server.js (inside io.on('connection', (socket) => { ... }))
+socket.on('requestChestTransfer', (data) => {
+    const { chestId, index, direction } = data;
+    const player = players[socket.id];
+    if (!player || !player.inventory) return;
 
-        const cx = Math.floor(player.x / 16);
-        const cy = Math.floor(player.y / 16);
-        const coords = chestId.split('_');
-        const tx = parseInt(coords[1]);
-        const ty = parseInt(coords[2]);
-        if (Math.abs(cx - tx) + Math.abs(cy - ty) > 5) return; 
+    const cx = Math.floor(player.x / 16);
+    const cy = Math.floor(player.y / 16);
+    const coords = chestId.split('_');
+    const tx = parseInt(coords[1]);
+    const ty = parseInt(coords[2]);
+    if (Math.abs(cx - tx) + Math.abs(cy - ty) > 5) return; 
 
-        if (!chestDb[chestId]) chestDb[chestId] = [];
-        const chestItems = chestDb[chestId];
+    // 🎯 AUTHORITATIVE VAULT OWNERSHIP CHECK
+    if (chestId.startsWith('vault_')) {
+        const wellX = tx; // Coordinates map directly to the well
+        const wellY = ty;
+        const key = `${wellX}_${wellY}`;
+        const village = serverVillages.get(key);
 
-        if (direction === 'to_chest') {
-            const item = player.inventory[index];
-            if (!item) return;
+        const playerWalletAddress = player.wallet || `Guest_${player.id.substring(0, 4)}`;
+        const isOwner = village && (village.owner === playerWalletAddress);
 
-            // 🎯 Enforce 16-slot limit for Vaults, 8-slot limit for normal Chests
-            const limit = chestId.startsWith('vault_') ? 16 : 8;
-            if (chestItems.length >= limit) {
-                socket.emit('oreMessage', "This storage is full!");
-                return;
-            }
+        if (!isOwner) {
+            socket.emit('oreMessage', "🔒 ACCESS DENIED: Only the sovereign village owner can manage the vault!");
+            return; // Terminate execution, blocking deposit/withdrawal authoritatively
+        }
+    }
 
-            player.inventory.splice(index, 1);
+    if (!chestDb[chestId]) chestDb[chestId] = [];
+    const chestItems = chestDb[chestId];
 
-            let merged = false;
-            if (item.maxStack > 1) {
-                const existing = chestItems.find(i => i.seedType === item.seedType && i.count < item.maxStack);
-                if (existing) {
-                    const space = item.maxStack - existing.count;
-                    if (item.count <= space) {
-                        existing.count += item.count;
-                        merged = true;
-                    } else {
-                        existing.count = item.maxStack;
-                        item.count -= space;
-                    }
+    if (direction === 'to_chest') {
+        const item = player.inventory[index];
+        if (!item) return;
+
+        // Enforce 16-slot limit for Vaults, 8-slot limit for normal Chests
+        const limit = chestId.startsWith('vault_') ? 16 : 8;
+        if (chestItems.length >= limit) {
+            socket.emit('oreMessage', "This storage is full!");
+            return;
+        }
+
+        player.inventory.splice(index, 1);
+
+        let merged = false;
+        if (item.maxStack > 1) {
+            const existing = chestItems.find(i => i.seedType === item.seedType && i.count < item.maxStack);
+            if (existing) {
+                const space = item.maxStack - existing.count;
+                if (item.count <= space) {
+                    existing.count += item.count;
+                    merged = true;
+                } else {
+                    existing.count = item.maxStack;
+                    item.count -= space;
                 }
-            }
-
-            if (!merged) {
-                chestItems.push(item);
-            }
-        } else if (direction === 'to_hero') {
-            const item = chestItems[index];
-            if (!item) return;
-
-            chestItems.splice(index, 1);
-
-            const success = giveItemToServerInventory(player, item);
-            if (!success) {
-                chestItems.push(item); 
-                socket.emit('inventoryFull');
-                return;
             }
         }
 
-        fs.writeFileSync('chests.json', JSON.stringify(chestDb, null, 2));
-        syncPlayerAndSave(socket.id);
+        if (!merged) {
+            chestItems.push(item);
+        }
+    } else if (direction === 'to_hero') {
+        const item = chestItems[index];
+        if (!item) return;
 
-        socket.emit('updateInventory', player.inventory);
-        io.emit('chestUpdated', { chestId, items: chestItems });
-    });
+        chestItems.splice(index, 1);
+
+        const success = giveItemToServerInventory(player, item);
+        if (!success) {
+            chestItems.push(item); // Restore item to chest if inventory overflow
+            socket.emit('inventoryFull');
+            return;
+        }
+    }
+
+    fs.writeFileSync('chests.json', JSON.stringify(chestDb, null, 2));
+    syncPlayerAndSave(socket.id);
+
+    socket.emit('updateInventory', player.inventory);
+    io.emit('chestUpdated', { chestId, items: chestItems });
+});
 
     socket.on('requestCellarTransfer', (data) => {
         const { cellarId, index, direction } = data;
