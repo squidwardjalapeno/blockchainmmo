@@ -450,6 +450,7 @@ function getVillageStructures(wellX, wellY) {
  * Instantiates a virtual Hobbit in the server database, assigns them to a vacant
  * building structure, and sets their job based on the assigned building type.
  */
+// server.js
 function spawnDatabaseHobbit(wellX, wellY, villageId, defaultJobType, assignedStructure = null) {
     const hobbitId = 'hobbit_' + Math.random().toString(36).substr(2, 9);
     const proceduralName = getRandomHobbitName();
@@ -462,22 +463,52 @@ function spawnDatabaseHobbit(wellX, wellY, villageId, defaultJobType, assignedSt
     let assignedHomeY = wellTY + 2;
     let job = defaultJobType;
 
-    // 🎯 If a planned structure is provided, position them inside it and assign the job role
+    let startTX = assignedHomeX;
+    let startTY = assignedHomeY;
+
     if (assignedStructure) {
         assignedHomeX = assignedStructure.tx;
         assignedHomeY = assignedStructure.ty;
         assignedHouseId = (assignedStructure.tx * 1000) + assignedStructure.ty;
-        job = assignedStructure.job; // House -> Forager, Barn -> Farmer, Store -> Trader, Temple -> Usher
+        job = assignedStructure.job;
+        
+        // Spawn them directly inside on structural activity points
+        if (assignedStructure.type === 'HOUSE') {
+            startTX = assignedStructure.tx + 3;
+            startTY = assignedStructure.ty - 1; // Bedroll
+        } else if (assignedStructure.type === 'TEMPLE') {
+            startTX = assignedStructure.tx + 2;
+            startTY = assignedStructure.ty - 5;
+        } else if (assignedStructure.type === 'STORE') {
+            startTX = assignedStructure.tx + 2;
+            startTY = assignedStructure.ty - 3;
+        } else if (assignedStructure.type === 'BARN') {
+            startTX = assignedStructure.tx + 2;
+            startTY = assignedStructure.ty - 1;
+        }
     }
+
+    const keyItem = assignedHouseId ? {
+        name: `Key to House #${assignedHouseId}`,
+        seedType: "key",
+        spriteID: 38,
+        tileset: "keyTileset",
+        isKey: true,
+        houseId: assignedHouseId,
+        baseHealth: 100,
+        baseVirulence: 0,
+        baseFertility: 0,
+        count: 1,
+        maxStack: 1
+    } : null;
 
     const newHobbit = {
         id: hobbitId,
         name: proceduralName,
         job: job,
         isHobbit: true,
-        // Spawn them physically standing inside their assigned structure coordinates
-        x: assignedHomeX * 16,
-        y: assignedHomeY * 16,
+        x: startTX * 16,
+        y: startTY * 16,
         floor: 1,
         speed: 35,
         hp: 40,
@@ -485,7 +516,7 @@ function spawnDatabaseHobbit(wellX, wellY, villageId, defaultJobType, assignedSt
         ad: 2,
         energy: 100,
         maxEnergy: 100,
-        inventory: [],
+        inventory: keyItem ? [keyItem] : [], // Server authoritatively grants key item
         villageId: villageId,
         
         houseId: assignedHouseId,
@@ -504,11 +535,8 @@ function spawnDatabaseHobbit(wellX, wellY, villageId, defaultJobType, assignedSt
     };
 
     serverHobbits.push(newHobbit);
-    
-    // Broadcast the new worker to all connected clients in real-time
     io.emit('hobbitSpawned', newHobbit);
-    console.log(`🧝 Distributed Worker Initialized: ${proceduralName} (${job}) assigned to House #${assignedHouseId} in Village: ${villageId}`);
-    
+    console.log(`🧝 Distributed Worker Initialized: ${proceduralName} (${job}) inside House #${assignedHouseId} in Village: ${villageId}`);
     return newHobbit;
 }
 
@@ -2732,82 +2760,133 @@ socket.on('requestSyncVillage', async (data) => {
         console.log(`💎 ${socket.wallet || socket.id} sacrificed ${requestedCount}x ${data.itemType}`);
     });
 
-    socket.on('pvpAttack', (data) => {
-        const victim = players[data.targetId];
-        const attacker = players[socket.id];
+    // server.js
+socket.on('pvpAttack', (data) => {
+    const attacker = players[socket.id];
+    if (!attacker) return;
 
-        if (victim && attacker && victim.hp > 0) {
+    // ========================================================================
+    // 🧝 ROUTE A: AUTHORITATIVE HIT DETECTED ON SERVER-SIDE HOBBIT
+    // ========================================================================
+    if (data.targetId && data.targetId.startsWith('hobbit_')) {
+        const victim = serverHobbits.find(h => h.id === data.targetId);
+        if (victim && victim.hp > 0) {
             const victimArmor = Math.max(1, victim.armor || 1); 
             const armorReduction = Math.pow(0.5, Math.log10(victimArmor));
             const finalDamage = Math.max(1, Math.floor(attacker.ad * armorReduction));
 
-            if (victim.isInvincible) {
-                console.log(`👼 ${victim.id} is Invincible! Damage ignored.`);
-                return; 
-            }
-
-            if (victim.hasDivineBubble) {
-                console.log(`✨ DIVINE BUBBLE POPPED on ${victim.id}! Blocked ${finalDamage} damage.`);
-                victim.hasDivineBubble = false;
-                
-                io.emit('playerHit', {
-                    victimId: victim.id,
-                    newHp: victim.hp,
-                    newShield: victim.shield,
-                    bubblePopped: true, 
-                    attackerId: attacker.id
-                });
-                return; 
-            }
-
-            if (victim.shield > 0) {
-                const damageToShield = Math.min(victim.shield, finalDamage);
-                victim.shield -= damageToShield;
-                finalDamage -= damageToShield; 
-            }
-
-            victim.hp -= finalDamage;
-
-            const victimName = victim.wallet || `Guest_${victim.id.substring(0, 4)}`;
+            victim.hp = Math.max(0, victim.hp - finalDamage);
+            
+            // Resolve geographic coordinates to flag the attacker as a village intruder
+            const hTX = Math.floor(victim.x / 16);
+            const hTY = Math.floor(victim.y / 16);
             for (let [key, village] of serverVillages) {
-                if (village.owner === victimName) {
-                    io.emit('villageIntruderAggro', { wellX: village.x, wellY: village.y, intruderId: attacker.id });
-                    console.log(`⚖️ MELEE CRIME DETECTED: Attacker ${attacker.id} struck owner ${victimName} of village [${village.x}, ${village.y}]!`);
+                const dist = Math.hypot(village.x - hTX, village.y - hTY);
+                if (dist <= 40) { // Within village perimeter (40 tiles)
+                    io.emit('villageIntruderAggro', { 
+                        wellX: village.x, 
+                        wellY: village.y, 
+                        intruderId: socket.id 
+                    });
                 }
             }
+
+            console.log(`⚖️ HOBBIT CRIME: Attacker ${attacker.id} struck hobbit ${victim.name} for ${finalDamage} DMG!`);
+
+            // Synchronize the updated state of this village's workforce with nearby clients
+            const villageHobbits = serverHobbits.filter(h => h.villageId === victim.villageId);
+            io.emit('hobbits_update', { hobbits: villageHobbits });
+
+            if (victim.hp <= 0) {
+                console.log(`💀 Hobbit ${victim.name} died authoritatively on the server.`);
+            }
+        }
+        return;
+    }
+
+    // ========================================================================
+    // ⚔️ ROUTE B: AUTHORITATIVE HIT DETECTED ON REMOTE PLAYER
+    // ========================================================================
+    const victim = players[data.targetId];
+    if (victim && attacker && victim.hp > 0) {
+        if (victim.isInvincible) {
+            console.log(`👼 ${victim.id} is Invincible! Damage ignored.`);
+            return; 
+        }
+
+        const victimArmor = Math.max(1, victim.armor || 1); 
+        const armorReduction = Math.pow(0.5, Math.log10(victimArmor));
+        let finalDamage = Math.max(1, Math.floor(attacker.ad * armorReduction));
+
+        if (victim.hasDivineBubble) {
+            console.log(`✨ DIVINE BUBBLE POPPED on ${victim.id}! Blocked ${finalDamage} damage.`);
+            victim.hasDivineBubble = false;
             
             io.emit('playerHit', {
                 victimId: victim.id,
                 newHp: victim.hp,
-                newShield: victim.shield, 
+                newShield: victim.shield,
+                bubblePopped: true, 
                 attackerId: attacker.id
             });
+            return; 
+        }
 
-            if (victim.hp <= 0) {
-                console.log(`DEBUG: Victim ${victim.id} had ${victim.xp} XP on server.`);
+        // Process active flux shield buffer
+        if (victim.shield > 0) {
+            const damageToShield = Math.min(victim.shield, finalDamage);
+            victim.shield -= damageToShield;
+            finalDamage -= damageToShield; 
+        }
 
-                victim.hp = 0;
-                
-                const xpGain = (victim.xp || 0) * 0.30;
-                attacker.xp = (attacker.xp || 0) + xpGain;
+        victim.hp -= finalDamage;
 
-                if (victim.wallet) {
-                    userDb[victim.wallet].hp = 0;
-                    userDb[victim.wallet].xp = victim.xp; 
-                    fs.writeFileSync('persistence.json', JSON.stringify(userDb, null, 2));
-                }
-
-                io.emit('playerKilled', { 
-                    victimId: victim.id, 
-                    killerId: attacker.id,
-                    xpGained: xpGain,
-                    newAttackerXp: attacker.xp
+        // Flag melee crime telemetry if striking a land owner near their village
+        const victimName = victim.wallet || `Guest_${victim.id.substring(0, 4)}`;
+        for (let [key, village] of serverVillages) {
+            if (village.owner === victimName) {
+                io.emit('villageIntruderAggro', { 
+                    wellX: village.x, 
+                    wellY: village.y, 
+                    intruderId: attacker.id 
                 });
-
-                console.log(`💀 Player ${victim.id} was slain! Killer earned ${xpGain} XP.`);
+                console.log(`⚖️ MELEE CRIME: Attacker ${attacker.id} struck owner ${victimName} of village [${village.x}, ${village.y}]!`);
             }
         }
-    });
+        
+        io.emit('playerHit', {
+            victimId: victim.id,
+            newHp: victim.hp,
+            newShield: victim.shield, 
+            attackerId: attacker.id
+        });
+
+        // Resolve lethal final blow
+        if (victim.hp <= 0) {
+            console.log(`DEBUG: Victim ${victim.id} had ${victim.xp} XP on server.`);
+
+            victim.hp = 0;
+            
+            const xpGain = (victim.xp || 0) * 0.30;
+            attacker.xp = (attacker.xp || 0) + xpGain;
+
+            if (victim.wallet) {
+                userDb[victim.wallet].hp = 0;
+                userDb[victim.wallet].xp = victim.xp; 
+                fs.writeFileSync('persistence.json', JSON.stringify(userDb, null, 2));
+            }
+
+            io.emit('playerKilled', { 
+                victimId: victim.id, 
+                killerId: attacker.id,
+                xpGained: xpGain,
+                newAttackerXp: attacker.xp
+            });
+
+            console.log(`💀 Player ${victim.id} was slain! Killer earned ${xpGain} XP.`);
+        }
+    }
+});
 
     socket.on('abilityAoE', (data) => {
         const attacker = players[socket.id];

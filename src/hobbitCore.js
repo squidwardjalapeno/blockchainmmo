@@ -85,16 +85,38 @@ export const YIELD_MAP = {
  * Instantiates a new hobbit structure and appends it to the active simulation array.
  * Dynamically resolves names, home anchors, and unique room IDs on-the-fly.
  */
+// src/hobbitCore.js
 export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null, defaultJob = 'Forager', id = null, name = null) {
     const seed = (gx * 31) + gy;
     const hash = Math.abs(Math.sin(seed) * 10000);
     const firstName = HOBBIT_FIRST_NAMES[Math.floor(hash) % HOBBIT_FIRST_NAMES.length];
     const lastName = HOBBIT_LAST_NAMES[Math.floor(hash * 10) % HOBBIT_LAST_NAMES.length];
     
-    // 🎯 Use the server's randomized name if passed, otherwise fall back to deterministic
     const proceduralName = name || `${firstName} ${lastName}`;
 
-    // Standard key item representation if assigned to a building
+    let finalSpawnX = gx;
+    let finalSpawnY = gy;
+    let doorX = null;
+    let doorY = null;
+    let chestX = null;
+    let chestY = null;
+
+    if (houseId) {
+        doorX = homeX + 1;
+        doorY = homeY;
+        chestX = homeX;
+        chestY = homeY - 1;
+        
+        // If coordinate parameters represent baseline, slide them inside
+        if (gx === homeX && gy === homeY) {
+            finalSpawnX = homeX + 3;
+            finalSpawnY = homeY - 1; // Slide onto bedroll
+        } else {
+            finalSpawnX = gx;
+            finalSpawnY = gy;
+        }
+    }
+
     const keyItem = houseId ? {
         name: `Key to House #${houseId}`,
         seedType: "key",
@@ -110,13 +132,12 @@ export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null, 
     } : null;
 
     hobbits.push({
-        // 🎯 Assign standard server ID immediately to prevent deletion desyncs
         id: id || ('hobbit_' + Math.random().toString(36).substr(2, 9)),
         name: proceduralName, 
         job: defaultJob,       
         isHobbit: true,
-        x: gx * 16, 
-        y: gy * 16,
+        x: finalSpawnX * 16, 
+        y: finalSpawnY * 16,
         floor: 1,
         speed: 35,
         
@@ -132,11 +153,11 @@ export function spawnHobbit(gx, gy, houseId = null, homeX = null, homeY = null, 
         homeX: homeX,
         homeY: homeY,
         
-        doorX: houseId ? homeX - 1 : null,  
-        doorY: houseId ? homeY + 1 : null,  
+        doorX: doorX,  
+        doorY: doorY,  
         
-        chestX: houseId ? homeX - 2 : null, 
-        chestY: houseId ? homeY : null,     
+        chestX: chestX, 
+        chestY: chestY,     
 
         hitboxLeft: 4,
         hitboxRight: 12, 

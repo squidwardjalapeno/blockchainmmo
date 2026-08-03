@@ -13,6 +13,8 @@ import { CONFIG } from './config.js';
 import { animals } from './animals.js';
 import { currentTarget } from './combat.js';
 import { getWaitModifier, getRandomFish, globalFishCount } from './fish.js';
+import { hobbits } from './hobbitCore.js';
+
 
 if (typeof window !== 'undefined') {
     logStep("interactionManager.js loaded");
@@ -762,21 +764,44 @@ export function updateHeroStats(modifier, hero) {
 }
 
 
+/**
+ * authoritative client-side combat handler
+ * Manages player target locking, attack windups, weapon/skill modifiers, 
+ * and authoritatively dispatches damage requests to the server.
+ */
 export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remotePlayers) {
+    // 1. Maintain real-time target coordinate tracking
     if (hero.target) {
         if (hero.target.isAnimal) {
             const liveData = animals.find(a => a.id === hero.target.id);
-            if (liveData) { hero.target.x = liveData.x; hero.target.y = liveData.y; hero.target.hp = liveData.hp; }
+            if (liveData) { 
+                hero.target.x = liveData.x; 
+                hero.target.y = liveData.y; 
+                hero.target.hp = liveData.hp; 
+            }
+        } else if (hero.target.isHobbit) {
+            const liveData = hobbits.find(h => h.id === hero.target.id);
+            if (liveData) { 
+                hero.target.x = liveData.x; 
+                hero.target.y = liveData.y; 
+                hero.target.hp = liveData.hp; 
+            }
         } else {
             const liveData = remotePlayers.get(hero.target.id);
-            if (liveData) { hero.target.x = liveData.x; hero.target.y = liveData.y; hero.target.hp = liveData.hp; } 
+            if (liveData) { 
+                hero.target.x = liveData.x; 
+                hero.target.y = liveData.y; 
+                hero.target.hp = liveData.hp; 
+            } 
         }
     }
 
+    // 2. Identify active manual movement inputs to evaluate animation cancellations
     let isManualMove = false;
     if (inputState.inputType === 'touch' && inputState.leftJoystick.active) isManualMove = true;
     if (inputState.moveX !== 0 || inputState.moveY !== 0) isManualMove = true;
 
+    // 3. Process combat target selection triggers
     if (inputState.mainBtn) {
         import('./combat.js').then(c => {
             c.scanForTarget(hero, 150, worldMatrix, roomMatrix);
@@ -797,6 +822,7 @@ export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remoteP
         }
     }
 
+    // 4. Force cancellation if dead
     if (hero.hp <= 0) {
         hero.isAttacking = false;
         hero.target = null;
@@ -805,12 +831,14 @@ export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remoteP
         return; 
     }
 
+    // 5. Movement interrupts attack windup state
     if (isManualMove) {
         hero.isAttacking = false;
         hero.isWindingUp = false;
         return; 
     }
 
+    // 6. execute attack cycle logic
     if (hero.isAttacking && hero.target) {
         if (hero.isWindingUp) {
             hero.attackTimer += modifier;
@@ -820,9 +848,18 @@ export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remoteP
                 let fluxShieldToGain = 0;
                 let finalDamage = hero.ad;
 
-                if (hero.buffs.vaultEmpowered) { finalDamage += (hero.ad * 0.4); hero.buffs.vaultEmpowered = false; }
-                if (hero.buffs.fluxShotEmpowered) { finalDamage += (hero.ad * 0.20); hero.buffs.fluxShotEmpowered = false; fluxShieldToGain = finalDamage * 0.28; }
+                // Apply active ability/lunge damage bonuses
+                if (hero.buffs.vaultEmpowered) { 
+                    finalDamage += (hero.ad * 0.4); 
+                    hero.buffs.vaultEmpowered = false; 
+                }
+                if (hero.buffs.fluxShotEmpowered) { 
+                    finalDamage += (hero.ad * 0.20); 
+                    hero.buffs.fluxShotEmpowered = false; 
+                    fluxShieldToGain = finalDamage * 0.28; 
+                }
 
+                // Stance system mechanics
                 if (hero.skills.includes('p2')) {
                     hero.attackCount++;
                     if (hero.attackCount >= 3) {
@@ -843,6 +880,7 @@ export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remoteP
                     }
                 }
 
+                // Target classification handler
                 if (hero.target.isOre) {
                     if (hero.equipment.mainHand && hero.equipment.mainHand.seedType === 'tool_pickaxe') {
                         if (socket) socket.emit('mineOreStrike', { oreId: hero.target.id });
@@ -851,21 +889,27 @@ export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remoteP
                         console.log("❌ You need a Pickaxe to mine this ore!");
                     }
                 } 
-                else if (hero.target.isAnimal || hero.target.isHobbit) { 
+                else if (hero.target.isAnimal) { 
                     hero.target.hp -= finalDamage; 
-                    console.log(`🗡️ Hit Hobbit/Animal for ${finalDamage} damage! (HP: ${hero.target.hp}/${hero.target.maxHp})`);
+                    console.log(`🗡️ Hit Animal for ${finalDamage} damage! (HP: ${hero.target.hp}/${hero.target.maxHp})`);
+                } 
+                else if (hero.target.isHobbit) {
+                    // Authoritative server validation for hobbit targets
+                    applyPlayerDamage(hero.target, finalDamage);
                 } 
                 else { 
+                    // Authoritative server validation for players
                     applyPlayerDamage(hero.target, finalDamage); 
                 }
                 
+                // Process shield generation
                 if (fluxShieldToGain > 0) {
                     hero.shield += fluxShieldToGain;
                     if (socket) socket.emit('updateStats', { shield: hero.shield });
                 }
                 
                 hero.isWindingUp = false;      
-                hero.attackTimer = -1.7; 
+                hero.attackTimer = -1.7; // Attack recovery window
                 
                 if (hero.target && hero.target.hp <= 0) {
                     hero.isAttacking = false;
@@ -875,6 +919,7 @@ export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remoteP
             }
         } 
         else {
+            // Check distance to transition into windup phase
             const hx = hero.x + 8;
             const hy = hero.y + 8;
             const tx = hero.target.x + 8;
@@ -897,6 +942,9 @@ export function handlePvPCombat(modifier, worldMatrix, roomMatrix, hero, remoteP
     }
 }
 
+/**
+ * Authoritative damage emitter
+ */
 function applyPlayerDamage(target, damage) {
     if (socket) {
         socket.emit('pvpAttack', {
@@ -904,9 +952,8 @@ function applyPlayerDamage(target, damage) {
             damage: damage
         });
     }
-    console.log(`⚔️ PvP HIT sent! Waiting for server truth...`);
+    console.log(`⚔️ Authoritative strike emitted to server...`);
 }
-
 function findNearestPlayer(hero, remotePlayers, range) {
     let nearest = null;
     let minDist = range;

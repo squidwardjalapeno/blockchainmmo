@@ -222,9 +222,10 @@ export function tryHobbitTrade(hobbit, cx, cy) {
 /**
  * Searches the surrounding sector to locate valid enemy targets for military roles.
  */
+// src/hobbitBehavior.js
 export function findMilitaryTarget(hobbit, myWell, myWellOwner) {
     let nearestEnemy = null;
-    let nearestEnemyDist = 120; 
+    let nearestEnemyDist = 160; // Up guard radius to 10 tiles
 
     hobbits.forEach(other => {
         if (other.id === hobbit.id || other.hp <= 0) return;
@@ -239,15 +240,23 @@ export function findMilitaryTarget(hobbit, myWell, myWellOwner) {
         }
     });
 
-    if (hero && hero.hp > 0) {
-        const heroName = playerWallet || "Guest";
-        const isEnemy = myWellOwner && (myWellOwner !== heroName);
-        if (isEnemy) {
-            const dist = Math.hypot((hero.x + 8) - (hobbit.x + 8), (hero.y + 8) - (hobbit.y + 8));
-            if (dist < nearestEnemyDist) {
-                nearestEnemyDist = dist;
-                nearestEnemy = hero;
-            }
+    const heroName = playerWallet || "Guest";
+    let isEnemy = false;
+    
+    if (myWellOwner) {
+        isEnemy = (myWellOwner !== heroName);
+    } else {
+        // If neutral, guard the well from any player within 120px, or self-defend if within 80px
+        const distToWell = myWell ? Math.hypot((hero.x + 8) - (myWell.x * 16 + 8), (hero.y + 8) - (myWell.y * 16 + 8)) : Infinity;
+        const distToHobbit = Math.hypot((hero.x + 8) - (hobbit.x + 8), (hero.y + 8) - (hobbit.y + 8));
+        isEnemy = (distToWell < 120 || distToHobbit < 80);
+    }
+
+    if (hero && hero.hp > 0 && isEnemy) {
+        const dist = Math.hypot((hero.x + 8) - (hobbit.x + 8), (hero.y + 8) - (hobbit.y + 8));
+        if (dist < nearestEnemyDist) {
+            nearestEnemyDist = dist;
+            nearestEnemy = hero;
         }
     }
 
@@ -255,8 +264,17 @@ export function findMilitaryTarget(hobbit, myWell, myWellOwner) {
         remotePlayers.forEach((p, id) => {
             if (p.hp <= 0) return;
             const pName = p.wallet || `Guest_${id.substring(0, 4)}`;
-            const isEnemy = myWellOwner && (myWellOwner !== pName);
-            if (isEnemy) {
+            
+            let isRemoteEnemy = false;
+            if (myWellOwner) {
+                isRemoteEnemy = (myWellOwner !== pName);
+            } else {
+                const distToWell = myWell ? Math.hypot((p.x + 8) - (myWell.x * 16 + 8), (p.y + 8) - (myWell.y * 16 + 8)) : Infinity;
+                const distToHobbit = Math.hypot((p.x + 8) - (hobbit.x + 8), (p.y + 8) - (hobbit.y + 8));
+                isRemoteEnemy = (distToWell < 120 || distToHobbit < 80);
+            }
+
+            if (isRemoteEnemy) {
                 const dist = Math.hypot((p.x + 8) - (hobbit.x + 8), (p.y + 8) - (hobbit.y + 8));
                 if (dist < nearestEnemyDist) {
                     nearestEnemyDist = dist;

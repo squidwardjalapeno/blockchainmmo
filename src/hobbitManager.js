@@ -729,16 +729,18 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         // 🏛️ PEACEFUL JOB STATE MACHINE (ON-SCREEN)
         // ==========================================
         else {
-            let isDefending = false;
-            let criminals = null;
-            if (village && typeof window !== 'undefined' && window.villageCriminals) {
-                criminals = window.villageCriminals.get(`${village.x}_${village.y}`);
-            }
+            // src/hobbitManager.js (around line 485)
+let isDefending = false;
+let criminals = null;
+if (village && typeof window !== 'undefined' && window.villageCriminals) {
+    criminals = window.villageCriminals.get(`${village.x}_${village.y}`);
+}
 
-            if (criminals && criminals.size > 0 && villageOwner) {
-                const px = (hero.x + 8) - (hobbit.x + 8);
-                const py = (hero.y + 8) - (hobbit.y + 8);
-                const distToHero = Math.hypot(px, py);
+// Support criminal defensive trigger even inside neutral/unclaimed sectors
+if (criminals && criminals.size > 0) {
+    const px = (hero.x + 8) - (hobbit.x + 8);
+    const py = (hero.y + 8) - (hobbit.y + 8);
+    const distToHero = Math.hypot(px, py);
 
                 if (criminals.has(myID) && hero.hp > 0 && distToHero < 2400) {
                     enemyTarget = hero;
