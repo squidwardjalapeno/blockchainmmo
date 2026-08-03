@@ -1224,6 +1224,8 @@ window.claimStoredItem = (index) => {
 
 // src/uiManager.js
 
+// src/uiManager.js
+
 async function executeBurnAndReclaim(tokenId, tbaAddress) {
     const UNI_TOKEN_ADDRESS = "0x8f187aA05619a017077f5308904739877ce9eA21";
     // Deployed SovereignDeed parent contract
@@ -1273,19 +1275,33 @@ async function executeBurnAndReclaim(tokenId, tbaAddress) {
         if (tbaBalance > 0n) {
             console.log("Reclaiming leftover UNI from TBA contract...");
             
-            // Human-readable ABI without memory/calldata location keywords
-            const tbaContract = new ethers.Contract(cleanTBA, [
-                "function execute(address to, uint256 value, bytes data, uint256 operation) external payable returns (bytes)"
-            ], signer);
-
-            // Encode the ERC20 transfer(signerAddress, tbaBalance) call
+            // Manually encode the ERC-20 transfer(signerAddress, tbaBalance) call
             const erc20Interface = new ethers.Interface([
                 "function transfer(address to, uint256 value) returns (bool)"
             ]);
             const transferData = erc20Interface.encodeFunctionData("transfer", [signerAddress, tbaBalance]);
 
-            // Call execute on the TBA (op 0 is a standard CALL) using BigInts and explicit gas limit
-            const reclaimTx = await tbaContract.execute(cleanUNI, 0n, transferData, 0n, { gasLimit: 150000 });
+            // Manually compile the ERC-6551 execute(...) call
+            const tbaInterface = new ethers.Interface([
+                "function execute(address to, uint256 value, bytes data, uint256 operation) external payable returns (bytes)"
+            ]);
+
+            const executePayload = tbaInterface.encodeFunctionData("execute", [
+                cleanUNI, 
+                0n, 
+                transferData, 
+                0n
+            ]);
+
+            console.log("Encoded Execute Payload:", executePayload);
+
+            // Dispatch the raw transaction directly to the TBA contract
+            const reclaimTx = await signer.sendTransaction({
+                to: cleanTBA,
+                data: executePayload,
+                gasLimit: 150000
+            });
+
             console.log("Transaction Hash:", reclaimTx.hash);
             await reclaimTx.wait();
             console.log("✅ UNI successfully reclaimed to your wallet.");
