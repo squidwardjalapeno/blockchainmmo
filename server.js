@@ -1,6 +1,3 @@
-// server.js
-
-// 1. Modern Imports (ES Modules)
 import { CONFIG } from './src/config.js'; 
 import { createVoucher, getContractTVL   } from './src/voucherSystem.js'; 
 import { ITEM_TYPES, createItem } from './src/items.js'; 
@@ -34,7 +31,7 @@ const io = new Server(http, {
 
 // Initialize contract instance
 const provider = new ethers.JsonRpcProvider(process.env.UNICHAIN_MAINNET_RPC);
-const deedAbi = ["function balanceOf(address owner) view returns (uint256)"];
+const deedAbi = ["function balanceOf(address) view returns (uint256)"];
 const deedContract = new ethers.Contract(process.env.SOVEREIGN_DEED_ADDRESS, deedAbi, provider);
 
 const EXTRACTION_DELAY_MS = 2 * 60 * 60 * 1000; // 🎯 2-Hour Processing Window
@@ -999,7 +996,6 @@ function tickWorld() {
     // 📡 BROADCAST LOW-FREQUENCY PACKETS
     // ==========================================
     io.emit('animals', { animals: serverAnimals });
-    io.emit('hobbits_update', { hobbits: serverHobbits });
 }
 
 setInterval(tickCombat, 33.33); 
@@ -1327,6 +1323,8 @@ socket.on('claimVillageTreasury', async (data) => {
 
 // server.js
 
+// server.js - inside io.on('connection') socket block:
+
 socket.on('requestWellState', async (data) => {
     const key = `${data.wellX}_${data.wellY}`;
     
@@ -1344,7 +1342,7 @@ socket.on('requestWellState', async (data) => {
     }
     
     const v = serverVillages.get(key);
-    const existingHobbits = serverHobbits.filter(h => h.villageId === key);
+    let existingHobbits = serverHobbits.filter(h => h.villageId === key);
 
     // If there are no active in-memory hobbits for this village, determine the spawn path
     if (existingHobbits.length === 0) {
@@ -1356,7 +1354,7 @@ socket.on('requestWellState', async (data) => {
                 
                 for (let i = 0; i < onChainCount; i++) {
                     const jobType = (i === 0) ? 'Forager' : (i === 1) ? 'Farmer' : 'Guard';
-                    spawnDatabaseHobbit(v.x + 2, v.y + 2, key, jobType);
+                    spawnDatabaseHobbit((v.x + 2) * 16, (v.y + 2) * 16, key, jobType);
                 }
             } catch (restoreErr) {
                 console.warn("⚠️ Failed to restore on-chain workforce:", restoreErr.message);
@@ -1368,14 +1366,19 @@ socket.on('requestWellState', async (data) => {
             
             for (let i = 0; i < baselineCount; i++) {
                 const jobType = (i === 0) ? 'Forager' : (i === 1) ? 'Farmer' : 'Guard';
-                spawnDatabaseHobbit(v.x + 2, v.y + 2, key, jobType);
+                spawnDatabaseHobbit((v.x + 2) * 16, (v.y + 2) * 16, key, jobType);
             }
         }
+        // Refresh reference after spawning
+        existingHobbits = serverHobbits.filter(h => h.villageId === key);
     }
     
+    // 🎯 TARGETED WORKFORCE SYNC: Tell this specific client about existing village hobbits
+    socket.emit('hobbits_update', { hobbits: existingHobbits });
+
     const dynamicCount = calculateProportionalHobbits(data.wellX, data.wellY);
 
-    // 🎯 FIX: Only send the menu popup response if the client's request was NOT silent
+    // Only send the menu popup response if the client's request was NOT silent
     if (!data.isSilent) {
         socket.emit('wellStateResponse', { 
             wellX: data.wellX, 
@@ -1483,7 +1486,7 @@ socket.on('requestWellState', async (data) => {
                 // Spawn exactly the number of virtual Hobbits matching the on-chain spawner transaction
                 for (let i = 0; i < onChainHobbitCount; i++) {
                     const jobType = (i === 0) ? 'Forager' : (i === 1) ? 'Farmer' : 'Guard';
-                    spawnDatabaseHobbit(wellX + 2, wellY + 2, key, jobType);
+                    spawnDatabaseHobbit((wellX + 2) * 16, (wellY + 2) * 16, key, jobType); 
                 }
 
                 // 3. Broadcast updated village owner state to all clients
@@ -1559,10 +1562,10 @@ socket.on('requestWellState', async (data) => {
 
     socket.on('speed_up_job', (data) => {
         const player = players[socket.id];
-        const job = activeJobs.get(data.jobId);
+        const job = activeJobs.get(jobId);
         if (!player || !job || !job.active) return;
 
-        const config = getJobConfig(data.jobId, job.recipe);
+        const config = getJobConfig(jobId, job.recipe);
         if (!config) return;
 
         if (player.inGameUni >= config.speedUpCost) {
@@ -1699,11 +1702,11 @@ socket.on('requestWellState', async (data) => {
             
             if (!isHobbit) {
                 if (!store.storage[buyerWallet]) store.storage[buyerWallet] = [];
-                store.storage[buyerWallet].push(listing.offeredItem);
+                store.storage[buyerWallet] = store.storage[buyerWallet].concat(listing.offeredItem);
             }
             
             if (!store.storage[listing.seller]) store.storage[listing.seller] = [];
-            store.storage[listing.seller].push(paymentItem);
+            store.storage[listing.seller] = store.storage[listing.seller].concat(paymentItem);
 
             store.listings.splice(listIdx, 1);
             saveStores();
@@ -1732,15 +1735,15 @@ socket.on('requestWellState', async (data) => {
             const listing = store.listings[listIdx];
             if (accept) {
                 if (!store.storage[listing.counterOffer.buyer]) store.storage[listing.counterOffer.buyer] = [];
-                store.storage[listing.counterOffer.buyer].push(listing.offeredItem);
+                store.storage[listing.counterOffer.buyer] = store.storage[listing.counterOffer.buyer].concat(listing.offeredItem);
 
                 if (!store.storage[listing.seller]) store.storage[listing.seller] = [];
-                store.storage[listing.seller].push(listing.counterOffer.item);
+                store.storage[listing.seller] = store.storage[listing.seller].concat(listing.counterOffer.item);
 
                 store.listings.splice(listIdx, 1);
             } else {
                 if (!store.storage[listing.counterOffer.buyer]) store.storage[listing.counterOffer.buyer] = [];
-                store.storage[listing.counterOffer.buyer].push(listing.counterOffer.item);
+                store.storage[listing.counterOffer.buyer] = store.storage[listing.counterOffer.buyer].concat(listing.counterOffer.item);
                 listing.counterOffer = null;
             }
             saveStores();
@@ -1756,11 +1759,11 @@ socket.on('requestWellState', async (data) => {
         if (listIdx !== -1) {
             const listing = store.listings[listIdx];
             if (!store.storage[wallet]) store.storage[wallet] = [];
-            store.storage[wallet].push(listing.offeredItem);
+            store.storage[wallet] = store.storage[wallet].concat(listing.offeredItem);
             
             if (listing.counterOffer) {
                 if (!store.storage[listing.counterOffer.buyer]) store.storage[listing.counterOffer.buyer] = [];
-                store.storage[listing.counterOffer.buyer].push(listing.counterOffer.item);
+                store.storage[listing.counterOffer.buyer] = store.storage[listing.counterOffer.buyer].concat(listing.counterOffer.item);
             }
 
             store.listings.splice(listIdx, 1);
@@ -2562,7 +2565,6 @@ socket.on('requestSyncVillage', async (data) => {
         }
         player.lastSacrifice = now;
 
-        // 2. Validate Seed Casing & Values
         const isValidSeed = POINT_VALUES[data.itemType];
         if (!isValidSeed) return;
 
@@ -3385,6 +3387,44 @@ function handleVillageConquestHobbitQueues(villageId, newOwnerWalletAddress) {
 function broadcastEffectiveTGV() {
     const effectiveTGV = Math.max(0, currentTVL - globalDebt);
     io.emit('tgvUpdate', { tgv: effectiveTGV });
+}
+
+// 🎯 JIT Settle Treasury from Bank to TBA
+async function settleTreasuryToTBA(tbaAddress, amount) {
+    if (!tbaAddress || amount <= 0) return;
+
+    try {
+        console.log(`🏦 JIT BANK SETTLEMENT: Settling ${amount.toFixed(8)} UNI from Bank to TBA [${tbaAddress}]...`);
+
+        // Connect to your bankUNI contract (not the raw UNI token)
+        const bankUNIContract = new ethers.Contract(
+            process.env.BANK_UNI_ADDRESS, // Your bankUNI contract address
+            ["function settleToTBA(address tba, uint256 amount) external"],
+            adminWalletSigner
+        );
+
+        const weiAmount = ethers.parseEther(amount.toFixed(18));
+
+        // Call the admin-only settleToTBA function on your bank contract
+        const tx = await bankUNIContract.settleToTBA(tbaAddress, weiAmount, { gasLimit: 120000 });
+        await tx.wait();
+
+        console.log(`✅ On-chain JIT bank settlement confirmed for ${amount.toFixed(8)} UNI.`);
+    } catch (err) {
+        console.error("❌ JIT Bank Settlement failed:", err.message);
+        throw err; 
+    }
+}
+
+// Get the item numeric type ID for StakedStorage ERC-1155 minting
+function getItemTypeId(seedType) {
+    const ids = {
+        "iron_ore": 1,
+        "iron_ingot": 2,
+        "weapon_dagger": 3,
+        "tool_pickaxe": 4
+    };
+    return ids[seedType];
 }
 
 const PORT = process.env.PORT || 10000;
