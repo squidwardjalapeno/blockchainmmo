@@ -2529,7 +2529,7 @@ socket.on('requestSyncVillage', async (data) => {
         const requestedCount = Math.min(64, Math.max(1, data.count || 1)); 
 
         const effectiveTGV = Math.max(0, currentTVL - globalDebt);
-        const pointsPerSeed = effectiveTGV / 64;
+        const pointsPerSeed = effectiveTGV / 640000;
         const totalPoints = pointsPerSeed * requestedCount; 
 
         // 🎯 REAL-TIME VILLAGE WALLET FUNDING ENGINE
