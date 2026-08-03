@@ -2362,6 +2362,7 @@ socket.on('requestChest', (chestId) => {
     // server.js - Add inside the io.on('connection') socket block:
 
 // server.js (inside io.on('connection', (socket) => { ... }))
+// server.js (inside requestSyncVillage)
 socket.on('requestSyncVillage', async (data) => {
     const key = `${data.wellX}_${data.wellY}`;
     const village = serverVillages.get(key);
@@ -2371,24 +2372,25 @@ socket.on('requestSyncVillage', async (data) => {
     }
 
     try {
-        console.log(`🌀 INITIATING SATELLITE SYSTEM SYNC FOR VILLAGE [${key}]...`);
+        console.log(`\n🌀 --- SATELLITE SYSTEM SYNC INITIATED ---`);
+        console.log(`Village Key: ${key}`);
+        console.log(`TBA Address: ${village.tbaAddress}`);
+        console.log(`Current Owner: ${village.owner}`);
 
         // ==========================================
         // 1. SYNC TREASURY FUNDS
         // ==========================================
         const virtualTreasury = parseFloat(village.treasury) || 0.0;
         if (virtualTreasury > 0 && village.tbaAddress) {
+            console.log(`🏦 JIT Funding... Amount: ${virtualTreasury.toFixed(8)} UNI`);
             await settleTreasuryToTBA(village.tbaAddress, virtualTreasury);
-            village.treasury = 0.0; // Reset virtual as it is now secured on-chain
+            village.treasury = 0.0; 
         }
 
         // ==========================================
         // 2. SYNC HOBBIT WORKFORCE COUNTS
         // ==========================================
-        // Count standard living hobbits physically assigned to this village
         const livingHobbits = serverHobbits.filter(h => h.villageId === key && h.hp > 0);
-        
-        // Query current on-chain balance of Hobbit NFTs owned by this village's TBA
         const hobbitContract = new ethers.Contract(
             process.env.SOVEREIGN_HOBBIT_ADDRESS,
             ["function balanceOf(address owner) view returns (uint256)", "function mintHobbit(address to) external returns (uint256)"],
@@ -2396,12 +2398,11 @@ socket.on('requestSyncVillage', async (data) => {
         );
         const onChainHobbitCount = parseInt((await hobbitContract.balanceOf(village.tbaAddress)).toString());
 
-        console.log(`🧝 Workforce Sync: Database Alive: ${livingHobbits.length} | On-Chain: ${onChainHobbitCount}`);
+        console.log(`🧝 Workforce State | Database: ${livingHobbits.length} | On-Chain: ${onChainHobbitCount}`);
 
-        // If any hobbits died, we do not need to burn them (they stay as locked property of the TBA),
-        // but if database count is larger than on-chain count, mint the difference to the TBA!
         if (livingHobbits.length > onChainHobbitCount) {
             const diff = livingHobbits.length - onChainHobbitCount;
+            console.log(`🧝 Workforce Sync | Minting ${diff} new on-chain hobbit NFAs to TBA...`);
             for (let i = 0; i < diff; i++) {
                 const tx = await hobbitContract.mintHobbit(village.tbaAddress);
                 await tx.wait();
@@ -2414,12 +2415,12 @@ socket.on('requestSyncVillage', async (data) => {
         const vaultId = `vault_${data.wellX}_${data.wellY}`;
         const dbItems = chestDb[vaultId] || [];
 
-        // Build list of valid item types and their numeric IDs to evaluate
+        console.log(`📦 Vault Items State | ID: ${vaultId} | Total Database Slots: ${dbItems.length}`);
+
         const syncedItemTypes = ["iron_ore", "iron_ingot", "weapon_dagger", "tool_pickaxe"];
         const tbaAccounts = Array(syncedItemTypes.length).fill(village.tbaAddress);
         const tokenIds = syncedItemTypes.map(type => getItemTypeId(type));
 
-        // Batch query current on-chain balances of the TBA
         const stakedStorageContract = new ethers.Contract(
             process.env.STAKED_STORAGE_ADDRESS,
             [
@@ -2433,47 +2434,44 @@ socket.on('requestSyncVillage', async (data) => {
         const rawOnChainBalances = await stakedStorageContract.balanceOfBatch(tbaAccounts, tokenIds);
         const onChainBalances = rawOnChainBalances.map(b => parseInt(b.toString()));
 
-        // Calculate differences and execute necessary transactions
         for (let i = 0; i < syncedItemTypes.length; i++) {
             const itemType = syncedItemTypes[i];
             const tokenId = tokenIds[i];
             const onChainCount = onChainBalances[i];
             
-            // 🎯 FIX: Sum up the counts of ALL slots matching the itemType to handle non-stackables correctly
             const dbCount = dbItems
                 .filter(item => item.seedType === itemType)
                 .reduce((sum, item) => sum + (item.count !== undefined ? item.count : 1), 0);
 
             const delta = dbCount - onChainCount;
+            console.log(`  └─ [${itemType}] Database: ${dbCount} | On-Chain: ${onChainCount} | Delta: ${delta}`);
 
             if (delta > 0) {
-                // Database has more items than the TBA: Mint the difference to the TBA
                 console.log(`➕ Minting ${delta}x ${itemType} (ID: ${tokenId}) into TBA...`);
                 const tx = await stakedStorageContract.mint(village.tbaAddress, tokenId, delta, "0x");
                 await tx.wait();
+                console.log(`✅ Minting transaction confirmed.`);
             } 
             else if (delta < 0) {
-                // Database has fewer items than the TBA: Burn (melt) the difference
                 console.log(`➖ Melting ${Math.abs(delta)}x ${itemType} (ID: ${tokenId}) from TBA...`);
                 const tx = await stakedStorageContract.melt(village.tbaAddress, tokenId, Math.abs(delta));
                 await tx.wait();
+                console.log(`✅ Melting transaction confirmed.`);
             }
         }
 
-        // Save state changes
         saveVillages();
 
-        // Broadcast completion back to clients
         io.emit('villageOwnerUpdated', {
             wellX: village.x,
             wellY: village.y,
             owner: village.owner,
             progress: village.captureProgress,
-            treasury: 0.0 // virtual treasury is now 0 as it has been moved on-chain
+            treasury: 0.0 
         });
 
         socket.emit('villageSyncCompleted', { success: true });
-        console.log(`✅ SATELLITE SYSTEM SYNC RESOLVED SUCCESSFULLY FOR [${key}].`);
+        console.log(`✅ --- SATELLITE SYSTEM SYNC RESOLVED SUCCESSFULLY ---\n`);
 
     } catch (err) {
         console.error("❌ Satellite Sync failed:", err);
