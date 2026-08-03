@@ -1225,7 +1225,7 @@ window.claimStoredItem = (index) => {
 async function executeBurnAndReclaim(tokenId, tbaAddress) {
     const UNI_TOKEN_ADDRESS = "0x8f187aA05619a017077f5308904739877ce9eA21";
     // 🎯 UPDATED: Set to your newly deployed SovereignDeed parent contract
-    const SVD_CONTRACT_ADDRESS = "0x5C43e68D160121923F1Aaff42139A1522D9010Cb";
+    const SVD_CONTRACT_ADDRESS = "0x16144b54cb15F03f2D6a3b0F6042A9EB8EA15F4B";
 
     console.log("--- 🏁 STARTING BURN & RECLAIM WORKFLOW ---");
     console.log("Raw Token ID:", tokenId);
@@ -1722,7 +1722,7 @@ export function setupClaimPeacefullyButton(socketInstance, wellX, wellY, hobbitC
 
             // 🎯 UPDATED: Changed from the old spawner address to your newly deployed SovereignSpawner
             const spawner = new ethers.Contract("0x2cc5AEd48645f7E8F59c02aD038Acd314adCC2E3", spawnerAbi, signer);
-
+            
             const salt = ethers.solidityPackedKeccak256(["uint256", "uint256"], [wellX, wellY]);
 
             // 🎯 SECURE HOBBIT COUNT QUERY
