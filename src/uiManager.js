@@ -1718,8 +1718,11 @@ export function setupClaimPeacefullyButton(socketInstance, wellX, wellY, hobbitC
 
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
-            const spawner = new ethers.Contract("0x7732217f107D0CC74dd91901FD794d019bB10B52", spawnerAbi, signer);
+            // uiManager.js - inside setupClaimPeacefullyButton()
 
+            // 🎯 UPDATED: Changed from the old spawner address to your newly deployed SovereignSpawner
+            const spawner = new ethers.Contract("0x2cc5AEd48645f7E8F59c02aD038Acd314adCC2E3", spawnerAbi, signer);
+            
             const salt = ethers.solidityPackedKeccak256(["uint256", "uint256"], [wellX, wellY]);
 
             // 🎯 SECURE HOBBIT COUNT QUERY
