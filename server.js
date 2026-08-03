@@ -2578,6 +2578,7 @@ socket.on('requestSyncVillage', async (data) => {
     });
 
     // server.js (inside io.on('connection', (socket) => { ... }))
+// server.js (inside io.on('connection', (socket) => { ... }))
 socket.on('requestChestTransfer', (data) => {
     const { chestId, index, direction } = data;
     const player = players[socket.id];
@@ -2588,11 +2589,19 @@ socket.on('requestChestTransfer', (data) => {
     const coords = chestId.split('_');
     const tx = parseInt(coords[1]);
     const ty = parseInt(coords[2]);
-    if (Math.abs(cx - tx) + Math.abs(cy - ty) > 5) return; 
 
-    // 🎯 AUTHORITATIVE VAULT OWNERSHIP CHECK
-    if (chestId.startsWith('vault_')) {
-        const wellX = tx; // Coordinates map directly to the well
+    // 🎯 FIX: Increase interaction range to 100 tiles for Vaults to bypass the Well-to-TownHall offset
+    const isVault = chestId.startsWith('vault_');
+    const maxAllowedDistance = isVault ? 100 : 5;
+
+    if (Math.abs(cx - tx) + Math.abs(cy - ty) > maxAllowedDistance) {
+        console.log(`📏 Distance check blocked: Player at [${cx}, ${cy}], Target at [${tx}, ${ty}] (Limit: ${maxAllowedDistance})`);
+        return; 
+    }
+
+    // Authoritative Vault Ownership Check
+    if (isVault) {
+        const wellX = tx; 
         const wellY = ty;
         const key = `${wellX}_${wellY}`;
         const village = serverVillages.get(key);
@@ -2614,7 +2623,7 @@ socket.on('requestChestTransfer', (data) => {
         if (!item) return;
 
         // Enforce 16-slot limit for Vaults, 8-slot limit for normal Chests
-        const limit = chestId.startsWith('vault_') ? 16 : 8;
+        const limit = isVault ? 16 : 8;
         if (chestItems.length >= limit) {
             socket.emit('oreMessage', "This storage is full!");
             return;
