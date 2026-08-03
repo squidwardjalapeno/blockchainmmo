@@ -432,6 +432,13 @@ export function executeStructureRoutine(hobbit, currTX, currTY, targetX, targetY
 /**
  * Main behavior machine for the Usher job.
  */
+// hobbitBehavior.js
+
+/**
+ * Main behavior machine for the Usher job.
+ * Manages daily temple routines, unlocks/locks doors, inspects foragers' chests
+ * physically for seeds, and sacrifices them at the temple altar.
+ */
 export function runUsherBehavior(hobbit, modifier, worldMatrix, roomMatrix) {
     const currTX = Math.floor((hobbit.x + 8) / 16);
     const currTY = Math.floor((hobbit.y + 15) / 16);
@@ -439,13 +446,13 @@ export function runUsherBehavior(hobbit, modifier, worldMatrix, roomMatrix) {
     const temple = findNearestTemple(hobbit);
     if (!temple) return; 
 
-    // Initialize local inspection memories on the unit
+    // Initialize local inspection memories on the unit if not already present
     if (!hobbit.lastCheckedChests) hobbit.lastCheckedChests = new Map();
 
     // 1. Manage temple unlocking, locking, and indoor waiting
     if (executeStructureRoutine(
         hobbit, currTX, currTY, 
-        temple.x, temple.y + 1,        
+        temple.x, temple.y + 1, // Stand in front of the altar during routines       
         temple.doorX, temple.doorY, 
         worldMatrix, roomMatrix
     )) {
@@ -456,6 +463,7 @@ export function runUsherBehavior(hobbit, modifier, worldMatrix, roomMatrix) {
     const seedInventory = hobbit.inventory.filter(item => item.seedType && item.seedType.includes('_seed'));
     const totalSeeds = seedInventory.reduce((acc, item) => acc + item.count, 0);
 
+    // 🎯 DEBUG THRESHOLD: Check if seeds are less than 10
     if (totalSeeds < 10) {
         hobbit.goal = 'collect_seeds';
         
@@ -469,7 +477,7 @@ export function runUsherBehavior(hobbit, modifier, worldMatrix, roomMatrix) {
             return (now - lastChecked) > 45000; 
         });
 
-        // Retain or select closest available chest to target
+        // Retain or select the closest available chest to target
         if (hobbit.targetChest) {
             const stillAvailable = availableChests.some(c => c.id === hobbit.targetChest.id);
             if (!stillAvailable) hobbit.targetChest = null;
@@ -497,7 +505,7 @@ export function runUsherBehavior(hobbit, modifier, worldMatrix, roomMatrix) {
                 hobbit.state = 'idle';
                 hobbit.path = [];
 
-                // 🎯 PHYSICAL INSPECTION: Fetch/Verify the latest chest state from the server
+                // PHYSICAL INSPECTION: Fetch/Verify the latest chest state from the server
                 if (!chestCache.has(target.id)) {
                     if (socket && socket.connected) {
                         socket.emit('requestChest', target.id);
@@ -523,7 +531,7 @@ export function runUsherBehavior(hobbit, modifier, worldMatrix, roomMatrix) {
                             socket.emit('updateChest', { chestId: target.id, items: chestItems });
                         }
 
-                        // Done collecting, clear target
+                        // Done collecting, clear active target to prepare next search
                         hobbit.targetChest = null;
                     } else {
                         console.log(`🔍 Usher ${hobbit.name} inspected chest ${target.id}. No seeds found.`);
@@ -557,34 +565,29 @@ export function runUsherBehavior(hobbit, modifier, worldMatrix, roomMatrix) {
     } else {
         hobbit.goal = 'sacrifice_seeds';
         const distToAltar = Math.hypot((temple.x * 16 + 8) - (hobbit.x + 8), (temple.y * 16 + 8) - (hobbit.y + 8));
+        
         if (distToAltar <= 24) {
             hobbit.state = 'idle';
             hobbit.path = [];
 
             const village = hobbit.cachedWell || getHobbitVillage(hobbit);
-            let isCaptured = false;
-            if (village && villageOwners) {
-                const data = villageOwners.get(`${village.x}_${village.y}`);
-                isCaptured = data && data.owner && !data.owner.startsWith("Guest") && data.owner !== "UNCLAIMED";
-            }
 
+            // Filter out seeds to sacrifice
             const seedsToSacrifice = hobbit.inventory.filter(item => item.seedType && item.seedType.includes('_seed'));
             hobbit.inventory = hobbit.inventory.filter(item => !item.seedType || !item.seedType.includes('_seed'));
 
-            if (isCaptured) {
-                console.log(`✨ Usher ${hobbit.name} sacrificed seeds to fund Village Treasury!`);
-                if (socket && socket.connected) {
-                    seedsToSacrifice.forEach(seed => {
-                        socket.emit('sacrificeItem', { 
-                            itemType: seed.seedType, 
-                            count: seed.count,
-                            isVillageWalletFund: true,
-                            villageId: `${village.x}_${village.y}` // 🎯 PASS VILLAGE ID
-                        });
+            // 🎯 SERVER-AUTHORITATIVE EMISSION
+            // The Usher always emits. The server's database determines if the village is captured.
+            if (socket && socket.connected) {
+                console.log(`✨ Usher ${hobbit.name} is depositing seeds into the altar...`);
+                seedsToSacrifice.forEach(seed => {
+                    socket.emit('sacrificeItem', { 
+                        itemType: seed.seedType, 
+                        count: seed.count,
+                        isVillageWalletFund: true,
+                        villageId: `${village.x}_${village.y}`
                     });
-                }
-            } else {
-                console.log(`🍂 Usher ${hobbit.name} sacrificed seeds for nothing (Neutral Settlement).`);
+                });
             }
         } else {
             if ((!hobbit.path || hobbit.path.length === 0) && hobbit.pathTimer <= 0) {

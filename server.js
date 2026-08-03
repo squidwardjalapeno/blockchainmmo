@@ -2512,35 +2512,42 @@ socket.on('requestSyncVillage', async (data) => {
         io.emit('hayStorageUpdated', { hayStorageId: items, items: hayItems });
     });
 
+    // server.js - Inside the io.on('connection') socket block:
+
     socket.on('sacrificeItem', (data) => {
         const player = players[socket.id];
         if (!player) return;
 
         const now = Date.now();
+        // 1. Enforce Anti-Spam Rate Limiter
         if (player.lastSacrifice && now - player.lastSacrifice < 1000) {
-            console.log(`🚨 SPAM BLOCKED: ${socket.wallet} is sending packets too fast.`);
+            console.log(`🚨 SPAM BLOCKED: ${socket.wallet || socket.id} is sending packets too fast.`);
             return;
         }
         player.lastSacrifice = now;
 
+        // 2. Validate Seed Casing & Values
         const isValidSeed = POINT_VALUES[data.itemType];
         if (!isValidSeed) return;
 
         const requestedCount = Math.min(64, Math.max(1, data.count || 1)); 
 
+        // 3. Evaluate Pure TGV Point-Scaling Formula (No Debug Fallbacks)
         const effectiveTGV = Math.max(0, currentTVL - globalDebt);
         const pointsPerSeed = effectiveTGV / 640000;
         const totalPoints = pointsPerSeed * requestedCount; 
 
-        // 🎯 REAL-TIME VILLAGE WALLET FUNDING ENGINE
+        // 4. Split Payout Destination (Village Treasury vs Personal Wallet)
         if (data.isVillageWalletFund && data.villageId) {
+            // SERVER-AUTHORITATIVE LOOKUP: Query villages.json directly on the server
             const village = serverVillages.get(data.villageId);
+            
             if (village && village.owner) {
-                // Credit the treasury
+                // Increment the database treasury record
                 village.treasury = (parseFloat(village.treasury) || 0.0) + totalPoints;
-                saveVillages(); // Persist database to disk
+                saveVillages(); // Persist changes to disk
                 
-                // Broadcast the updated state to all players instantly
+                // Broadcast updated well state immediately to all clients in real-time
                 io.emit('villageOwnerUpdated', {
                     wellX: village.x,
                     wellY: village.y,
@@ -2550,6 +2557,9 @@ socket.on('requestSyncVillage', async (data) => {
                 });
                 
                 console.log(`💎 Village Altar [${data.villageId}] funded by Usher with ${totalPoints.toFixed(8)} UNI.`);
+            } else {
+                // If the village is unclaimed/neutral on the server, discard without crediting
+                console.log(`🍂 Usher sacrificed seeds for nothing (Neutral Altar [${data.villageId}]).`);
             }
         } else {
             // Standard Player Personal Wallet sacrifices
@@ -2559,11 +2569,14 @@ socket.on('requestSyncVillage', async (data) => {
             saveDebt();
             syncPlayerAndSave(socket.id); 
             
+            // Notify the client of their updated personal balance
             socket.emit('balanceUpdated', { inGameUni: player.inGameUni });
         }
         
+        // 5. Broadcast Updated Global TGV
         if (typeof broadcastEffectiveTGV === 'function') broadcastEffectiveTGV();
         
+        // 6. Log System Activity
         if (typeof logActivity === 'function') {
             const logUser = data.isVillageWalletFund ? `Usher (${data.villageId})` : (socket.wallet || socket.id);
             logActivity('SACRIFICE', logUser, `Sacrificed ${requestedCount}x ${data.itemType} for ${totalPoints.toFixed(8)} UNI`);
