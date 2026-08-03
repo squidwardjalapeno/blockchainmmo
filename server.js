@@ -1586,81 +1586,97 @@ socket.on('requestWellState', async (data) => {
     // server.js - Inside io.on('connection', (socket) => { ... })
     // Place this directly below your existing socket.on('requestWellInteraction') listener:
 
-    socket.on('villageClaimed', async (data) => {
-        const { txHash, wellX, wellY, buyerAddress } = data;
-        const key = `${wellX}_${wellY}`;
+    // server.js (inside io.on('connection', (socket) => { ... }))
+socket.on('villageClaimed', async (data) => {
+    const { txHash, wellX, wellY, buyerAddress } = data;
+    const key = `${wellX}_${wellY}`;
 
-        try {
-            console.log(`🔍 Verifying claim transaction on-chain: ${txHash}...`);
-            
-            // Query Unichain Mainnet for the transaction receipt
-            const receipt = await provider.getTransactionReceipt(txHash);
+    try {
+        console.log(`🔍 Verifying claim transaction on-chain: ${txHash}...`);
+        
+        // Query Unichain Mainnet for the transaction receipt
+        const receipt = await provider.getTransactionReceipt(txHash);
 
-            if (receipt && receipt.status === 1) {
-                let tbaAddress = null;
-                let onChainHobbitCount = 0;
-                let deedTokenId = null; // 🆕 Track the specific Token ID
+        if (receipt && receipt.status === 1) {
+            let tbaAddress = null;
+            let onChainHobbitCount = 0;
+            let deedTokenId = null; // Track the specific Token ID
 
-
-                // Decode the event logs from the receipt to extract the deployed TBA and Hobbit Count
-                for (let log of receipt.logs) {
-                    try {
-                        const parsed = spawnerInterface.parseLog(log);
-                        if (parsed && parsed.name === "VillageSpunIntact") {
-                            tbaAddress = parsed.args.tbaAddress;
-                            onChainHobbitCount = parseInt(parsed.args.hobbitCount.toString());
-                            deedTokenId = parseInt(parsed.args.deedTokenId.toString()); // 🆕 Extract Token ID
-
-                            break;
-                        }
-                    } catch (e) {}
-                }
-
-                if (!tbaAddress) {
-                    throw new Error("Failed to decode Spawner Event from transaction logs.");
-                }
-
-                const cleanBuyer = ethers.getAddress(buyerAddress);
-
-                // 1. Initialize the Village in the server database
-                serverVillages.set(key, {
-                    x: wellX,
-                    y: wellY,
-                    owner: cleanBuyer,
-                    tbaAddress: tbaAddress,
-                    deedTokenId: deedTokenId, // 🆕 Associate the Token ID directly
-
-                    captureProgress: 0,
-                    capturer: null,
-                    treasury: 0.0
-                });
-
-                saveVillages(); // 👈 SAVE PERSISTENT DATA HERE!
-
-
-                // 2. 🎯 DYNAMIC WORKFORCE INITIALIZATION
-                // Spawn exactly the number of virtual Hobbits matching the on-chain spawner transaction
-                for (let i = 0; i < onChainHobbitCount; i++) {
-                    const jobType = (i === 0) ? 'Forager' : (i === 1) ? 'Farmer' : 'Guard';
-                    spawnDatabaseHobbit((wellX + 2) * 16, (wellY + 2) * 16, key, jobType); 
-                }
-
-                // 3. Broadcast updated village owner state to all clients
-                io.emit('villageOwnerUpdated', {
-                    wellX: wellX,
-                    wellY: wellY,
-                    owner: cleanBuyer,
-                    progress: 0
-                });
-
-                console.log(`🏰 Village at [${wellX}, ${wellY}] claimed! Owner: ${cleanBuyer} | TBA: ${tbaAddress} | Workforce: ${onChainHobbitCount}`);
-            } else {
-                console.log("❌ Claim verification failed: Transaction reverted or not found.");
+            // Decode the event logs from the receipt to extract the deployed TBA and Hobbit Count
+            for (let log of receipt.logs) {
+                try {
+                    const parsed = spawnerInterface.parseLog(log);
+                    if (parsed && parsed.name === "VillageSpunIntact") {
+                        tbaAddress = parsed.args.tbaAddress;
+                        onChainHobbitCount = parseInt(parsed.args.hobbitCount.toString());
+                        deedTokenId = parseInt(parsed.args.deedTokenId.toString()); // Extract Token ID
+                        break;
+                    }
+                } catch (e) {}
             }
-        } catch (err) {
-            console.error("Failed to process village claim verification:", err);
+
+            if (!tbaAddress) {
+                throw new Error("Failed to decode Spawner Event from transaction logs.");
+            }
+
+            const cleanBuyer = ethers.getAddress(buyerAddress);
+
+            // 🎯 1. PURGE EXISTING NEUTRAL WORKFORCE: Clean out old neutral hobbits assigned to this key
+            for (let i = serverHobbits.length - 1; i >= 0; i--) {
+                if (serverHobbits[i].villageId === key) {
+                    serverHobbits.splice(i, 1);
+                }
+            }
+
+            // 🎯 2. RETAIN STRUCTURES: Retrieve already-planned buildings so they are not wiped
+            const existingStructures = serverVillages.has(key) ? serverVillages.get(key).structures : [];
+
+            // Initialize/Overwrite the Village in the server database
+            serverVillages.set(key, {
+                x: wellX,
+                y: wellY,
+                owner: cleanBuyer,
+                tbaAddress: tbaAddress,
+                deedTokenId: deedTokenId,
+                captureProgress: 0,
+                capturer: null,
+                treasury: 0.0,
+                isWorkforceSpawned: true, // Ensure flag is set on claim
+                structures: existingStructures // Retain planned structure coordinates
+            });
+
+            saveVillages(); // Save persistent JSON database to disk
+
+            // 🎯 3. DYNAMIC AUTHORITATIVE WORKFORCE INITIALIZATION
+            // Spawn the new virtual Hobbits directly inside their respective structures with keys
+            const v = serverVillages.get(key);
+            const structures = v.structures || [];
+
+            for (let i = 0; i < onChainHobbitCount; i++) {
+                const assignedStruct = structures[i] || null;
+                const fallbackJob = (i === 0) ? 'Forager' : (i === 1) ? 'Farmer' : 'Trader';
+                spawnDatabaseHobbit(wellX, wellY, key, fallbackJob, assignedStruct); 
+            }
+
+            // 4. Broadcast updated village owner state to all clients
+            io.emit('villageOwnerUpdated', {
+                wellX: wellX,
+                wellY: wellY,
+                owner: cleanBuyer,
+                progress: 0
+            });
+
+            // Clean client-side hobbits for this village and sync the fresh ones
+            io.emit('hobbits_update', { hobbits: serverHobbits.filter(h => h.villageId === key) });
+
+            console.log(`🏰 Village at [${wellX}, ${wellY}] claimed! Owner: ${cleanBuyer} | TBA: ${tbaAddress} | Workforce: ${onChainHobbitCount}`);
+        } else {
+            console.log("❌ Claim verification failed: Transaction reverted or not found.");
         }
-    });
+    } catch (err) {
+        console.error("Failed to process village claim verification:", err);
+    }
+});
 
     socket.on('request_job', (jobId) => {
         const config = getJobConfig(jobId);
