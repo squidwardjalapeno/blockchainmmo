@@ -1845,6 +1845,7 @@ export function updateDoorControlUI(gx, gy, locked) {
 
 // src/uiManager.js - Replace openVillageMenu with this:
 
+// src/uiManager.js (around line 1700)
 export function openVillageMenu(wellX, wellY, villageData) {
     document.getElementById('village-menu').classList.remove('hidden');
     
@@ -1853,9 +1854,23 @@ export function openVillageMenu(wellX, wellY, villageData) {
     const progressBar = document.getElementById('village-progress-bar');
     const progressText = document.getElementById('village-progress-text');
     const claimBtn = document.getElementById('village-claim-btn');
+    const syncBtn = document.getElementById('village-sync-btn'); // Get Sync Button
 
     const shortOwner = villageData.owner ? (villageData.owner.startsWith('0x') ? villageData.owner.substring(0, 6) + "..." : villageData.owner) : "UNCLAIMED";
     ownerLabel.innerText = shortOwner;
+
+    // 🎯 FIX: Globally bind the Sync Button click handler here so it is active for ALL states
+    if (syncBtn) {
+        syncBtn.innerText = "⚡ SYNC SYSTEM STATE";
+        syncBtn.disabled = false;
+        syncBtn.onclick = () => {
+            syncBtn.innerText = "SYNCING...";
+            syncBtn.disabled = true;
+            if (socket) {
+                socket.emit('requestSyncVillage', { wellX, wellY });
+            }
+        };
+    }
 
     // Dynamic well lookup to handle spawning toggle logic safely
     import('./cellDecorator.js').then(m => {
@@ -1875,9 +1890,8 @@ export function openVillageMenu(wellX, wellY, villageData) {
     });
 
     if (villageData.owner === null) {
-        // 🎯 1. PEACEFUL CLAIM BRANCH
-        // Only bind MetaMask claim listener if the village is completely unclaimed
-        setupClaimPeacefullyButton(socket, wellX, wellY, villageData.hobbitCount); // 👈 MOVED HERE
+        // Peaceful claim branch (Binds only the claim button now)
+        setupClaimPeacefullyButton(socket, wellX, wellY, villageData.hobbitCount);
 
         progressSection.classList.add('hidden');
         claimBtn.innerText = "CLAIM PEACEFULLY";
@@ -1892,12 +1906,10 @@ export function openVillageMenu(wellX, wellY, villageData) {
 
         const isOwner = (villageData.owner === playerWallet);
         if (isOwner) {
-            // 🎯 2. OWNER BRANCH: Disable actions
             claimBtn.innerText = "YOU OWN THIS VILLAGE";
             claimBtn.className = "pixel-btn";
             claimBtn.disabled = true;
         } else {
-            // 🎯 3. SIEGE BRANCH: Clone button to permanently strip any lingering MetaMask listeners
             const newClaimBtn = claimBtn.cloneNode(true);
             claimBtn.parentNode.replaceChild(newClaimBtn, claimBtn);
 
@@ -1916,7 +1928,6 @@ export function openVillageMenu(wellX, wellY, villageData) {
         document.getElementById('village-menu').classList.add('hidden');
     };
 }
-
 // ==========================================
 // ⛏️ MINING UI LOGIC
 // ==========================================

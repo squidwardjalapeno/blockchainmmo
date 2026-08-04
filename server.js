@@ -1587,6 +1587,7 @@ socket.on('requestWellState', async (data) => {
     // Place this directly below your existing socket.on('requestWellInteraction') listener:
 
     // server.js (inside io.on('connection', (socket) => { ... }))
+// server.js (inside io.on('connection', (socket) => { ... }))
 socket.on('villageClaimed', async (data) => {
     const { txHash, wellX, wellY, buyerAddress } = data;
     const key = `${wellX}_${wellY}`;
@@ -1600,7 +1601,7 @@ socket.on('villageClaimed', async (data) => {
         if (receipt && receipt.status === 1) {
             let tbaAddress = null;
             let onChainHobbitCount = 0;
-            let deedTokenId = null; // Track the specific Token ID
+            let deedTokenId = null;
 
             // Decode the event logs from the receipt to extract the deployed TBA and Hobbit Count
             for (let log of receipt.logs) {
@@ -1609,7 +1610,7 @@ socket.on('villageClaimed', async (data) => {
                     if (parsed && parsed.name === "VillageSpunIntact") {
                         tbaAddress = parsed.args.tbaAddress;
                         onChainHobbitCount = parseInt(parsed.args.hobbitCount.toString());
-                        deedTokenId = parseInt(parsed.args.deedTokenId.toString()); // Extract Token ID
+                        deedTokenId = parseInt(parsed.args.deedTokenId.toString());
                         break;
                     }
                 } catch (e) {}
@@ -1621,17 +1622,17 @@ socket.on('villageClaimed', async (data) => {
 
             const cleanBuyer = ethers.getAddress(buyerAddress);
 
-            // 🎯 1. PURGE EXISTING NEUTRAL WORKFORCE: Clean out old neutral hobbits assigned to this key
+            // 1. Purge existing neutral workforce from memory before spawning on-chain workforce
             for (let i = serverHobbits.length - 1; i >= 0; i--) {
                 if (serverHobbits[i].villageId === key) {
                     serverHobbits.splice(i, 1);
                 }
             }
 
-            // 🎯 2. RETAIN STRUCTURES: Retrieve already-planned buildings so they are not wiped
+            // 2. Retrieve already-planned buildings so they are not wiped
             const existingStructures = serverVillages.has(key) ? serverVillages.get(key).structures : [];
 
-            // Initialize/Overwrite the Village in the server database
+            // Initialize the Village in the server database
             serverVillages.set(key, {
                 x: wellX,
                 y: wellY,
@@ -1641,14 +1642,13 @@ socket.on('villageClaimed', async (data) => {
                 captureProgress: 0,
                 capturer: null,
                 treasury: 0.0,
-                isWorkforceSpawned: true, // Ensure flag is set on claim
-                structures: existingStructures // Retain planned structure coordinates
+                isWorkforceSpawned: true, 
+                structures: existingStructures 
             });
 
-            saveVillages(); // Save persistent JSON database to disk
+            saveVillages();
 
-            // 🎯 3. DYNAMIC AUTHORITATIVE WORKFORCE INITIALIZATION
-            // Spawn the new virtual Hobbits directly inside their respective structures with keys
+            // 3. Spawns the new virtual Hobbits directly inside their respective structures with keys
             const v = serverVillages.get(key);
             const structures = v.structures || [];
 
@@ -1658,7 +1658,42 @@ socket.on('villageClaimed', async (data) => {
                 spawnDatabaseHobbit(wellX, wellY, key, fallbackJob, assignedStruct); 
             }
 
-            // 4. Broadcast updated village owner state to all clients
+            // 🎯 4. AUTOMATIC VAULT ITEMS SYNC ON CLAIM
+            // Since the TBA is now live on-chain, automatically mint any existing vault items
+            try {
+                console.log(`📦 Automatic Vault Sync on Claim for TBA [${tbaAddress}]...`);
+                const vaultId = `vault_${wellX}_${wellY}`;
+                const dbItems = chestDb[vaultId] || [];
+                
+                const syncedItemTypes = ["iron_ore", "iron_ingot", "weapon_dagger", "tool_pickaxe"];
+                
+                const stakedStorageContract = new ethers.Contract(
+                    process.env.STAKED_STORAGE_ADDRESS,
+                    [
+                        "function mint(address to, uint256 id, uint256 amount, bytes memory data) external"
+                    ],
+                    adminWalletSigner
+                );
+
+                for (let i = 0; i < syncedItemTypes.length; i++) {
+                    const itemType = syncedItemTypes[i];
+                    const tokenId = getItemTypeId(itemType);
+                    
+                    const dbCount = dbItems
+                        .filter(item => item.seedType === itemType)
+                        .reduce((sum, item) => sum + (item.count !== undefined ? item.count : 1), 0);
+
+                    if (dbCount > 0) {
+                        console.log(`  └─ Minting ${dbCount}x ${itemType} (ID: ${tokenId}) on initial claim...`);
+                        const tx = await stakedStorageContract.mint(tbaAddress, tokenId, dbCount, "0x");
+                        await tx.wait();
+                    }
+                }
+            } catch (syncErr) {
+                console.error("❌ Automatic Vault Sync failed during claim:", syncErr.message);
+            }
+
+            // 5. Broadcast updated village owner state to all clients
             io.emit('villageOwnerUpdated', {
                 wellX: wellX,
                 wellY: wellY,
@@ -1666,7 +1701,7 @@ socket.on('villageClaimed', async (data) => {
                 progress: 0
             });
 
-            // Clean client-side hobbits for this village and sync the fresh ones
+            // Clear client-side hobbits for this village and sync the fresh ones
             io.emit('hobbits_update', { hobbits: serverHobbits.filter(h => h.villageId === key) });
 
             console.log(`🏰 Village at [${wellX}, ${wellY}] claimed! Owner: ${cleanBuyer} | TBA: ${tbaAddress} | Workforce: ${onChainHobbitCount}`);
