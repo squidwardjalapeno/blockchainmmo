@@ -2612,6 +2612,7 @@ socket.on('requestSyncVillage', async (data) => {
 
     // server.js (inside io.on('connection', (socket) => { ... }))
 // server.js (inside io.on('connection', (socket) => { ... }))
+// server.js (inside io.on('connection', (socket) => { ... }))
 socket.on('requestChestTransfer', (data) => {
     const { chestId, index, direction } = data;
     const player = players[socket.id];
@@ -2623,7 +2624,7 @@ socket.on('requestChestTransfer', (data) => {
     const tx = parseInt(coords[1]);
     const ty = parseInt(coords[2]);
 
-    // 🎯 FIX: Increase interaction range to 100 tiles for Vaults to bypass the Well-to-TownHall offset
+    // Increase interaction range to 100 tiles for Vaults to bypass the Well-to-TownHall offset
     const isVault = chestId.startsWith('vault_');
     const maxAllowedDistance = isVault ? 100 : 5;
 
@@ -2632,19 +2633,22 @@ socket.on('requestChestTransfer', (data) => {
         return; 
     }
 
-    // Authoritative Vault Ownership Check
+    // 🎯 FIX: Permissive-Neutral Vault Ownership Check
     if (isVault) {
         const wellX = tx; 
         const wellY = ty;
         const key = `${wellX}_${wellY}`;
         const village = serverVillages.get(key);
 
-        const playerWalletAddress = player.wallet || `Guest_${player.id.substring(0, 4)}`;
-        const isOwner = village && (village.owner === playerWalletAddress);
+        // Only enforce locking if the village has an active owner
+        if (village && village.owner !== null) {
+            const playerWalletAddress = player.wallet || `Guest_${player.id.substring(0, 4)}`;
+            const isOwner = (village.owner === playerWalletAddress);
 
-        if (!isOwner) {
-            socket.emit('oreMessage', "🔒 ACCESS DENIED: Only the sovereign village owner can manage the vault!");
-            return; // Terminate execution, blocking deposit/withdrawal authoritatively
+            if (!isOwner) {
+                socket.emit('oreMessage', "🔒 ACCESS DENIED: This village belongs to another sovereign owner!");
+                return; // Block non-owners from managing an owned vault
+            }
         }
     }
 
