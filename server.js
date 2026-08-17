@@ -1546,51 +1546,95 @@ socket.on('requestWellState', async (data) => {
     }
 });
 
-    socket.on('requestWellInteraction', (data) => {
-        const { wellX, wellY } = data;
-        const key = `${wellX}_${wellY}`;
-        const player = players[socket.id];
-        if (!player) return;
+// server.js (inside requestWellInteraction)
+socket.on('requestWellInteraction', (data) => {
+    const { wellX, wellY } = data;
+    const key = `${wellX}_${wellY}`;
+    const player = players[socket.id];
+    if (!player) return;
 
-        if (!serverVillages.has(key)) {
-            serverVillages.set(key, {
-                x: wellX,
-                y: wellY,
-                owner: null,
-                captureProgress: 0,
-                capturer: null,
-                contested: false
-            });
-        }
+    // 🎯 1. SECURE PROXIMITY CHECK: Must be within 3 tiles of the well
+    const pTX = Math.floor(player.x / 16);
+    const pTY = Math.floor(player.y / 16);
+    const distanceToWell = Math.hypot(pTX - wellX, pTY - wellY);
+    
+    if (distanceToWell > 3) {
+        console.log(`🚨 CHEAT BLOCKED: ${player.wallet} tried to interact with well [${key}] from too far away (${distanceToWell.toFixed(1)} tiles)!`);
+        return; 
+    }
 
-        const village = serverVillages.get(key);
+    if (!serverVillages.has(key)) {
+        serverVillages.set(key, {
+            x: wellX,
+            y: wellY,
+            owner: null,
+            captureProgress: 0,
+            capturer: null,
+            contested: false
+        });
+    }
 
-        if (village.owner === null) {
-            village.owner = player.wallet || `Guest_${player.id.substring(0, 4)}`;
-            village.captureProgress = 0;
-            village.capturer = null;
-            io.emit('villageOwnerUpdated', { wellX, wellY, owner: village.owner, progress: 0 });
-            io.emit('chatMessage', { sender: "SYSTEM", message: `🏘️ Village at [${wellX}, ${wellY}] claimed peacefully by ${village.owner}!` });
+    const village = serverVillages.get(key);
+
+    if (village.owner === null) {
+        // Peaceful claim is handled through Spawner, not here
+    } else {
+        // 🎯 2. AUTHORITATIVE DEFENDER CHECK: Attacker must have numerical superiority in well chunks
+        const counts = getVillagePlayerCounts(wellX, wellY, village.owner);
+        
+        if (counts.enemies > counts.allies) {
+            // Numerical superiority verified. Attacker successfully initiates the siege.
+            village.capturer = player.wallet || `Guest_${player.id.substring(0, 4)}`;
+            io.emit('villageCaptureProgress', { wellX, wellY, progress: village.captureProgress, capturer: village.capturer });
+            console.log(`⚔️ SIEGE LAUNCHED: ${village.capturer} has initiated a siege on village [${key}]!`);
         } else {
-            const counts = getVillagePlayerCounts(wellX, wellY, village.owner);
-            
-            if (counts.enemies > counts.allies) {
-                village.capturer = player.wallet || `Guest_${player.id.substring(0, 4)}`;
-                io.emit('villageCaptureProgress', { wellX, wellY, progress: village.captureProgress, capturer: village.capturer });
-            } else {
-                socket.emit('wellInteractionMessage', { message: "The village is secured by defenders! Defeat them to capture." });
-            }
+            socket.emit('wellInteractionMessage', { message: "🔒 Siege Blocked: Defenders still hold the perimeter. Outnumber them to capture." });
         }
-    });
+    }
+});
 
-    // server.js - Inside io.on('connection', (socket) => { ... })
-    // Place this directly below your existing socket.on('requestWellInteraction') listener:
 
-    // server.js (inside io.on('connection', (socket) => { ... }))
 // server.js (inside io.on('connection', (socket) => { ... }))
 socket.on('villageClaimed', async (data) => {
     const { txHash, wellX, wellY, buyerAddress } = data;
     const key = `${wellX}_${wellY}`;
+    const player = players[socket.id];
+
+    if (!player) return;
+
+    // 🎯 1. SECURE PROXIMITY CHECK: Must be within 5 tiles of the well
+    const pTX = Math.floor(player.x / 16);
+    const pTY = Math.floor(player.y / 16);
+    const distanceToWell = Math.hypot(pTX - wellX, pTY - wellY);
+    
+    if (distanceToWell > 5) {
+        console.log(`🚨 FRAUD BLOCKED: ${player.wallet} attempted to claim village [${key}] from too far away (${distanceToWell.toFixed(1)} tiles)!`);
+        socket.emit('oreMessage', "🔒 CLAIM BLOCKED: You are too far away from the village well.");
+        return; 
+    }
+
+    // 🎯 2. AUTHORITATIVE DEFENDER CHECK: Must clear all active living military hobbits first
+    const activeDefenders = serverHobbits.filter(h => 
+        h.villageId === key && 
+        h.hp > 0 && 
+        h.job === 'Military'
+    );
+    
+    if (activeDefenders.length > 0) {
+        console.log(`🚨 FRAUD BLOCKED: ${player.wallet} attempted to claim village [${key}] but ${activeDefenders.length} defenders are still alive!`);
+        socket.emit('oreMessage', "🔒 CLAIM BLOCKED: You must clear all active military defenders before claiming this village.");
+        return; 
+    }
+
+    // 🎯 3. OCCUPIED CHECK: Block claims on already owned villages
+    if (serverVillages.has(key)) {
+        const existingVillage = serverVillages.get(key);
+        if (existingVillage.owner !== null) {
+            console.log(`🚨 FRAUD BLOCKED: ${buyerAddress} attempted to claim an occupied village [${key}]!`);
+            socket.emit('oreMessage', "🔒 CLAIM REJECTED: This village is already owned by another sovereign player.");
+            return; 
+        }
+    }
 
     try {
         console.log(`🔍 Verifying claim transaction on-chain: ${txHash}...`);
@@ -1658,8 +1702,7 @@ socket.on('villageClaimed', async (data) => {
                 spawnDatabaseHobbit(wellX, wellY, key, fallbackJob, assignedStruct); 
             }
 
-            // 🎯 4. AUTOMATIC VAULT ITEMS SYNC ON CLAIM
-            // Since the TBA is now live on-chain, automatically mint any existing vault items
+            // 4. AUTOMATIC VAULT ITEMS SYNC ON CLAIM
             try {
                 console.log(`📦 Automatic Vault Sync on Claim for TBA [${tbaAddress}]...`);
                 const vaultId = `vault_${wellX}_${wellY}`;
@@ -1712,6 +1755,7 @@ socket.on('villageClaimed', async (data) => {
         console.error("Failed to process village claim verification:", err);
     }
 });
+
 
     socket.on('request_job', (jobId) => {
         const config = getJobConfig(jobId);
@@ -2798,75 +2842,112 @@ socket.on('requestChestTransfer', (data) => {
 
     // server.js - Inside the io.on('connection') socket block:
 
-    socket.on('sacrificeItem', (data) => {
-        const player = players[socket.id];
-        if (!player) return;
+    // server.js (inside io.on('connection', (socket) => { ... }))
+socket.on('sacrificeItem', (data) => {
+    const player = players[socket.id];
+    if (!player || !player.inventory) return;
 
-        const now = Date.now();
-        // 1. Enforce Anti-Spam Rate Limiter
-        if (player.lastSacrifice && now - player.lastSacrifice < 1000) {
-            console.log(`🚨 SPAM BLOCKED: ${socket.wallet || socket.id} is sending packets too fast.`);
-            return;
-        }
-        player.lastSacrifice = now;
+    const now = Date.now();
+    // 1. Rate Limiting (Prevents rapid transaction spamming)
+    if (player.lastSacrifice && now - player.lastSacrifice < 1000) {
+        console.log(`🚨 SPAM BLOCKED: ${socket.wallet || socket.id} is sending packets too fast.`);
+        return;
+    }
+    player.lastSacrifice = now;
 
-        const isValidSeed = POINT_VALUES[data.itemType];
-        if (!isValidSeed) return;
+    // 2. Validate Seed/Item Type
+    const isValidSeed = POINT_VALUES[data.itemType];
+    if (!isValidSeed) {
+        console.log(`🚨 CHEAT BLOCKED: ${player.wallet} tried to sacrifice non-sacrificable item: ${data.itemType}`);
+        return;
+    }
 
-        const requestedCount = Math.min(64, Math.max(1, data.count || 1)); 
+    // 🎯 3. SECURE PROXIMITY CHECK: Locate the nearest physical Temple Altar in static objects
+    let nearestAltar = null;
+    let minAltarDist = Infinity;
+    const pTX = Math.floor(player.x / 16);
+    const pTY = Math.floor(player.y / 16);
 
-        // 3. Evaluate Pure TGV Point-Scaling Formula (No Debug Fallbacks)
-        const effectiveTGV = Math.max(0, currentTVL - globalDebt);
-        const pointsPerSeed = effectiveTGV / 64;
-        const totalPoints = pointsPerSeed * requestedCount; 
-
-        // 4. Split Payout Destination (Village Treasury vs Personal Wallet)
-        if (data.isVillageWalletFund && data.villageId) {
-            // SERVER-AUTHORITATIVE LOOKUP: Query villages.json directly on the server
-            const village = serverVillages.get(data.villageId);
-            
-            if (village && village.owner) {
-                // Increment the database treasury record
-                village.treasury = (parseFloat(village.treasury) || 0.0) + totalPoints;
-                saveVillages(); // Persist changes to disk
-                
-                // Broadcast updated well state immediately to all clients in real-time
-                io.emit('villageOwnerUpdated', {
-                    wellX: village.x,
-                    wellY: village.y,
-                    owner: village.owner,
-                    progress: village.captureProgress,
-                    treasury: village.treasury
-                });
-                
-                console.log(`💎 Village Altar [${data.villageId}] funded by Usher with ${totalPoints.toFixed(8)} UNI.`);
-            } else {
-                // If the village is unclaimed/neutral on the server, discard without crediting
-                console.log(`🍂 Usher sacrificed seeds for nothing (Neutral Altar [${data.villageId}]).`);
+    for (let [key, obj] of staticObjects) {
+        if (obj.type === 'TEMPLE_ALTAR') {
+            const tx = Math.floor(key / 10000);
+            const ty = key % 10000;
+            const dist = Math.hypot(pTX - tx, pTY - ty);
+            if (dist < minAltarDist) {
+                minAltarDist = dist;
+                nearestAltar = { tx, ty };
             }
-        } else {
-            // Standard Player Personal Wallet sacrifices
-            player.inGameUni = (parseFloat(player.inGameUni) || 0.0) + totalPoints;
-            globalDebt = (parseFloat(globalDebt) || 0.0) + totalPoints;
-            
-            saveDebt();
-            syncPlayerAndSave(socket.id); 
-            
-            // Notify the client of their updated personal balance
-            socket.emit('balanceUpdated', { inGameUni: player.inGameUni });
         }
-        
-        // 5. Broadcast Updated Global TGV
-        if (typeof broadcastEffectiveTGV === 'function') broadcastEffectiveTGV();
-        
-        // 6. Log System Activity
-        if (typeof logActivity === 'function') {
-            const logUser = data.isVillageWalletFund ? `Usher (${data.villageId})` : (socket.wallet || socket.id);
-            logActivity('SACRIFICE', logUser, `Sacrificed ${requestedCount}x ${data.itemType} for ${totalPoints.toFixed(8)} UNI`);
-        }
+    }
 
-        console.log(`💎 ${socket.wallet || socket.id} sacrificed ${requestedCount}x ${data.itemType}`);
-    });
+    // Player must be standing within 3 tiles of an actual, planned Temple Altar to sacrifice
+    if (!nearestAltar || minAltarDist > 3) {
+        console.log(`🚨 CHEAT BLOCKED: ${player.wallet} tried to sacrifice seeds from too far away (${minAltarDist.toFixed(1)} tiles)!`);
+        socket.emit('oreMessage', "🔒 Offering Rejected: You must be standing at the Holy Altar to make a sacrifice.");
+        return;
+    }
+
+    const requestedCount = Math.min(64, Math.max(1, data.count || 1)); 
+
+    // 🎯 4. AUTHORITATIVE INVENTORY VALIDATION
+    const itemIdx = player.inventory.findIndex(item => item.seedType === data.itemType);
+    if (itemIdx === -1 || player.inventory[itemIdx].count < requestedCount) {
+        console.log(`🚨 CHEAT DETECTED: ${player.wallet} attempted to sacrifice items they do not possess!`);
+        socket.emit('oreMessage', "🔒 Offering Rejected: You do not possess those items in your backpack.");
+        return; 
+    }
+
+    // Deduct items from the player's authoritative server-side inventory
+    player.inventory[itemIdx].count -= requestedCount;
+    if (player.inventory[itemIdx].count <= 0) {
+        player.inventory.splice(itemIdx, 1);
+    }
+
+    // Notify the client immediately of the authoritative inventory deduction
+    socket.emit('updateInventory', player.inventory);
+
+    // 5. Evaluate Pure TGV Point-Scaling Formula
+    const effectiveTGV = Math.max(0, currentTVL - globalDebt);
+    const pointsPerSeed = effectiveTGV / 640000;
+    const totalPoints = pointsPerSeed * requestedCount; 
+
+    // 6. Split Payout Destination (Village Treasury vs Personal Wallet)
+    if (data.isVillageWalletFund && data.villageId) {
+        const village = serverVillages.get(data.villageId);
+        
+        if (village && village.owner) {
+            village.treasury = (parseFloat(village.treasury) || 0.0) + totalPoints;
+            saveVillages(); 
+            
+            io.emit('villageOwnerUpdated', {
+                wellX: village.x,
+                wellY: village.y,
+                owner: village.owner,
+                progress: village.captureProgress,
+                treasury: village.treasury
+            });
+            
+            console.log(`💎 Village Altar [${data.villageId}] funded by Usher with ${totalPoints.toFixed(8)} UNI.`);
+        } else {
+            console.log(`🍂 Usher sacrificed seeds for nothing (Neutral Altar [${data.villageId}]).`);
+        }
+    } else {
+        // Standard Player Personal Wallet sacrifices
+        player.inGameUni = (parseFloat(player.inGameUni) || 0.0) + totalPoints;
+        globalDebt = (parseFloat(globalDebt) || 0.0) + totalPoints;
+        
+        saveDebt();
+        syncPlayerAndSave(socket.id); 
+        
+        socket.emit('balanceUpdated', { inGameUni: player.inGameUni });
+    }
+    
+    broadcastEffectiveTGV();
+    
+    logActivity('SACRIFICE', socket.wallet || socket.id, `Sacrificed ${requestedCount}x ${data.itemType} for ${totalPoints.toFixed(8)} UNI`);
+    console.log(`💎 ${socket.wallet || socket.id} sacrificed ${requestedCount}x ${data.itemType} successfully.`);
+});
+
 
     // server.js
 socket.on('pvpAttack', (data) => {

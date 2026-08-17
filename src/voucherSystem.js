@@ -34,7 +34,7 @@ const domain = {
     version: "1",
     chainId: 130, // Unichain Mainnet
     // 🎯 DYNAMIC: Reads directly from your Render environment variable!
-    verifyingContract: process.env.BANK_UNI_ADDRESS || "0xE0A6BF5478ff603aEe15Bdf4a31D6590497Bbe49"
+    verifyingContract: process.env.BANK_UNI_ADDRESS || "0x89Af8AFfbd2C6cD3904310f7A7f415C8F0541047"
 };
 
 const types = {

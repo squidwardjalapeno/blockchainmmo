@@ -6,7 +6,7 @@ if (typeof window !== 'undefined') {
 }
 
 // 🎯 UPDATED: Changed from the old address to your newly deployed bank contract
-let bankUNI_ADDRESS = "0xE0A6BF5478ff603aEe15Bdf4a31D6590497Bbe49";
+let bankUNI_ADDRESS = "0x89Af8AFfbd2C6cD3904310f7A7f415C8F0541047";
 
 const bankUNI_ABI = [
     "function cashOut(uint256 amount, uint256 nonce, bytes signature) external"
