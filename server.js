@@ -2817,7 +2817,7 @@ socket.on('requestChestTransfer', (data) => {
 
         // 3. Evaluate Pure TGV Point-Scaling Formula (No Debug Fallbacks)
         const effectiveTGV = Math.max(0, currentTVL - globalDebt);
-        const pointsPerSeed = effectiveTGV / 640000;
+        const pointsPerSeed = effectiveTGV / 64;
         const totalPoints = pointsPerSeed * requestedCount; 
 
         // 4. Split Payout Destination (Village Treasury vs Personal Wallet)
