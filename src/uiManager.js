@@ -1630,6 +1630,7 @@ window.toggleSpectateHobbit = (id) => {
 
 // client/uiManager.js - Master Two-Tier Login Controller (Audited)
 
+// src/uiManager.js (around line 1800)
 export function initTwoTierMenu(socketInstance) {
     const tier1 = document.getElementById('menu-tier-1');
     const tier2 = document.getElementById('menu-tier-2');
@@ -1640,10 +1641,14 @@ export function initTwoTierMenu(socketInstance) {
     const selectTerminalBtn = document.getElementById('select-terminal-btn');
     const backBtn = document.getElementById('back-to-tier-1-btn');
     const connectWalletBtn = document.getElementById('main-connect-btn');
+    
+    // Get Guest elements inside Tier 2
+    const guestBtn = document.getElementById('main-guest-btn');
+    const guestDivider = document.getElementById('guest-or-divider');
 
     if (!tier1 || !tier2 || !connectWalletBtn) return;
 
-    // 🎯 THE STRIP: Clone the button to permanently strip all legacy addEventListener listeners!
+    // Clone the button to strip any lingering listeners
     const newConnectWalletBtn = connectWalletBtn.cloneNode(true);
     connectWalletBtn.parentNode.replaceChild(newConnectWalletBtn, connectWalletBtn);
 
@@ -1653,6 +1658,10 @@ export function initTwoTierMenu(socketInstance) {
         authTitle.innerText = "Hero Authentication";
         tier1.classList.add('hidden');
         tier2.classList.remove('hidden');
+        
+        // 🎯 Show Guest option strictly for MOBA play
+        if (guestBtn) guestBtn.classList.remove('hidden');
+        if (guestDivider) guestDivider.classList.remove('hidden');
     };
 
     selectRtsBtn.onclick = () => {
@@ -1660,6 +1669,10 @@ export function initTwoTierMenu(socketInstance) {
         authTitle.innerText = "Overseer Authentication";
         tier1.classList.add('hidden');
         tier2.classList.remove('hidden');
+        
+        // 🎯 Hide Guest option for Overseer RTS role
+        if (guestBtn) guestBtn.classList.add('hidden');
+        if (guestDivider) guestDivider.classList.add('hidden');
     };
 
     selectTerminalBtn.onclick = () => {
@@ -1667,6 +1680,10 @@ export function initTwoTierMenu(socketInstance) {
         authTitle.innerText = "Strategist Authentication";
         tier1.classList.add('hidden');
         tier2.classList.remove('hidden');
+        
+        // 🎯 Hide Guest option for Strategist Terminal role
+        if (guestBtn) guestBtn.classList.add('hidden');
+        if (guestDivider) guestDivider.classList.add('hidden');
     };
 
     // Back Button
@@ -1675,11 +1692,31 @@ export function initTwoTierMenu(socketInstance) {
         tier1.classList.remove('hidden');
     };
 
+    // --- Guest Click Listener ---
+    if (guestBtn) {
+        guestBtn.onclick = () => {
+            const guestID = "Guest_" + Math.floor(Math.random() * 999999);
+            setPlayerWallet(guestID);
+            
+            if (socketInstance) {
+                socketInstance.emit('identifyWallet', guestID);
+            }
+            
+            // Bypass character creation check to go directly to game loading state
+            document.getElementById('main-menu').classList.add('hidden');
+            document.getElementById('hud').style.display = 'block';
+        };
+    }
+
     // --- Tier 2 MetaMask Handshake ---
     newConnectWalletBtn.onclick = async () => {
         if (!window.ethereum) {
             alert("MetaMask is not installed! Defaulting to Guest Mode.");
-            socketInstance.emit('identifyWallet', `Guest_${Math.floor(Math.random() * 999999)}`);
+            const guestID = `Guest_${Math.floor(Math.random() * 999999)}`;
+            setPlayerWallet(guestID);
+            socketInstance.emit('identifyWallet', guestID);
+            document.getElementById('main-menu').classList.add('hidden');
+            document.getElementById('hud').style.display = 'block';
             return;
         }
 
@@ -1692,7 +1729,6 @@ export function initTwoTierMenu(socketInstance) {
 
             console.log(`🔌 Wallet Connected: ${walletAddress}. Verifying sovereignty on-chain...`);
 
-            // Send verification payload to server
             socketInstance.emit('verifySovereignty', {
                 address: walletAddress,
                 requestedMode: selectedMode
@@ -1705,16 +1741,14 @@ export function initTwoTierMenu(socketInstance) {
         }
     };
 
-    // --- Strict Client-Side Routing ---
-    socketInstance.off('sovereigntyVerified'); // Prevent duplicate listener registrations
+    // Strict Client-Side Routing
+    socketInstance.off('sovereigntyVerified');
     socketInstance.on('sovereigntyVerified', (data) => {
         newConnectWalletBtn.disabled = false;
         newConnectWalletBtn.innerText = "CONNECT METAMASK";
 
         if (data.success) {
             console.log(`🏰 Handshake Confirmed! Mode: ${data.mode}`);
-            
-            // Explicitly set the active local player wallet
             setPlayerWallet(data.address);
 
             if (data.mode === 'RTS') {
@@ -1725,12 +1759,10 @@ export function initTwoTierMenu(socketInstance) {
                 document.getElementById('main-menu').classList.add('hidden');
                 import('./terminalManager.js').then(term => term.setTerminalMode(true));
             } else {
-                // Launch standard MOBA Hero mode and load their session
                 import('./rtsControls.js').then(rts => rts.setRtsMode(false));
                 socketInstance.emit('identifyWallet', data.address);
             }
         } else {
-            // 🎯 THE BLOCK: Enforce restriction, alert the player, and kick them back to Tier 1
             alert(data.message);
             tier2.classList.add('hidden');
             tier1.classList.remove('hidden');

@@ -26,26 +26,32 @@
             <button id="select-terminal-btn" class="pixel-btn" style="width: 100%; background-color: #00FF00; color: black; border: 4px solid #005500;">PLAY AS STRATEGIST (TERMINAL)</button>
         </div>
 
-        <!-- TIER 2: SOVEREIGN AUTHENTICATION (Initially Hidden) -->
-        <div id="menu-tier-2" class="hidden" style="display: flex; flex-direction: column; gap: 10px; margin-top: 15px;">
-            <button id="back-to-tier-1-btn" class="pixel-btn cancel" style="font-size: 8px; padding: 6px; width: 80px; align-self: flex-start; margin-bottom: 10px;"><- BACK</button>
-            
-            <p id="auth-title-label" style="font-size: 10px; color: var(--text-dark); margin-bottom: 10px; text-transform: uppercase;">SOVEREIGN AUTHENTICATION</p>
+        <!-- index.html -->
+<!-- TIER 2: SOVEREIGN AUTHENTICATION (Initially Hidden) -->
+<div id="menu-tier-2" class="hidden" style="display: flex; flex-direction: column; gap: 10px; margin-top: 15px;">
+    <button id="back-to-tier-1-btn" class="pixel-btn cancel" style="font-size: 8px; padding: 6px; width: 80px; align-self: flex-start; margin-bottom: 10px;"><- BACK</button>
+    
+    <p id="auth-title-label" style="font-size: 10px; color: var(--text-dark); margin-bottom: 10px; text-transform: uppercase;">SOVEREIGN AUTHENTICATION</p>
 
-            <!-- Web3 Login -->
-            <button id="main-connect-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 10px;">CONNECT METAMASK</button>
-            
-            <div style="font-size: 8px; color: #555; margin-bottom: 10px;">--- OR ---</div>
+    <!-- Web3 Login -->
+    <button id="main-connect-btn" class="pixel-btn safe" style="width: 100%; margin-bottom: 10px;">CONNECT METAMASK</button>
+    
+    <div style="font-size: 8px; color: #555; margin-bottom: 10px;">--- OR ---</div>
 
-            <!-- Web2 Login -->
-            <input type="text" id="login-username" class="pixel-input" placeholder="Username" style="width: 100%; margin-bottom: 10px; text-align: center;">
-            <input type="password" id="login-password" class="pixel-input" placeholder="Password" style="width: 100%; margin-bottom: 10px; text-align: center;">
-            
-            <div style="display: flex; gap: 10px;">
-                <button id="login-btn" class="pixel-btn" style="flex: 1;">LOGIN</button>
-                <button id="register-btn" class="pixel-btn" style="flex: 1;">REGISTER</button>
-            </div>
-        </div>
+    <!-- Web2 Login -->
+    <input type="text" id="login-username" class="pixel-input" placeholder="Username" style="width: 100%; margin-bottom: 10px; text-align: center;">
+    <input type="password" id="login-password" class="pixel-input" placeholder="Password" style="width: 100%; margin-bottom: 10px; text-align: center;">
+    
+    <div style="display: flex; gap: 10px;">
+        <button id="login-btn" class="pixel-btn" style="flex: 1;">LOGIN</button>
+        <button id="register-btn" class="pixel-btn" style="flex: 1;">REGISTER</button>
+    </div>
+
+    <!-- 🎯 NEW: Guest Mode Button placed securely inside Tier 2 -->
+    <div id="guest-or-divider" style="font-size: 8px; color: #555; margin-top: 5px; margin-bottom: 5px;">--- OR ---</div>
+    <button id="main-guest-btn" class="pixel-btn cancel" style="width: 100%;">PLAY AS GUEST (NO WALLET)</button>
+</div>
+
     </div>
 </div>
 

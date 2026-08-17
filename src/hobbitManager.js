@@ -273,6 +273,37 @@ export function updateHobbits(modifier, worldMatrix, roomMatrix) {
         if (deltaSeconds < 0) deltaSeconds = 0;
         hobbit.lastUpdated = now;
 
+        // 🎯 INSERT THE UNSTUCK ROUTINE HERE:
+        if (hobbit.state === 'walking') {
+            if (hobbit.lastX === hobbit.x && hobbit.lastY === hobbit.y) {
+                hobbit.stuckTicks = (hobbit.stuckTicks || 0) + 1;
+                
+                if (hobbit.stuckTicks > 15) { // Stuck for 15 frames
+                    console.log(`🧝 Unstuck Routine: Hobbit ${hobbit.name} is stuck at [${Math.floor(hobbit.x/16)}, ${Math.floor(hobbit.y/16)}]. Clearing path...`);
+                    
+                    // Push them slightly in the opposite direction of their movement
+                    let oppX = 0, oppY = 0;
+                    if (hobbit.dir.includes('North')) oppY = 1;
+                    if (hobbit.dir.includes('South')) oppY = -1;
+                    if (hobbit.dir.includes('West')) oppX = 1;
+                    if (hobbit.dir.includes('East')) oppX = -1;
+                    
+                    // Uses physics engine to push them slightly out of the collider
+                    moveEntity(hobbit, oppX * 8, oppY * 8, worldMatrix, roomMatrix);
+                    
+                    hobbit.path = []; // Force fresh pathfinding recalculation
+                    hobbit.state = 'idle';
+                    hobbit.pathTimer = 1.0; // Enforce 1 second cooldown before retrying
+                    hobbit.stuckTicks = 0;
+                }
+            } else {
+                hobbit.stuckTicks = 0;
+            }
+        }
+        // Save current positions for next frame evaluation
+        hobbit.lastX = hobbit.x;
+        hobbit.lastY = hobbit.y;
+
         // ==========================================
         // ❄️ TIER 3: OFFLINE CATCH-UP (Backlogged Fast Forward)
         // ==========================================

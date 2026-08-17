@@ -816,6 +816,8 @@ function drawFortifiedRing(centerX, centerY, width, height, worldMatrix, roomMat
     }
 }
 
+// src/cellDecorator.js
+
 export function drawInterCellRoad(startX, startY, endX, endY, worldMatrix, roomMatrix, fertilityMatrix, worldMap, tileID = 337, thickness = 3, avoidObstacles = false) {
     let curX = startX, curY = startY;
     let lastX = -1, lastY = -1; 
@@ -833,6 +835,10 @@ export function drawInterCellRoad(startX, startY, endX, endY, worldMatrix, roomM
         if (cx < 0 || cx >= CONFIG.MAP_SIZE || cy < 0 || cy >= CONFIG.MAP_SIZE) return;
         const lx = ((targetX % 100) + 100) % 100, ly = ((targetY % 100) + 100) % 100;
         const idx = (ly * 100) + lx;
+
+        // 🎯 FIX: Immediately reject painting if the tile is reserved for a building footprint (roomID 9998 or active structural roomID)
+        const currentRoomID = roomMatrix[cx]?.[cy]?.[idx] || 0;
+        if (currentRoomID !== 0) return; 
 
         if (avoidObstacles) {
             for (let ox = -1; ox <= 1; ox++) {

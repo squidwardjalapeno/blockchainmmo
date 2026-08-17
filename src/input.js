@@ -118,7 +118,11 @@ export function initInput(canvas) {
             if (e.code === 'Digit6') upgradeStat('speed'); 
         }
         
-        if (e.code === 'Space') inputState.action = true;
+        // src/input.js (inside keydown listener)
+        if (e.code === 'Space') {
+         inputState.action = true;
+         inputState.mainBtn = true; // 🎯 FIX: Pressing Spacebar now triggers attacks!
+        }
         if (e.code === 'KeyE')  inputState.interact = true;
         if (e.code === 'KeyC')  inputState.keyC = true; 
         if (e.code === 'KeyG')  inputState.drop = true;
