@@ -116,19 +116,20 @@ export function updateProximityGates() {
     }
 }
 
+// src/physics.js
+
 export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     let target = getTileData(x, y, worldMatrix, roomMatrix);
     const current = getTileData(entity.x + 8, entity.y + 15, worldMatrix, roomMatrix); 
 
     if (target.tileID === undefined) return false;
 
-    // 🎯 PASS 1: INSTANT-OPEN GATE SENSOR
-    // If we are attempting to move onto a gate, open it instantly on collision evaluation
+    // 🎯 FIX: Renamed variable to gateObj to prevent duplicate declaration crash
     const tx = Math.floor(x / 16);
     const ty = Math.floor(y / 16);
-    const objAtTarget = getObjectAt(tx, ty);
-    if (objAtTarget && objAtTarget.type === 'RANCH_FENCE' && objAtTarget.fenceType === 'G') {
-        if (!objAtTarget.open) {
+    const gateObj = getObjectAt(tx, ty); 
+    if (gateObj && gateObj.type === 'RANCH_FENCE' && gateObj.fenceType === 'G') {
+        if (!gateObj.open) {
             setGateState(tx, ty, true);
         }
     }
