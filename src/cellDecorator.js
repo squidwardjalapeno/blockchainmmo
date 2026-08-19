@@ -1332,11 +1332,11 @@ export function ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix,
                 }
             }
 
-            /*
+            
             autoTileLayerChunk(cx, cy, worldMatrix, [0, 10, 11, 17], 0, 'sand');
             autoTileLayerChunk(cx, cy, worldMatrix, [208], 208, 'stone');
             autoTileLayerChunk(cx, cy, worldMatrix, [337], 337, 'dirt');
-            */
+            
         }
     }
 
@@ -1418,6 +1418,8 @@ const autoTileCache = new Map();
 
 // src/cellDecorator.js
 
+// src/cellDecorator.js
+
 export function autoTileLayerChunk(cx, cy, worldMatrix, baseIds, fillTileId, layerName) {
     if (cx < 0 || cx >= CONFIG.MAP_SIZE || cy < 0 || cy >= CONFIG.MAP_SIZE) return;
     
@@ -1438,6 +1440,35 @@ export function autoTileLayerChunk(cx, cy, worldMatrix, baseIds, fillTileId, lay
         return baseIds.includes(worldMatrix[tCX][tCY][ly * 100 + lx]);
     };
 
+    // 🎯 PASS 1: MORPHOLOGICAL CLOSING (PRE-FILL SINGLE-TILE ROAD INDENTS)
+    // Scan and convert any green tile (63) surrounded by 3 or 4 road tiles to prevent 
+    // the autotiler from having to calculate complex 3-sided wraps.
+    const preFills = [];
+    for (let ly = 0; ly < 100; ly++) {
+        for (let lx = 0; lx < 100; lx++) {
+            const gx = cx * 100 + lx;
+            const gy = cy * 100 + ly;
+
+            if (worldMatrix[cx][cy][ly * 100 + lx] === 63 && !isBase(gx, gy)) {
+                const n = isBase(gx, gy - 1) ? 1 : 0;
+                const s = isBase(gx, gy + 1) ? 1 : 0;
+                const e = isBase(gx + 1, gy) ? 1 : 0;
+                const w = isBase(gx - 1, gy) ? 1 : 0;
+
+                const baseNeighborCount = n + s + e + w;
+                if (baseNeighborCount >= 3) {
+                    preFills.push(ly * 100 + lx);
+                }
+            }
+        }
+    }
+
+    // Apply the pre-fills directly to the worldMatrix before generating borders
+    for (const idx of preFills) {
+        worldMatrix[cx][cy][idx] = fillTileId;
+    }
+
+    // 🎯 PASS 2: MAIN AUTOTILING (BORDER TRANSITION GENERATOR)
     const newTiles = [];
 
     for (let ly = 0; ly < 100; ly++) {
@@ -1469,12 +1500,6 @@ export function autoTileLayerChunk(cx, cy, worldMatrix, baseIds, fillTileId, lay
                 else if (mask === 2) borderTile = 331; 
                 else if (mask === 4) borderTile = 335; 
                 else if (mask === 8) borderTile = 367; 
-                
-                // 🎯 NEW: Smooth transitions for 3 dirt neighbors & 1 green neighbor (T-junctions/lane-merges)
-                else if (mask === 7) borderTile = 367;  // Green on South -> Draw South Border
-                else if (mask === 11) borderTile = 335; // Green on East -> Draw East Border
-                else if (mask === 13) borderTile = 331; // Green on West -> Draw West Border
-                else if (mask === 14) borderTile = 303; // Green on North -> Draw North Border
                 
                 // Solid fills for cross-junctions and full lanes
                 else if (mask === 6 || mask === 9 || mask === 15) {
