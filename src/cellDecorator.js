@@ -308,19 +308,9 @@ export function drawBarn(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, world
     
 }
 
+// src/cellDecorator.js
+
 export function drawRanch(gx, gy, width, height, gateX, barnType, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
-    for (let i = 0; i < width; i++) {
-        for (let j = -(height - 1); j <= 0; j++) {
-            const tx = gx + i, ty = gy + j;
-            setGlobalTile(tx, ty, 63, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-            const cx = Math.floor(tx / 100), cy = Math.floor(ty / 100);
-            const lx = ((tx % 100) + 100) % 100, ly = ((ty % 100) + 100) % 100;
-            if (fertilityMatrix[cx]?.[cy]) fertilityMatrix[cx][cy][(ly * 100) + lx] = 255;
-        }
-    }
-
-    let placedNestingBox = false;
-
     for (let i = 0; i < width; i++) {
         for (let j = -(height - 1); j <= 0; j++) {
             const tx = gx + i, ty = gy + j;
@@ -328,12 +318,23 @@ export function drawRanch(gx, gy, width, height, gateX, barnType, worldMatrix, r
             const isLeft = (i === 0), isRight = (i === width - 1);
 
             if (isTop || isBottom || isLeft || isRight) {
-                let tileID = 63; 
-                if (isLeft || isRight) tileID = 18; 
-                if (isTop || isBottom) tileID = 21; 
-                if ((isTop || isBottom) && (isLeft || isRight)) tileID = 24; 
-                if (isBottom && i === gateX) tileID = 22; 
-                setGlobalTile(tx, ty, tileID, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+                // Keep the underlying terrain tile intact (defaulting to grass 63 if empty)
+                const currentTile = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix).tileID;
+                if (currentTile === undefined || currentTile === 17) {
+                    setGlobalTile(tx, ty, 63, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+                }
+
+                // Determine fence classification and orientation
+                let fenceType = 'H'; // Horizontal
+                if (isLeft || isRight) fenceType = 'V'; // Vertical
+                if ((isTop || isBottom) && (isLeft || isRight)) fenceType = 'C'; // Corner
+                
+                if (isBottom && i === gateX) {
+                    // Register gate as an interactable object
+                    registerObject(tx, ty, 'RANCH_FENCE', { fenceType: 'G', orientation: 'H', open: false });
+                } else {
+                    registerObject(tx, ty, 'RANCH_FENCE', { fenceType, open: false });
+                }
             } else {
                 setGlobalTile(tx, ty, 63, 9999, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
                 if (!placedNestingBox && seededRandom() > 0.8) {
@@ -1987,6 +1988,8 @@ export function setGlobalTile(gx, gy, tileID, roomID, worldMatrix, roomMatrix, f
     roomMatrix[cx][cy][idx] = roomID;
 }
 
+// src/cellDecorator.js
+
 function isAreaClear(gx, gy, w, h, worldMatrix, roomMatrix, worldMap) {
     const buffer = 1; 
     
@@ -2008,14 +2011,14 @@ function isAreaClear(gx, gy, w, h, worldMatrix, roomMatrix, worldMap) {
             }
 
             const lx = ((tx % 100) + 100) % 100;
-            const ly = ((ty % 100) + 100) % 100;
+            const ly = ((gy % 100) + 100) % 100;
             const idx = (ly * 100) + lx;
 
             const tID = worldMatrix[cx][cy][idx];
             const rID = roomMatrix[cx][cy][idx];
 
-            if (tID === 17) return false; 
-            if (tID === 337) return false; 
+            // 🎯 NEW: Explicitly check and block placement over all road-types and water-pathways
+            if ([337, 208, 17, 12, 13].includes(tID)) return false; 
             if (rID !== 0 && rID !== 9999) return false; 
         }
     }
@@ -2065,6 +2068,8 @@ export function getPlannedStructuresForWell(wellX, wellY) {
     return structures;
 }
 
+// src/cellDecorator.js
+
 export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     const cellKey = `${cx}_${cy}`;
     const zone = zoneLookup.get(cellKey);
@@ -2081,14 +2086,13 @@ export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertility
 
     console.log(`🎪 LAZY INITIALIZING SETTLEMENT at Well [${zoneWell.x}, ${zoneWell.y}]`);
 
-    // 🎯 TRANSMIT PLANNED STRUCTURES LIST ON ZONE BOOTSTRAP
     if (socket && socket.connected) {
         const structs = getPlannedStructuresForWell(zoneWell.x, zoneWell.y);
         socket.emit('requestWellState', { 
             wellX: zoneWell.x, 
             wellY: zoneWell.y, 
             isSilent: true,
-            structures: structs // Silently register structures on the server
+            structures: structs 
         });
     }
 
@@ -2106,6 +2110,18 @@ export function ensureZoneInitialized(cx, cy, worldMatrix, roomMatrix, fertility
 
     zone.forEach(c => {
         stampStructuresForChunk(c.cx, c.cy, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+    });
+
+    // 🎯 NEW: Safely clean up remaining blueprint footprint placeholders in this zone's roomMatrix
+    zone.forEach(c => {
+        const chunkRoom = roomMatrix[c.cx]?.[c.cy];
+        if (chunkRoom) {
+            for (let idx = 0; idx < 10000; idx++) {
+                if (chunkRoom[idx] === 9998) {
+                    chunkRoom[idx] = 0;
+                }
+            }
+        }
     });
 }
 

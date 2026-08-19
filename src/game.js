@@ -351,9 +351,11 @@ async function mainInit() {
             planAllSettlements(worldMap, worldMatrix, roomMatrix, fertilityMatrix);
         });
 
+        /*
         await measureStep("Step 5: Cleaning up Blueprints", () => {
             clearBlueprints(roomMatrix);
         });
+        */
 
         logStep("8. Pre-rendering...");
         preRenderMinimap(worldMap); 

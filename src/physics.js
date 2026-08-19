@@ -4,6 +4,10 @@ import { getObjectAt, solidTiles } from './staticObjects.js';
 import { roomMetadata } from './cellDecorator.js';
 import { hero } from './entities.js'; 
 import { socket, remotePlayers, doorStates } from './multiplayer.js'; 
+import { setGateState, staticObjects } from './staticObjects.js';
+import { animals } from './animals.js';
+import { hobbits } from './hobbitCore.js';
+
 
 // 🎯 THE FIX: Explicit door state close translations (Never morphs gates to barn doors)
 const DOOR_TRANSITIONS = {
@@ -17,6 +21,8 @@ export function isDoorUnlocked(gx, gy) {
     const state = doorStates.get(`${gx}_${gy}`);
     return state ? !state.locked : false; // Locked by default
 }
+
+
 
 // 🎯 THE FIX: Blocks automatic closures if any client is near the tile
 function isAnyPlayerNearDoor(doorGX, doorGY) {

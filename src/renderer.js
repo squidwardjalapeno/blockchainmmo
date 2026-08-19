@@ -361,6 +361,8 @@ if (obj) {
     }
 }
 
+// src/renderer.js
+
 export function drawStaticObjects() {
     const startX = viewport.startTile[0];
     const endX = viewport.endTile[0];
@@ -394,10 +396,21 @@ export function drawStaticObjects() {
                     visibleTrees.push({ sX, sY });
                 }
             }
+            else if (obj.type === 'RANCH_FENCE') {
+                const tImg = images.worldTilesColor;
+                if (tImg && tImg.complete) {
+                    let spriteID = 21; // Horizontal fence default
+                    if (obj.fenceType === 'V') spriteID = 18;
+                    else if (obj.fenceType === 'C') spriteID = 24;
+                    else if (obj.fenceType === 'G') {
+                        spriteID = obj.open ? 20 : 19;
+                    }
+                    ctx2.drawImage(tImg, (spriteID % 8) * 16, Math.floor(spriteID / 8) * 16, 16, 16, sX, sY, 16, 16);
+                }
+            }
         }
     }
 }
-
 export function drawPlants(roomMatrix) {
     const focus = getFocusCoordinates();
     const hTX = Math.floor((focus.x + 8) / 16);
