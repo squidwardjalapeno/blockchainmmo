@@ -13,7 +13,7 @@ import { viewport } from './viewport.js';
 import { ctx2, ctx3, canvas2, canvas3, drawMap, drawStaticObjects, drawJoystick, drawProjectiles, drawTargetCircle, drawWorkingIndicator, drawHeroRange, drawHealthBar, drawEnergyBar, drawAbilityButtons, drawXPStatus, drawAimIndicator, initRenderer, clearAll, drawAnimals, drawPlants, drawHero, drawRemotePlayers, drawBobber, preRenderMinimap, drawDroppedItems, drawCanopy, drawNightTint, drawHobbits } from './renderer.js';
 import { hero, resetEntities, gameState, getFocusCoordinates } from './entities.js';
 import { CONFIG } from './config.js';
-import { checkCollision, getTileData } from './physics.js'; 
+import { checkCollision, getTileData, updateProximityGates } from './physics.js'; 
 import { updateBacteria, seedBacteria, getBacteriaData } from './bacteria.js'; 
 import { ITEM_TYPES, createItem } from './items.js';
 import { updatePlants, plants } from './plants.js'; 
@@ -96,6 +96,9 @@ var update = function (modifier) {
     logicTick++;
 
     if (!isGameRunning) return;
+
+    // 🎯 NEW: Process gate automatic proximity checks on each tick
+    updateProximityGates();
 
     if (hero.hp <= 0) {
         hero.isMoving = false;

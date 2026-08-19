@@ -1,20 +1,16 @@
 // src/physics.js
-import { CONFIG } from './config.js';
-import { getObjectAt, solidTiles } from './staticObjects.js'; 
+import { checkCollision as originalCheckCollision, getTileData } from './physics.js';
+import { solidTiles, getObjectAt, setGateState, staticObjects } from './staticObjects.js'; 
 import { roomMetadata } from './cellDecorator.js';
 import { hero } from './entities.js'; 
 import { socket, remotePlayers, doorStates } from './multiplayer.js'; 
-import { setGateState, staticObjects } from './staticObjects.js';
 import { animals } from './animals.js';
 import { hobbits } from './hobbitCore.js';
 
-
-// 🎯 THE FIX: Explicit door state close translations (Never morphs gates to barn doors)
+// 🎯 FIX: Explicit door state close transitions (Never morphs gates to barn doors)
 const DOOR_TRANSITIONS = {
     35: 49, // Opened House -> Closed House
     13: 12, // Opened Barn -> Closed Barn
-    23: 22, // Opened Vert Gate -> Closed Vert Gate
-    20: 19  // Opened Horiz Gate -> Closed Horiz Gate
 };
 
 export function isDoorUnlocked(gx, gy) {
@@ -22,9 +18,6 @@ export function isDoorUnlocked(gx, gy) {
     return state ? !state.locked : false; // Locked by default
 }
 
-
-
-// 🎯 THE FIX: Blocks automatic closures if any client is near the tile
 function isAnyPlayerNearDoor(doorGX, doorGY) {
     const doorX = doorGX * 16 + 8;
     const doorY = doorGY * 16 + 8;
@@ -64,20 +57,90 @@ export function getTileData(pxX, pxY, worldMatrix, roomMatrix) {
     };
 }
 
+// 🎯 DUAL-PASS GATE PROXIMITY EVALUATOR
+export function updateProximityGates() {
+    for (let [key, obj] of staticObjects) {
+        if (obj.type === 'RANCH_FENCE' && obj.fenceType === 'G') {
+            const gx = Math.floor(key / 10000);
+            const gy = key % 10000;
+            const gateX = gx * 16 + 8;
+            const gateY = gy * 16 + 8;
+
+            let someoneNear = false;
+            const checkDistance = 32; // Safe 2-tile buffer
+
+            // Check Hero Player
+            if (hero && hero.hp > 0) {
+                if (Math.hypot((hero.x + 8) - gateX, (hero.y + 15) - gateY) <= checkDistance) {
+                    someoneNear = true;
+                }
+            }
+
+            // Check Remote Players
+            if (!someoneNear && remotePlayers) {
+                remotePlayers.forEach(p => {
+                    if (p.hp > 0 && Math.hypot((p.x + 8) - gateX, (p.y + 15) - gateY) <= checkDistance) {
+                        someoneNear = true;
+                    }
+                });
+            }
+
+            // Check Pasture Animals
+            if (!someoneNear && animals) {
+                animals.forEach(a => {
+                    if (a.hp > 0 && Math.hypot((a.x + 8) - gateX, (a.y + 8) - gateY) <= checkDistance) {
+                        someoneNear = true;
+                    }
+                });
+            }
+
+            // Check Workers (Hobbits)
+            if (!someoneNear && hobbits) {
+                hobbits.forEach(h => {
+                    if (h.hp > 0 && Math.hypot((h.x + 8) - gateX, (h.y + 15) - gateY) <= checkDistance) {
+                        someoneNear = true;
+                    }
+                });
+            }
+
+            if (someoneNear) {
+                if (!obj.open) {
+                    setGateState(gx, gy, true);
+                }
+            } else {
+                if (obj.open) {
+                    setGateState(gx, gy, false);
+                }
+            }
+        }
+    }
+}
+
 export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     let target = getTileData(x, y, worldMatrix, roomMatrix);
     const current = getTileData(entity.x + 8, entity.y + 15, worldMatrix, roomMatrix); 
 
     if (target.tileID === undefined) return false;
 
+    // 🎯 PASS 1: INSTANT-OPEN GATE SENSOR
+    // If we are attempting to move onto a gate, open it instantly on collision evaluation
+    const tx = Math.floor(x / 16);
+    const ty = Math.floor(y / 16);
+    const objAtTarget = getObjectAt(tx, ty);
+    if (objAtTarget && objAtTarget.type === 'RANCH_FENCE' && objAtTarget.fenceType === 'G') {
+        if (!objAtTarget.open) {
+            setGateState(tx, ty, true);
+        }
+    }
+
     if (solidTiles.has(`${target.gx}_${target.gy}`)) return false;
 
-    const tx = target.gx;
-    const ty = target.gy;
+    const tX = target.gx;
+    const tY = target.gy;
 
     for (let ox = -1; ox <= 0; ox++) {
-        const anchorX = tx + ox;
-        const obj = getObjectAt(anchorX, ty);
+        const anchorX = tX + ox;
+        const obj = getObjectAt(anchorX, tY);
         
         if (obj && obj.type === 'FOREST_TREE') {
             const treeMinX = (anchorX * 16) + 8;  
@@ -90,12 +153,12 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     }
 
     // ==========================================
-    // DOOR & GATE LAYER (Synchronized)
+    // DOOR LAYER (Synchronized)
     // ==========================================
     if (entity.floor === 1) {
         const isNearClosedDoor = (
-            [49, 12, 22, 19].includes(target.tileID) || 
-            [49, 12, 22, 19].includes(current.tileID)
+            [49, 12].includes(target.tileID) || 
+            [49, 12].includes(current.tileID)
         );
         
         if (isNearClosedDoor) {
@@ -118,16 +181,6 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
                             }
                         }
                     }
-                    
-                    // Ranch Gates
-                    if (near.tileID === 22 || near.tileID === 19) {
-                        const newTile = (near.tileID === 22) ? 23 : 20;
-                        worldMatrix[near.cx][near.cy][nearIdx] = newTile;
-                        
-                        if (socket && socket.connected) {
-                            socket.emit('syncTile', { gx: near.gx, gy: near.gy, traits: newTile });
-                        }
-                    }
                 }
             }
 
@@ -141,7 +194,7 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
             for (let dy = -2; dy <= 2; dy++) {
                 const near = getTileData(doorCheckX + (dx * 16), doorCheckY + (dy * 16), worldMatrix, roomMatrix);
                 
-                if ([35, 13, 23, 20].includes(near.tileID)) {
+                if ([35, 13].includes(near.tileID)) {
                     const dist = Math.sqrt(Math.pow((near.gx * 16 + 8) - doorCheckX, 2) + Math.pow((near.gy * 16 + 8) - doorCheckY, 2));
                     
                     if (dist > 24) {
@@ -164,7 +217,7 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
             }
         }
 
-        if ([35, 13, 23, 20, 54, 55].includes(target.tileID) || [35, 13, 23, 20, 54, 55].includes(current.tileID)) return true;
+        if ([35, 13, 54, 55].includes(target.tileID) || [35, 13, 54, 55].includes(current.tileID)) return true;
     }
 
     // ==========================================
@@ -215,7 +268,7 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     }
 
     const worldSolids = [
-        40, 48, 50, 52, 17, 18, 19, 21, 22, 24, 27, 1, 3,
+        40, 48, 50, 52, 17, 27, 1, 3,
         46, 47
     ];
 
@@ -225,11 +278,8 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
     const tRoom = (target.roomID === 9999) ? 0 : target.roomID;
     
     if (cRoom !== tRoom) {
-        const openDoors = [35, 13, 23, 20];
+        const openDoors = [35, 13];
         
-        // 🎯 DYNAMIC TRANSITION OVERRIDE
-        // If standard closed doors (49, 12) are unlocked or the unit holds the key,
-        // we add them to the allowed transit list, preventing units from getting stuck.
         const hasKeyCurrent = entity.inventory && entity.inventory.some(item => item.isKey && item.houseId === current.roomID);
         const hasKeyTarget = entity.inventory && entity.inventory.some(item => item.isKey && item.houseId === target.roomID);
         const isCurrentUnlocked = isDoorUnlocked(current.gx, current.gy);
@@ -252,7 +302,6 @@ export function checkCollision(x, y, worldMatrix, roomMatrix, entity) {
 }
 
 export function moveEntity(entity, dx, dy, worldMatrix, roomMatrix) {
-    // 🎯 THE FIX: Use custom hitboxes defined on the entity to handle smaller collision profiles
     const left = entity.hitboxLeft !== undefined ? entity.hitboxLeft : 2;
     const right = entity.hitboxRight !== undefined ? entity.hitboxRight : 14;
     const top = entity.hitboxTop !== undefined ? entity.hitboxTop : 8;

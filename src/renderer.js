@@ -396,6 +396,9 @@ export function drawStaticObjects() {
                     visibleTrees.push({ sX, sY });
                 }
             }
+            // src/renderer.js
+
+// ... inside drawStaticObjects() ...
             else if (obj.type === 'RANCH_FENCE') {
                 const tImg = images.worldTilesColor;
                 if (tImg && tImg.complete) {
@@ -403,7 +406,12 @@ export function drawStaticObjects() {
                     if (obj.fenceType === 'V') spriteID = 18;
                     else if (obj.fenceType === 'C') spriteID = 24;
                     else if (obj.fenceType === 'G') {
-                        spriteID = obj.open ? 20 : 19;
+                        // 🎯 FIX: Swapped sprite bindings so horizontal is H and vertical is V
+                        if (obj.orientation === 'V') {
+                            spriteID = obj.open ? 20 : 19; // Vertical Gate (Closed: 19, Open: 20)
+                        } else {
+                            spriteID = obj.open ? 23 : 22; // Horizontal Gate (Closed: 22, Open: 23)
+                        }
                     }
                     ctx2.drawImage(tImg, (spriteID % 8) * 16, Math.floor(spriteID / 8) * 16, 16, 16, sX, sY, 16, 16);
                 }
