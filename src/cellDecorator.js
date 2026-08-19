@@ -310,7 +310,26 @@ export function drawBarn(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, world
 
 // src/cellDecorator.js
 
+// src/cellDecorator.js
+
 export function drawRanch(gx, gy, width, height, gateX, barnType, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
+    // 1. Initialize pasture soil fertility
+    for (let i = 0; i < width; i++) {
+        for (let j = -(height - 1); j <= 0; j++) {
+            const tx = gx + i, ty = gy + j;
+            setGlobalTile(tx, ty, 63, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+            const cx = Math.floor(tx / 100), cy = Math.floor(ty / 100);
+            const lx = ((tx % 100) + 100) % 100, ly = ((ty % 100) + 100) % 100;
+            if (fertilityMatrix[cx]?.[cy]) {
+                fertilityMatrix[cx][cy][(ly * 100) + lx] = 255;
+            }
+        }
+    }
+
+    // 🎯 FIX: Declare the local tracking boolean to prevent the reference crash
+    let placedNestingBox = false;
+
+    // 2. Draw boundaries, gates, nesting boxes, and inner pasture flora
     for (let i = 0; i < width; i++) {
         for (let j = -(height - 1); j <= 0; j++) {
             const tx = gx + i, ty = gy + j;
@@ -318,7 +337,7 @@ export function drawRanch(gx, gy, width, height, gateX, barnType, worldMatrix, r
             const isLeft = (i === 0), isRight = (i === width - 1);
 
             if (isTop || isBottom || isLeft || isRight) {
-                // Keep the underlying terrain tile intact (defaulting to grass 63 if empty)
+                // Keep the underlying terrain tile intact (default to grass 63 if empty)
                 const currentTile = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix).tileID;
                 if (currentTile === undefined || currentTile === 17) {
                     setGlobalTile(tx, ty, 63, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
@@ -330,7 +349,6 @@ export function drawRanch(gx, gy, width, height, gateX, barnType, worldMatrix, r
                 if ((isTop || isBottom) && (isLeft || isRight)) fenceType = 'C'; // Corner
                 
                 if (isBottom && i === gateX) {
-                    // Register gate as an interactable object
                     registerObject(tx, ty, 'RANCH_FENCE', { fenceType: 'G', orientation: 'H', open: false });
                 } else {
                     registerObject(tx, ty, 'RANCH_FENCE', { fenceType, open: false });
@@ -339,7 +357,8 @@ export function drawRanch(gx, gy, width, height, gateX, barnType, worldMatrix, r
                 setGlobalTile(tx, ty, 63, 9999, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
                 if (!placedNestingBox && seededRandom() > 0.8) {
                     setGlobalTile(tx, ty, 44, 9999, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-                    placedNestingBox = true; continue; 
+                    placedNestingBox = true; 
+                    continue; 
                 }
                 if (seededRandom() > 0.85) {
                     const initialAge = Math.floor(seededRandom() * 100);
