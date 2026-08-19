@@ -1332,9 +1332,11 @@ export function ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix,
                 }
             }
 
+            /*
             autoTileLayerChunk(cx, cy, worldMatrix, [0, 10, 11, 17], 0, 'sand');
             autoTileLayerChunk(cx, cy, worldMatrix, [208], 208, 'stone');
             autoTileLayerChunk(cx, cy, worldMatrix, [337], 337, 'dirt');
+            */
         }
     }
 
