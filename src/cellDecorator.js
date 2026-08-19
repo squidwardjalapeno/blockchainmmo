@@ -1414,6 +1414,8 @@ export function linkLakes(worldMap, worldMatrix, roomMatrix, fertilityMatrix) {
 
 const autoTileCache = new Map();
 
+// src/cellDecorator.js
+
 export function autoTileLayerChunk(cx, cy, worldMatrix, baseIds, fillTileId, layerName) {
     if (cx < 0 || cx >= CONFIG.MAP_SIZE || cy < 0 || cy >= CONFIG.MAP_SIZE) return;
     
@@ -1466,7 +1468,14 @@ export function autoTileLayerChunk(cx, cy, worldMatrix, baseIds, fillTileId, lay
                 else if (mask === 4) borderTile = 335; 
                 else if (mask === 8) borderTile = 367; 
                 
-                else if (mask === 6 || mask === 9 || mask === 7 || mask === 11 || mask === 13 || mask === 14 || mask === 15) {
+                // 🎯 NEW: Smooth transitions for 3 dirt neighbors & 1 green neighbor (T-junctions/lane-merges)
+                else if (mask === 7) borderTile = 367;  // Green on South -> Draw South Border
+                else if (mask === 11) borderTile = 335; // Green on East -> Draw East Border
+                else if (mask === 13) borderTile = 331; // Green on West -> Draw West Border
+                else if (mask === 14) borderTile = 303; // Green on North -> Draw North Border
+                
+                // Solid fills for cross-junctions and full lanes
+                else if (mask === 6 || mask === 9 || mask === 15) {
                     borderTile = fillTileId; 
                 }
                 
