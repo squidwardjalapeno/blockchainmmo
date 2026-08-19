@@ -1,5 +1,5 @@
 // src/physics.js
-import { checkCollision as originalCheckCollision, getTileData } from './physics.js';
+import { CONFIG } from './config.js';
 import { solidTiles, getObjectAt, setGateState, staticObjects } from './staticObjects.js'; 
 import { roomMetadata } from './cellDecorator.js';
 import { hero } from './entities.js'; 
