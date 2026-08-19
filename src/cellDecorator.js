@@ -312,8 +312,27 @@ export function drawBarn(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, world
 
 // src/cellDecorator.js
 
+// src/cellDecorator.js
+
 export function drawRanch(gx, gy, width, height, gateX, barnType, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
-    // 1. Initialize pasture soil fertility
+    let hasBarn = (barnType !== 'NONE');
+    let bX = 0, bY = 0, bW = 0, bH = 0;
+
+    // 🎯 FIX 2: Pre-calculate the barn's exact layout once to prevent RNG desyncs
+    if (hasBarn) {
+        bY = gy - height + 1; // Top boundary alignment
+        const isLeft = (seededRandom() > 0.5); 
+        
+        if (barnType === 'LARGE_BARN' && width >= 8) {
+            bW = 6; bH = 6;
+            bX = isLeft ? gx + 1 : gx + width - 7;
+        } else {
+            bW = 4; bH = 3;
+            bX = isLeft ? gx + 1 : gx + width - 5;
+        }
+    }
+
+    // Initialize pasture soil fertility
     for (let i = 0; i < width; i++) {
         for (let j = -(height - 1); j <= 0; j++) {
             const tx = gx + i, ty = gy + j;
@@ -326,18 +345,23 @@ export function drawRanch(gx, gy, width, height, gateX, barnType, worldMatrix, r
         }
     }
 
-    // 🎯 FIX: Declare the local tracking boolean to prevent the reference crash
     let placedNestingBox = false;
 
-    // 2. Draw boundaries, gates, nesting boxes, and inner pasture flora
+    // Draw boundaries, gates, nesting boxes, and inner pasture flora
     for (let i = 0; i < width; i++) {
         for (let j = -(height - 1); j <= 0; j++) {
             const tx = gx + i, ty = gy + j;
-            const isTop = (j === -(height - 1)), isBottom = (j === 0);
-            const isLeft = (i === 0), isRight = (i === width - 1);
+            
+            // 🎯 FIX 2: Skip drawing fences if the coordinate sits inside the barn structure
+            if (hasBarn && tx >= bX && tx < bX + bW && ty >= bY - bH + 1 && ty <= bY) {
+                continue; 
+            }
 
-            if (isTop || isBottom || isLeft || isRight) {
-                // Keep the underlying terrain tile intact (default to grass 63 if empty)
+            const isTop = (j === -(height - 1)), isBottom = (j === 0);
+            const isLeftBorder = (i === 0), isRightBorder = (i === width - 1);
+
+            if (isTop || isBottom || isLeftBorder || isRightBorder) {
+                // Keep underlying terrain tile intact
                 const currentTile = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix).tileID;
                 if (currentTile === undefined || currentTile === 17) {
                     setGlobalTile(tx, ty, 63, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
@@ -345,8 +369,8 @@ export function drawRanch(gx, gy, width, height, gateX, barnType, worldMatrix, r
 
                 // Determine fence classification and orientation
                 let fenceType = 'H'; // Horizontal
-                if (isLeft || isRight) fenceType = 'V'; // Vertical
-                if ((isTop || isBottom) && (isLeft || isRight)) fenceType = 'C'; // Corner
+                if (isLeftBorder || isRightBorder) fenceType = 'V'; // Vertical
+                if ((isTop || isBottom) && (isLeftBorder || isRightBorder)) fenceType = 'C'; // Corner
                 
                 if (isBottom && i === gateX) {
                     registerObject(tx, ty, 'RANCH_FENCE', { fenceType: 'G', orientation: 'H', open: false });
@@ -370,23 +394,19 @@ export function drawRanch(gx, gy, width, height, gateX, barnType, worldMatrix, r
         }
     }
 
+    // Draw the barn structure flush using pre-calculated coordinates
     if (barnType === 'LARGE_BARN') {
-        const isLeft = seededRandom() > 0.5;
-        const by = gy - height + 1;
-        const bX = isLeft ? gx + 1 : gx + width - 7;
-        if (width >= 8) drawLargeBarn(bX, by, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
-        else if (width >= 6) drawBarn(bX, by, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        if (width >= 8) drawLargeBarn(bX, bY, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        else if (width >= 6) drawBarn(bX, bY, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     } else if (barnType === 'BARN') {
-        const isLeft = seededRandom() > 0.5;
-        const by = gy - height + 1;
-        const bX = isLeft ? gx + 1 : gx + width - 5;
-        if (width >= 6) drawBarn(bX, by, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+        if (width >= 6) drawBarn(bX, bY, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     }
 
     if (socket && socket.connected) {
         socket.emit('registerRanch', { gx, gy, w: width, h: height });
     }
 }
+
 
 export function drawStorageRoom(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     const currentId = stampBuildingFoundation(gx, gy, 5, 5, worldMatrix, roomMatrix, fertilityMatrix, worldMap, 'STANDARD');
@@ -2009,11 +2029,14 @@ export function setGlobalTile(gx, gy, tileID, roomID, worldMatrix, roomMatrix, f
 
 // src/cellDecorator.js
 
+// src/cellDecorator.js
+
 function isAreaClear(gx, gy, w, h, worldMatrix, roomMatrix, worldMap) {
-    const buffer = 1; 
+    const buffer = 1; // 1-tile safety padding on all sides
     
     for (let i = -buffer; i < w + buffer; i++) {
-        for (let j = -h - buffer; j < buffer; j++) {
+        // 🎯 FIX 1: Set inclusive vertical bounds (j <= buffer) to reserve space below front doors
+        for (let j = -h - buffer; j <= buffer; j++) {
             const tx = gx + i;
             const ty = gy + j;
 
@@ -2030,13 +2053,13 @@ function isAreaClear(gx, gy, w, h, worldMatrix, roomMatrix, worldMap) {
             }
 
             const lx = ((tx % 100) + 100) % 100;
-            const ly = ((gy % 100) + 100) % 100;
+            // 🎯 FIX 3: Corrected ly calculation to use ty (the loop row) instead of gy
+            const ly = ((ty % 100) + 100) % 100; 
             const idx = (ly * 100) + lx;
 
             const tID = worldMatrix[cx][cy][idx];
             const rID = roomMatrix[cx][cy][idx];
 
-            // 🎯 NEW: Explicitly check and block placement over all road-types and water-pathways
             if ([337, 208, 17, 12, 13].includes(tID)) return false; 
             if (rID !== 0 && rID !== 9999) return false; 
         }
