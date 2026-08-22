@@ -137,7 +137,8 @@ export function drawMap(worldMatrix, roomMatrix) {
     visibleTrees = [];
 
     if (hHouseId === 0 || hHouseId === 9999) {
-        ctx2.fillStyle = "rgb(0, 204, 0)";
+        // Change background fill from flat green to black to handle margins cleanly
+        ctx2.fillStyle = "black";
         ctx2.fillRect(0, 0, w, h);
 
         for (let k = startX; k <= endX; k++) {
@@ -151,13 +152,24 @@ export function drawMap(worldMatrix, roomMatrix) {
 
                 const ly = ((l % 100) + 100) % 100;
                 const tID = wChunk[(ly * 100) + lx];
-
-                if (tID === 63) continue; 
-
                 const sY = Math.floor((l * 16) + viewport.offset[1]);
 
+                // Instead of skipping land tiles (tID === 63), we draw tile 56 from worldTilesColor
+                if (tID === 63) {
+                    ctx2.drawImage(
+                        tileImg,
+                        (56 % 8) * 16,          // Source X
+                        Math.floor(56 / 8) * 16, // Source Y
+                        16, 16,                  // Source dimensions
+                        sX, sY,                  // Destination coordinates
+                        16, 16                   // Destination dimensions
+                    );
+                    continue; 
+                }
+
                 if (tID === 44) {
-                    ctx2.drawImage(tileImg, (63 % 8) * 16, Math.floor(63 / 8) * 16, 16, 16, sX, sY, 16, 16);
+                    // Draw our new textured land tile under nesting boxes as well
+                    ctx2.drawImage(tileImg, (56 % 8) * 16, Math.floor(56 / 8) * 16, 16, 16, sX, sY, 16, 16);
                     const tImg = images.transparentTileset;
                     if (tImg && tImg.complete) {
                         ctx2.drawImage(tImg, (1 % 10) * 16, Math.floor(1 / 10) * 16, 16, 16, sX, sY, 16, 16);
