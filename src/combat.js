@@ -4,20 +4,14 @@ import { animals } from './animals.js';
 import { getTileData } from './physics.js';
 import { hobbits } from './hobbitCore.js';
 
-
 export let currentTarget = null; // The passive "hover" target
 export let lockedTarget = null;  // The active "I am attacking this" target
 
-// 👇 ADD THIS SETTER FUNCTION:
 export function setLockedTarget(target) {
     lockedTarget = target;
 }
 
 if (typeof window !== 'undefined') logStep("combat.js");
-
-// inside src/combat.js
-
-// inside src/combat.js
 
 export function scanForTarget(hero, range = 150, worldMatrix, roomMatrix) {
     if (lockedTarget) {
@@ -28,13 +22,33 @@ export function scanForTarget(hero, range = 150, worldMatrix, roomMatrix) {
     let bestTarget = null;
     let nearestDist = Infinity; 
 
+    // 🎯 1. DETERMINE HERO'S CURRENT ROOM
+    // (0 and 9999 are considered outdoor wilderness / non-building zones)
+    const heroTile = getTileData(hero.x + 8, hero.y + 15, worldMatrix, roomMatrix);
+    const heroRoomRaw = heroTile ? (heroTile.roomID || 0) : 0;
+    const heroHouseId = (heroRoomRaw === 9999) ? 0 : heroRoomRaw;
+
     const checkEntity = (entity) => {
-        if (entity.hp <= 0) return;
-        const dx = entity.x - hero.x;
-        const dy = entity.y - hero.y;
+        if (!entity || entity.hp <= 0) return;
+
+        // 🎯 2. ROOM & BUILDING ISOLATION CHECK
+        // Heroes outdoors cannot target entities inside houses, and heroes indoors can ONLY target entities inside that exact room
+        if (worldMatrix && roomMatrix) {
+            const entTile = getTileData(entity.x + 8, entity.y + 15, worldMatrix, roomMatrix);
+            const entRoomRaw = entTile ? (entTile.roomID || 0) : 0;
+            const entHouseId = (entRoomRaw === 9999) ? 0 : entRoomRaw;
+
+            if (heroHouseId !== entHouseId) {
+                return; // Blocked: Cannot target through walls or between indoor/outdoor boundaries
+            }
+        }
+
+        const dx = (entity.x + 8) - (hero.x + 8);
+        const dy = (entity.y + 8) - (hero.y + 8);
         const distSq = dx * dx + dy * dy;
 
-        // 🎯 OPTIMIZATION: Check if entity is an allied hobbit using cachedWell
+        // 🎯 3. ALLIED HOBBIT FILTER
+        // Prevents auto-targeting friendly hobbits belonging to your owned village
         const isAlly = entity.isHobbit && (() => {
             if (entity.cachedWell === undefined && typeof window !== 'undefined' && window.getVillageAt) {
                 const hx = entity.homeX || Math.floor(entity.x / 16);
@@ -50,20 +64,22 @@ export function scanForTarget(hero, range = 150, worldMatrix, roomMatrix) {
             return false;
         })();
 
-        if (isAlly) return; // Skip auto-locking on allies!
+        if (isAlly) return;
 
+        // 🎯 4. NEAREST PROXIMITY CHECK
         if (distSq < range * range && distSq < nearestDist) {
             nearestDist = distSq;
             bestTarget = entity;
         }
     };
 
+    // Scan all live entity pools
     remotePlayers.forEach(checkEntity);
     animals.forEach(checkEntity);
-    hobbits.forEach(checkEntity); // Scan Hobbits for combat locking!
+    hobbits.forEach(checkEntity);
 
-    // Scan the local map area for Ore Deposits (Tile 29)
-    if (worldMatrix && roomMatrix) {
+    // 🎯 5. SCAN FOR ORE DEPOSITS (Tile 29 - Only when outdoors)
+    if (worldMatrix && roomMatrix && heroHouseId === 0) {
         const hTX = Math.floor((hero.x + 8) / 16);
         const hTY = Math.floor((hero.y + 8) / 16);
         const tileRange = Math.ceil(range / 16);
@@ -86,7 +102,8 @@ export function scanForTarget(hero, range = 150, worldMatrix, roomMatrix) {
                             x: tx * 16,
                             y: ty * 16,
                             isOre: true,
-                            hp: 1, maxHp: 1 
+                            hp: 1, 
+                            maxHp: 1 
                         };
                     }
                 }
@@ -97,14 +114,24 @@ export function scanForTarget(hero, range = 150, worldMatrix, roomMatrix) {
     currentTarget = bestTarget;
 }
 
-export function validateTarget(hero, range = 250) {
+export function validateTarget(hero, range = 250, worldMatrix, roomMatrix) {
     if (lockedTarget) {
         const dx = lockedTarget.x - hero.x;
         const dy = lockedTarget.y - hero.y;
-        if (lockedTarget.hp <= 0 || (dx * dx + dy * dy) > range * range) {
+        
+        let sameRoom = true;
+        if (worldMatrix && roomMatrix && !lockedTarget.isOre) {
+            const heroTile = getTileData(hero.x + 8, hero.y + 15, worldMatrix, roomMatrix);
+            const entTile = getTileData(lockedTarget.x + 8, lockedTarget.y + 15, worldMatrix, roomMatrix);
+            const heroHouse = (heroTile?.roomID === 9999) ? 0 : (heroTile?.roomID || 0);
+            const entHouse = (entTile?.roomID === 9999) ? 0 : (entTile?.roomID || 0);
+            sameRoom = (heroHouse === entHouse);
+        }
+
+        if (lockedTarget.hp <= 0 || (dx * dx + dy * dy) > range * range || !sameRoom) {
             lockedTarget = null;
             hero.isAttacking = false;
-            hero.target = null; // 👈 FIX: Ensure hero's reference is also dropped!
+            hero.target = null;
             hero.isWindingUp = false;
         }
     }

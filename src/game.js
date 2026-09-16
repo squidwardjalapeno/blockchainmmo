@@ -6,11 +6,27 @@ if (typeof window !== 'undefined') {
 
 import { images, loadAllImages } from './assetLoader.js';
 import { generateWorld, seededRandom } from './mapGenerator.js'; 
-import { drawHouse, drawTemple, drawGeneralStore, drawVillageHall, drawRootCellar, drawBarn, drawRanch, drawStorageRoom, planVillage, drawBarracks, drawTwoStoryHouse, drawInn, drawMilitaryQuarters, drawBlacksmith, drawForge, drawLargeBarn, drawTownHall,  populateWorld, drawMiningArea, planTown, drawCastle, decorateCell, linkVillages, ensureLocalCells, linkLakes, drawOreDeposit, planAllSettlements, drawPlannedRanchRoads, drawRingRoads, buildPlannedStructures, buildPlannedWells, clearBlueprints, generateGlobalShorelines, drawTownWalls } from './cellDecorator.js';
+import { 
+    drawHouse, drawTemple, drawGeneralStore, drawVillageHall, drawRootCellar, 
+    drawBarn, drawRanch, drawStorageRoom, planVillage, drawBarracks, 
+    drawTwoStoryHouse, drawInn, drawMilitaryQuarters, drawBlacksmith, drawForge, 
+    drawLargeBarn, drawTownHall, populateWorld, drawMiningArea, planTown, 
+    drawCastle, decorateCell, linkVillages, ensureLocalCells, linkLakes, 
+    drawOreDeposit, planAllSettlements, drawPlannedRanchRoads, drawRingRoads, 
+    buildPlannedStructures, buildPlannedWells, clearBlueprints, 
+    generateGlobalShorelines, drawTownWalls 
+} from './cellDecorator.js';
 import { applyShorelineRules } from './terrainRules.js';
 import { inputState, initInput, handleHeroUpdate } from './input.js';
 import { viewport } from './viewport.js';
-import { ctx2, ctx3, canvas2, canvas3, drawMap, drawStaticObjects, drawJoystick, drawProjectiles, drawTargetCircle, drawWorkingIndicator, drawHeroRange, drawHealthBar, drawEnergyBar, drawAbilityButtons, drawXPStatus, drawAimIndicator, initRenderer, clearAll, drawAnimals, drawPlants, drawHero, drawRemotePlayers, drawBobber, preRenderMinimap, drawDroppedItems, drawCanopy, drawNightTint, drawHobbits } from './renderer.js';
+import { 
+    ctx2, ctx3, canvas2, canvas3, drawMap, drawStaticObjects, drawJoystick, 
+    drawProjectiles, drawTargetCircle, drawWorkingIndicator, drawHeroRange, 
+    drawHealthBar, drawEnergyBar, drawAbilityButtons, drawXPStatus, 
+    drawAimIndicator, initRenderer, clearAll, drawAnimals, drawCorpses, 
+    drawPlants, drawHero, drawRemotePlayers, drawBobber, preRenderMinimap, 
+    drawDroppedItems, drawCanopy, drawNightTint, drawHobbits 
+} from './renderer.js';
 import { hero, resetEntities, gameState, getFocusCoordinates } from './entities.js';
 import { CONFIG } from './config.js';
 import { checkCollision, getTileData, updateProximityGates } from './physics.js'; 
@@ -19,8 +35,14 @@ import { ITEM_TYPES, createItem } from './items.js';
 import { updatePlants, plants } from './plants.js'; 
 import { updateAnimals, animals, spawnChicken } from './animals.js';
 import { scanForTarget, currentTarget, validateTarget } from './combat.js';
-import { socket, initMultiplayer, playerWallet, remotePlayers, serverProjectiles, interpolateEntities } from './multiplayer.js';
-import { handleInteractions, updateHeroStats, handlePvPCombat, handleFinancialActions } from './interactionManager.js';
+import { 
+    socket, initMultiplayer, playerWallet, remotePlayers, 
+    serverProjectiles, interpolateEntities 
+} from './multiplayer.js';
+import { 
+    handleInteractions, updateHeroStats, handlePvPCombat, 
+    handleFinancialActions 
+} from './interactionManager.js';
 import { initUI, updateHUD } from './uiManager.js';
 import { getMasterBalance } from './blockchainManager.js';
 import { worldTime } from './clock.js'; 
@@ -85,8 +107,8 @@ function displayBootResults() {
 }
 
 var reset = function () {
-	resetEntities(worldMap);
-	console.log("Game Reset: Hero at 500,500");
+    resetEntities(worldMap);
+    console.log("Game Reset: Hero at 500,500");
 };
 
 /**
@@ -97,7 +119,7 @@ var update = function (modifier) {
 
     if (!isGameRunning) return;
 
-    // 🎯 NEW: Process gate automatic proximity checks on each tick
+    // Process gate proximity sensors
     updateProximityGates();
 
     if (hero.hp <= 0) {
@@ -111,7 +133,7 @@ var update = function (modifier) {
     const currentCX = Math.floor(focus.x / 1600);
     const currentCY = Math.floor(focus.y / 1600);
 
-    // Track when coordinates enter a new cell sector to trigger banner banners
+    // Track sector entry for location banner triggers
     if (!gameState.lastLoggedCell || gameState.lastLoggedCell.cx !== currentCX || gameState.lastLoggedCell.cy !== currentCY) {
         gameState.lastLoggedCell = { cx: currentCX, cy: currentCY };
         const globalIdx = currentCY * CONFIG.MAP_SIZE + currentCX;
@@ -120,23 +142,23 @@ var update = function (modifier) {
     }
 
     // ==========================================
-    // ⚡ HIGH-FREQUENCY LOOP (Runs on every frame / 60+ FPS)
+    // ⚡ HIGH-FREQUENCY LOOP (Runs at 60+ FPS)
     // ==========================================
     if (DEBUG_FLAGS.ENABLE_PHYSICS_AND_INPUT) {
         ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
         handleHeroUpdate(modifier, worldMatrix, roomMatrix);
         
-        // 🎯 LERP HOBBIT PHYSICS: Calculate Hobbit steps smoothly at 60 FPS
+        // Step Hobbit AI and pathfinding smoothly at 60 FPS
         if (DEBUG_FLAGS.ENABLE_WORLD_SIM) {
             updateHobbits(modifier, worldMatrix, roomMatrix); 
         }
     }
 
-    // 🎯 LERP INTERPOLATION ENGINE: Glides entities smoothly on every single frame
+    // Smooth client-side LERP engine for remote players and pasture animals
     interpolateEntities(modifier);
     
     // ==========================================
-    // 🐢 MEDIUM-FREQUENCY LOOP (Runs every 3 frames)
+    // 🐢 MEDIUM-FREQUENCY LOOP (Every 3 frames)
     // ==========================================
     if (logicTick % 3 === 0) {
         if (DEBUG_FLAGS.ENABLE_COMBAT_AND_STATS) {
@@ -167,27 +189,17 @@ var update = function (modifier) {
             }
         }
         
-        // Logical background updates (no visual snapping math)
         if (DEBUG_FLAGS.ENABLE_WORLD_SIM) {
             updateAnimals(modifier * 3, worldMatrix, roomMatrix); 
         }
     }
 
     // ==========================================
-    // 🐢 SLOW-TICK LOOP (Runs once per second)
+    // 🐢 SLOW-TICK LOOP (Every 1.0 second)
     // ==========================================
     slowTickTimer += modifier;
     if (slowTickTimer >= 1.0) { 
-
-        worldTime.minute += 8; 
-        if (worldTime.minute >= 60) {
-            worldTime.minute = 0;
-            worldTime.hour++;
-            if (worldTime.hour >= 24) {
-                worldTime.hour = 0;
-            }
-        }
-        worldTime.isNight = (worldTime.hour >= 20 || worldTime.hour < 6); 
+        // 🕒 Note: Clock is authoritatively updated via server `timeSync` packets!
 
         if (DEBUG_FLAGS.ENABLE_WORLD_SIM) {
             updatePlants(1.0, fertilityMatrix, worldMatrix, roomMatrix); 
@@ -225,57 +237,57 @@ async function syncTVL() {
  * ⚡ CANVAS DRAW PIPELINE
  */
 var render = function () {
-    // If Terminal mode is active, completely skip 2D canvas draw sweeps!
-    if (window.terminalActive) {
-        return;
-    }
+    if (window.terminalActive) return;
 
     clearAll(); 
     const focus = getFocusCoordinates();
     viewport.update(focus.x + 8, focus.y + 8);
 
-    // Pass 1: Draw Terrain Map
+    // Pass 1: Terrain Map
     drawMap(worldMatrix, roomMatrix); 
     
-    // Pass 2: Draw Static Wells and Trees
+    // Pass 2: Static Wells and Trees
     drawStaticObjects();                       
     
-    // Pass 3: Draw Agricultural Flora and Crops
+    // Pass 3: Agricultural Flora and Crops
     drawPlants(roomMatrix); 
     
-    // Pass 4: Draw Dropped Backpack items, Eggs, and Mulch
+    // Pass 4: Dropped Items, Backpacks, and Seeds
     drawDroppedItems();
+
+    // Pass 4.5: Fallen Corpses
+    drawCorpses(ctx2);
     
-    // Pass 5: Draw Pasture Animals (Chickens)
+    // Pass 5: Pasture Animals (Chickens)
     drawAnimals(); 
     
-    // Pass 6: Draw Environmental Night Mask
+    // Pass 6: Synchronized Day/Night Mask
     drawNightTint();                           
 
-    // Pass 7: Draw Targeted Highlights
+    // Pass 7: Targeted Range & Indicators
     if (hero.target) drawTargetCircle(ctx2, hero.target);
     drawWorkingIndicator(ctx2, hero.workingObj);
     drawHeroRange(ctx2, hero);
     
-    // Pass 8: Draw Projectile and Spell Animations
+    // Pass 8: Projectiles & Spell VFX
     drawProjectiles(ctx2, serverProjectiles);
     
-    // Pass 9: Draw Remote players
+    // Pass 9: Remote Players
     drawRemotePlayers(ctx2, remotePlayers, roomMatrix); 
     
-    // Pass 10: Draw Settlement Hobbits
+    // Pass 10: Village Hobbits (Workforce & Walkers)
     drawHobbits(ctx2, hobbits, roomMatrix);    
     
-    // Pass 11: Draw Player Hero Sprite and held items
+    // Pass 11: Local Hero Sprite & Weapons
     drawHero(); 
     
-    // Pass 12: Draw Fishing Bobbers and Lines
+    // Pass 12: Fishing Bobbers
     drawBobber();
     
-    // Pass 13: Draw Leafy Overhead Canopies
+    // Pass 13: Overhead Tree Canopies
     drawCanopy(worldMatrix);
 
-    // Pass 14: Draw HUD Joystick overlays
+    // Pass 14: Mobile HUD Overlays & Buttons
     drawJoystick(ctx3); 
     drawAbilityButtons(ctx3);
     drawAimIndicator(ctx3);
@@ -297,7 +309,7 @@ var render = function () {
 };
 
 /**
- * ⚡ MAIN INITIALIZATION ROUTINE (Includes accurate performance markers)
+ * ⚡ MAIN INITIALIZATION ROUTINE
  */
 async function mainInit() {
     try {
@@ -354,18 +366,12 @@ async function mainInit() {
             planAllSettlements(worldMap, worldMatrix, roomMatrix, fertilityMatrix);
         });
 
-        /*
-        await measureStep("Step 5: Cleaning up Blueprints", () => {
-            clearBlueprints(roomMatrix);
-        });
-        */
-
         logStep("8. Pre-rendering...");
         preRenderMinimap(worldMap); 
         resetEntities(worldMap); 
         ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix, worldMap); 
 
-        // Set starting location coordinates safely inside our debug village
+        // Set starting location coordinates safely inside debug village
         const chunkX = Math.floor(hero.x / 1600);
         const chunkY = Math.floor(hero.y / 1600);
         const gridX = (chunkX * 100) + 50;

@@ -3,7 +3,7 @@ import { viewport } from './viewport.js';
 import { images } from './assetLoader.js';
 import { CONFIG } from './config.js';
 import { hero, getLevelInfo, gameState, getFocusCoordinates } from './entities.js';
-import { plants, PLANT_DEFS } from './plants.js';
+import { plants, getPlantAtTile } from './plants.js';
 import { getBacteriaData, bacteriaCells, BACTERIA_TYPES } from './bacteria.js';
 import { animals } from './animals.js';
 import { inputState, getUIButtons } from './input.js';
@@ -16,6 +16,9 @@ import { getHeroAnimationData, getPetAnimationData, getAnimalAnimationData, getH
 import { worldTime } from './clock.js'; 
 import { hobbits } from './hobbitCore.js';
 import { rtsState } from './rtsControls.js';
+import { corpses } from './corpses.js';
+import { PLANT_DEFS } from './plantDefs.js';
+
 
 if (typeof window !== 'undefined') {
     logStep("renderer.js loaded");
@@ -137,7 +140,6 @@ export function drawMap(worldMatrix, roomMatrix) {
     visibleTrees = [];
 
     if (hHouseId === 0 || hHouseId === 9999) {
-        // Change background fill from flat green to black to handle margins cleanly
         ctx2.fillStyle = "black";
         ctx2.fillRect(0, 0, w, h);
 
@@ -154,22 +156,23 @@ export function drawMap(worldMatrix, roomMatrix) {
                 const tID = wChunk[(ly * 100) + lx];
                 const sY = Math.floor((l * 16) + viewport.offset[1]);
 
-                // Instead of skipping land tiles (tID === 63), we draw tile 56 from worldTilesColor
+                // 🌾 GRASS TERRAIN TILE
                 if (tID === 63) {
                     ctx2.drawImage(
                         tileImg,
-                        (56 % 8) * 16,          // Source X
-                        Math.floor(56 / 8) * 16, // Source Y
-                        16, 16,                  // Source dimensions
-                        sX, sY,                  // Destination coordinates
-                        16, 16                   // Destination dimensions
+                        (56 % 8) * 16,          
+                        Math.floor(56 / 8) * 16, 
+                        16, 16,                  
+                        sX, sY,                  
+                        16, 16                   
                     );
                     continue; 
                 }
 
+                // 📦 NESTING BOX / FARMLAND
                 if (tID === 44) {
-                    // Draw our new textured land tile under nesting boxes as well
                     ctx2.drawImage(tileImg, (56 % 8) * 16, Math.floor(56 / 8) * 16, 16, 16, sX, sY, 16, 16);
+                    
                     const tImg = images.transparentTileset;
                     if (tImg && tImg.complete) {
                         ctx2.drawImage(tImg, (1 % 10) * 16, Math.floor(1 / 10) * 16, 16, 16, sX, sY, 16, 16);
@@ -177,32 +180,14 @@ export function drawMap(worldMatrix, roomMatrix) {
                     continue; 
                 }
 
+                // 🌲 WOODS & ROAD BORDER SPRITESHEET PASS
                 if (tID >= 300 && tID < 500) {
                     const woodsImg = images.woodsTileset2;
                     if (woodsImg && woodsImg.complete) {
                         const roadBorders = [302, 303, 304, 313, 315, 331, 335, 350, 351, 353, 354, 367];
-                        if (roadBorders.includes(tID)) {
-                            let isBeach = false;
-                            let isStone = false;
-                            
-                            for (let ox = -1; ox <= 1; ox++) {
-                                for (let oy = -1; oy <= 1; oy++) {
-                                    const nCX = Math.floor((k + ox) / 100);
-                                    const nCY = Math.floor((l + oy) / 100);
-                                    if (worldMatrix[nCX]?.[nCY]) {
-                                        const nLX = (((k + ox) % 100) + 100) % 100;
-                                        const nLY = (((l + oy) % 100) + 100) % 100;
-                                        const neighborID = worldMatrix[nCX][nCY][nLY * 100 + nLX];
-                                        
-                                        if (neighborID === 0 || neighborID === 10 || neighborID === 11 || neighborID === 17) {
-                                            isBeach = true;
-                                        } else if (neighborID === 208) {
-                                            isStone = true;
-                                        }
-                                    }
-                                }
-                            }
 
+                        // 🎯 UNDERLAY ENGINE: Check if underlay is a sunken Root Cellar roof or a road
+                        if (roadBorders.includes(tID)) {
                             const cxBelow = Math.floor(k / 100);
                             const cyBelow = Math.floor((l + 1) / 100);
                             const lxBelow = ((k % 100) + 100) % 100;
@@ -210,23 +195,38 @@ export function drawMap(worldMatrix, roomMatrix) {
                             const belowTile = worldMatrix[cxBelow]?.[cyBelow]?.[lyBelow * 100 + lxBelow];
 
                             if (belowTile === 48) {
+                                // 🛖 ROOT CELLAR: Dug into the ground, so back roof tile (40) sits underneath the grass border
                                 ctx2.drawImage(tileImg, (40 % 8) * 16, Math.floor(40 / 8) * 16, 16, 16, sX, sY, 16, 16);
-                            } else if (isBeach) {
-                                ctx2.drawImage(tileImg, 0, 0, 16, 16, sX, sY, 16, 16);
-                            } else if (isStone) {
-                                const roadImg = images.mainTileset2;
-                                if (roadImg && roadImg.complete) {
-                                    ctx2.drawImage(roadImg, (8 % 8) * 16, Math.floor(8 / 8) * 16, 16, 16, sX, sY, 16, 16);
-                                }
                             } else {
-                                const dirtIdx = 337 - 300; 
-                                const woodsImg = images.woodsTileset2;
-                                if (woodsImg && woodsImg.complete) {
+                                // 🛣️ STANDARD ROAD: Detect if stone or dirt
+                                let isStone = false;
+                                for (let ox = -1; ox <= 1; ox++) {
+                                    for (let oy = -1; oy <= 1; oy++) {
+                                        const nCX = Math.floor((k + ox) / 100);
+                                        const nCY = Math.floor((l + oy) / 100);
+                                        if (worldMatrix[nCX]?.[nCY]) {
+                                            const nLX = (((k + ox) % 100) + 100) % 100;
+                                            const nLY = (((l + oy) % 100) + 100) % 100;
+                                            if (worldMatrix[nCX][nCY][nLY * 100 + nLX] === 208) {
+                                                isStone = true;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (isStone) {
+                                    const roadImg = images.mainTileset2;
+                                    if (roadImg && roadImg.complete) {
+                                        ctx2.drawImage(roadImg, (8 % 8) * 16, Math.floor(8 / 8) * 16, 16, 16, sX, sY, 16, 16);
+                                    }
+                                } else {
+                                    const dirtIdx = 337 - 300; 
                                     ctx2.drawImage(woodsImg, (dirtIdx % 12) * 16, Math.floor(dirtIdx / 12) * 16, 16, 16, sX, sY, 16, 16);
                                 }
                             }
                         }
 
+                        // Draw the border transition tile directly from the spritesheet
                         const localIdx = tID - 300; 
                         const srcX = (localIdx % 12) * 16;
                         const srcY = Math.floor(localIdx / 12) * 16;
@@ -328,52 +328,48 @@ export function drawMap(worldMatrix, roomMatrix) {
                     ctx2.drawImage(tileImg, (base % 8) * 16, Math.floor(base / 8) * 16, 16, 16, sX, sY, 16, 16);
 
                     const obj = getObjectAt(k, l);
-if (obj) {
-    const transMap = {
-        'CHEST_STORAGE': 2, 
-        'HAY_TABLE': 3, 
-        'HAY_STORAGE': 4,
-        'STORE_COUNTER': 5, 
-        'TEMPLE_ALTAR': 6, 
-        'STAIRS_TOGGLE': 7,
-        'KITCHEN': 8, 
-        'MAP_TABLE': 9, 
-        'ARMORY': 10,
-        'MILITARY_STORAGE': 10, 
-        'FOOD_STORAGE': 11,
-        'HOBBIT_MANAGER': 12,
-        'GRAND_EXCHANGE': 13, // 👈 Added: Maps to Tile 13 in the transparentTileset
-        'HOBBIT_EXCHANGE': 14, // 👈 Added: Maps to Tile 14 of the transparentTileset
-        'UNI_EXCHANGE': 15, // 👈 ADDED: Maps to Tile 15 in transparentTileset
-        'VILLAGE_VAULT': 16 // 🎯 MAPS TO TILE 16 OF THE TRANSPARENT TILESET
+                    if (obj) {
+                        const transMap = {
+                            'CHEST_STORAGE': 2, 
+                            'HAY_TABLE': 3, 
+                            'HAY_STORAGE': 4,
+                            'STORE_COUNTER': 5, 
+                            'TEMPLE_ALTAR': 6, 
+                            'STAIRS_TOGGLE': 7,
+                            'KITCHEN': 8, 
+                            'MAP_TABLE': 9, 
+                            'ARMORY': 10,
+                            'MILITARY_STORAGE': 10, 
+                            'FOOD_STORAGE': 11,
+                            'HOBBIT_MANAGER': 12,
+                            'GRAND_EXCHANGE': 13,
+                            'HOBBIT_EXCHANGE': 14,
+                            'UNI_EXCHANGE': 15,
+                            'VILLAGE_VAULT': 16
+                        };
+                        const oldMap = { 'SMELTER': 53, 'BEDROLL': 61, 'INT_WALL': 41, 'ANVIL': 54 }; 
 
-
-    };
-    const oldMap = { 'SMELTER': 53, 'BEDROLL': 61, 'INT_WALL': 41, 'ANVIL': 54 }; 
-
-    if (transMap[obj.type] !== undefined) {
-        const tImg = images.transparentTileset;
-        const tid = transMap[obj.type];
-        if (tImg && tImg.complete) {
-            ctx2.drawImage(tImg, (tid % 10) * 16, Math.floor(tid / 10) * 16, 16, 16, sX, sY, 16, 16);
-        }
-    } else if (oldMap[obj.type] !== undefined) {
-        const oid = oldMap[obj.type];
-        ctx2.drawImage(tileImg, (oid % 8) * 16, Math.floor(oid / 8) * 16, 16, 16, sX, sY, 16, 16);
-    } else if (obj.type === 'CRAFTING_TABLE') {
-        const kImg = images.keyTileset;
-        if (kImg && kImg.complete) {
-            ctx2.drawImage(kImg, (100 % 16) * 16, Math.floor(100 / 16) * 16, 16, 16, sX, sY, 16, 16);
-        }
-    }
-}
+                        if (transMap[obj.type] !== undefined) {
+                            const tImg = images.transparentTileset;
+                            const tid = transMap[obj.type];
+                            if (tImg && tImg.complete) {
+                                ctx2.drawImage(tImg, (tid % 10) * 16, Math.floor(tid / 10) * 16, 16, 16, sX, sY, 16, 16);
+                            }
+                        } else if (oldMap[obj.type] !== undefined) {
+                            const oid = oldMap[obj.type];
+                            ctx2.drawImage(tileImg, (oid % 8) * 16, Math.floor(oid / 8) * 16, 16, 16, sX, sY, 16, 16);
+                        } else if (obj.type === 'CRAFTING_TABLE') {
+                            const kImg = images.keyTileset;
+                            if (kImg && kImg.complete) {
+                                ctx2.drawImage(kImg, (100 % 16) * 16, Math.floor(100 / 16) * 16, 16, 16, sX, sY, 16, 16);
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 }
-
-// src/renderer.js
 
 export function drawStaticObjects() {
     const startX = viewport.startTile[0];
@@ -408,21 +404,17 @@ export function drawStaticObjects() {
                     visibleTrees.push({ sX, sY });
                 }
             }
-            // src/renderer.js
-
-// ... inside drawStaticObjects() ...
             else if (obj.type === 'RANCH_FENCE') {
                 const tImg = images.worldTilesColor;
                 if (tImg && tImg.complete) {
-                    let spriteID = 21; // Horizontal fence default
+                    let spriteID = 21; 
                     if (obj.fenceType === 'V') spriteID = 18;
                     else if (obj.fenceType === 'C') spriteID = 24;
                     else if (obj.fenceType === 'G') {
-                        // 🎯 FIX: Swapped sprite bindings so horizontal is H and vertical is V
                         if (obj.orientation === 'V') {
-                            spriteID = obj.open ? 20 : 19; // Vertical Gate (Closed: 19, Open: 20)
+                            spriteID = obj.open ? 20 : 19; 
                         } else {
-                            spriteID = obj.open ? 23 : 22; // Horizontal Gate (Closed: 22, Open: 23)
+                            spriteID = obj.open ? 23 : 22; 
                         }
                     }
                     ctx2.drawImage(tImg, (spriteID % 8) * 16, Math.floor(spriteID / 8) * 16, 16, 16, sX, sY, 16, 16);
@@ -431,6 +423,7 @@ export function drawStaticObjects() {
         }
     }
 }
+
 export function drawPlants(roomMatrix) {
     const focus = getFocusCoordinates();
     const hTX = Math.floor((focus.x + 8) / 16);
@@ -438,33 +431,50 @@ export function drawPlants(roomMatrix) {
     const rCol = roomMatrix[Math.floor(hTX / 100)]?.[Math.floor(hTY / 100)];
     const heroHouseId = rCol ? rCol[((hTY % 100 + 100) % 100 * 100) + ((hTX % 100 + 100) % 100)] : 0;
 
+    // Do not draw wild plants inside houses
     if (heroHouseId !== 0 && heroHouseId !== 9999) return;
 
-    plants.forEach((plant) => {
-        const screenX = Math.floor(viewport.offset[0] + (plant.gx * 16));
-        const screenY = Math.floor(viewport.offset[1] + (plant.gy * 16));
+    const startX = viewport.startTile[0];
+    const endX = viewport.endTile[0];
+    const startY = viewport.startTile[1];
+    const endY = viewport.endTile[1];
 
-        if (screenX < -16 || screenX > canvas2.width || screenY < -16 || screenY > canvas2.height) return;
+    // INVERTED VIEWPORT RENDER: Loops ~600 screen tiles instead of 45,000 plants!
+    for (let l = startY; l <= endY; l++) {
+        const screenY = Math.floor(viewport.offset[1] + (l * 16));
 
-        const def = PLANT_DEFS[plant.type];
-        const tilesetName = def.tileset || 'cropTileset';
-        const img = images[tilesetName];
-        if (!img || !img.complete) return;
+        for (let k = startX; k <= endX; k++) {
+            const plant = getPlantAtTile(k, l);
+            if (!plant) continue;
 
-        const stagesArray = def.stages;
-        const maxStage = stagesArray.length - 1;
-        const stageIdx = Math.min(maxStage, Math.floor(plant.growth / (100 / stagesArray.length)));
-        const plantSpriteID = stagesArray[stageIdx];
+            const def = PLANT_DEFS[plant.type];
+            if (!def) continue;
 
-        ctx2.drawImage(
-            img,
-            (plantSpriteID % CONFIG.CROP_SHEET_WIDTH_TILES) * 16, 
-            Math.floor(plantSpriteID / CONFIG.CROP_SHEET_WIDTH_TILES) * 16, 
-            16, 16,
-            screenX, screenY,
-            16, 16
-        );
-    });
+            const stagesArray = Array.isArray(def.stages) ? def.stages : null;
+            if (!stagesArray || stagesArray.length === 0) continue;
+
+            const tilesetName = def.tileset || 'cropTileset';
+            const img = images[tilesetName];
+            if (!img || !img.complete) continue;
+
+            const maxStage = stagesArray.length - 1;
+            const stageIdx = Math.min(maxStage, Math.floor(plant.growth / (100 / stagesArray.length)));
+            const plantSpriteID = stagesArray[stageIdx];
+
+            if (plantSpriteID === undefined || Number.isNaN(plantSpriteID)) continue;
+
+            const screenX = Math.floor(viewport.offset[0] + (k * 16));
+
+            ctx2.drawImage(
+                img,
+                (plantSpriteID % CONFIG.CROP_SHEET_WIDTH_TILES) * 16, 
+                Math.floor(plantSpriteID / CONFIG.CROP_SHEET_WIDTH_TILES) * 16, 
+                16, 16,
+                screenX, screenY,
+                16, 16
+            );
+        }
+    }
 }
 
 const renderCache = {};
@@ -485,8 +495,7 @@ function getRenderData(typeID) {
             let w = CONFIG.CROP_SHEET_WIDTH_TILES;
             if (tilesetStr === "gardenTileset") w = CONFIG.GARDEN_SHEET_WIDTH_TILES;
             else if (tilesetStr === "worldTilesColor") w = 8;
-            else if (tilesetStr === "transparentTileset") w = 10; 
-            else if (tilesetStr === "foodTileset") w = 10; 
+            else if (tilesetStr === "transparentTileset" || tilesetStr === "foodTileset") w = 10; 
             else if (tilesetStr === "keyTileset") w = 16;
             else if (tilesetStr === "weaponTileset") w = 16;
 
@@ -611,15 +620,175 @@ export function drawDroppedItems() {
     }
 }
 
-export function drawAnimals() {
-    const w = canvas2.width | 0;
-    const h = canvas2.height | 0;
+// ============================================================================
+// 💀 90-DEGREE ROTATED DESATURATED CORPSE RENDERING
+// ============================================================================
+export function drawCorpses(ctx) {
+    if (!corpses || corpses.size === 0) return;
 
+    corpses.forEach(corpse => {
+        if (!corpse.inventory || corpse.inventory.length === 0) return;
+
+        const screenX = Math.floor(viewport.offset[0] + corpse.x);
+        const screenY = Math.floor(viewport.offset[1] + corpse.y);
+
+        if (screenX < -32 || screenX > canvas2.width + 32 || screenY < -32 || screenY > canvas2.height + 32) return;
+
+        ctx.save();
+        ctx.translate(screenX + 8, screenY + 8);
+        ctx.rotate(Math.PI / 2);
+
+        ctx.filter = "grayscale(90%) brightness(75%)";
+
+        const corpseImg = corpse.isPlayer ? (images.heroWalkSouth || images.heroIdle) : images.hobbitWalkSouth;
+        if (corpseImg && corpseImg.complete) {
+            ctx.drawImage(corpseImg, 0, 0, 16, 16, -8, -8, 16, 16);
+        }
+        ctx.restore();
+
+        ctx.font = "6px 'Press Start 2P'";
+        ctx.fillStyle = corpse.isPlayer ? "#ff4444" : "#eaddcf";
+        ctx.textAlign = "center";
+        ctx.fillText(corpse.name.substring(0, 8), screenX + 8, screenY - 4);
+    });
+}
+
+// ============================================================================
+// 🎯 UNIFIED OVERHEAD UNIT PLATE (6px Name/Title, 8px Level Badge)
+// ============================================================================
+export function drawUnitPlate(ctx, entity, options = {}) {
+    const {
+        name = "Unit",
+        title = "",
+        titleColor = "#f4b41b",
+        level = 0,
+        hp = 100,
+        maxHp = 100,
+        energy = null,
+        maxEnergy = 100,
+        shield = 0,
+        isTargeted = false,
+        hpColor = "#2ecc71"
+    } = options;
+
+    const entityIntX = Math.floor(entity.x);
+    const entityIntY = Math.floor(entity.y);
+    const screenX = entityIntX + viewport.offset[0] + 8;
+    const screenY = entityIntY + viewport.offset[1];
+
+    const barW = 24;
+    const barH = 3.0;
+    const startX = screenX - Math.floor(barW / 2);
+    const startY = screenY - 4;
+
+    // --- 1. TARGETED HEADER ---
+    if (isTargeted) {
+        ctx.font = '6px "Press Start 2P"';
+        ctx.textBaseline = "alphabetic";
+
+        let fullTitleStr = name;
+        if (title && title.length > 0) {
+            fullTitleStr += `, `;
+        }
+        
+        const nameMetrics = ctx.measureText(fullTitleStr);
+        const titleMetrics = title ? ctx.measureText(title) : { width: 0 };
+        const totalTextWidth = nameMetrics.width + (title ? titleMetrics.width : 0);
+        const textStartX = screenX - Math.floor(totalTextWidth / 2);
+
+        // Draw Name (1px Drop Shadow + White Text)
+        ctx.textAlign = "left";
+        ctx.fillStyle = "#000000";
+        ctx.fillText(fullTitleStr, textStartX + 1, startY - 4);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(fullTitleStr, textStartX, startY - 5);
+
+        // Draw Title (1px Drop Shadow + Accent Color)
+        if (title) {
+            ctx.fillStyle = "#000000";
+            ctx.fillText(title, textStartX + nameMetrics.width + 1, startY - 4);
+            ctx.fillStyle = titleColor;
+            ctx.fillText(title, textStartX + nameMetrics.width, startY - 5);
+        }
+
+        // Level Badge
+        const badgeRadius = 6.0;
+        const badgeCenterX = startX - 9;
+        const badgeCenterY = startY + 2;
+
+        ctx.beginPath();
+        ctx.arc(badgeCenterX, badgeCenterY, badgeRadius, 0, Math.PI * 2);
+        ctx.fillStyle = "#151515";
+        ctx.fill();
+        ctx.strokeStyle = "#d4af37";
+        ctx.lineWidth = 1.0;
+        ctx.stroke();
+
+        ctx.font = '8px "Press Start 2P"';
+        ctx.fillStyle = "#ffffff";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(`${level}`, badgeCenterX, badgeCenterY + 1);
+    }
+
+    // --- 2. STANDARDIZED HEALTH BAR ---
+    ctx.textBaseline = "alphabetic";
+    
+    // Gray Outline
+    ctx.fillStyle = "#555555";
+    ctx.fillRect(startX - 1, startY - 1, barW + 2, barH + 2);
+
+    // Inner Black Background
+    ctx.fillStyle = "#111111";
+    ctx.fillRect(startX, startY, barW, barH);
+
+    // Fill HP
+    const hpRatio = Math.max(0, Math.min(1.0, hp / (maxHp || 100)));
+    ctx.fillStyle = hpColor;
+    ctx.fillRect(startX, startY, Math.floor(barW * hpRatio), barH);
+
+    // Shield Buffer Overlay
+    if (shield > 0) {
+        ctx.fillStyle = "rgba(100, 181, 246, 0.85)";
+        const shieldRatio = Math.max(0, Math.min(1.0, shield / (maxHp || 100)));
+        ctx.fillRect(startX, startY, Math.floor(barW * shieldRatio), barH);
+    }
+
+    // 100-HP Segment Separators
+    const segments = Math.floor(maxHp / 100);
+    if (segments >= 1) {
+        ctx.fillStyle = "#333333";
+        for (let i = 1; i <= segments; i++) {
+            const tickX = startX + Math.floor((i * 100 / maxHp) * barW);
+            if (tickX < startX + barW) {
+                ctx.fillRect(tickX, startY, 1, barH);
+            }
+        }
+    }
+
+    // --- 3. STANDARDIZED ENERGY BAR ---
+    if (energy !== null && energy !== undefined) {
+        const energyY = startY + barH + 1.5;
+        const energyH = 1.8;
+
+        ctx.fillStyle = "#555555";
+        ctx.fillRect(startX - 1, energyY - 0.5, barW + 2, energyH + 1);
+
+        ctx.fillStyle = "#111111";
+        ctx.fillRect(startX, energyY, barW, energyH);
+
+        const energyRatio = Math.max(0, Math.min(1.0, energy / (maxEnergy || 100)));
+        ctx.fillStyle = "#f4b41b";
+        ctx.fillRect(startX, energyY, Math.floor(barW * energyRatio), energyH);
+    }
+}
+
+export function drawAnimals() {
     animals.forEach(chicken => {
         const screenX = Math.floor(chicken.x + viewport.offset[0]);
         const screenY = Math.floor(chicken.y + viewport.offset[1]);
         
-        if (screenX < -32 || screenX > w + 32 || screenY < -32 || screenY > h + 32) return;
+        if (screenX < -32 || screenX > canvas2.width + 32 || screenY < -32 || screenY > canvas2.height + 32) return;
 
         const animData = getAnimalAnimationData(chicken, images);
 
@@ -631,11 +800,20 @@ export function drawAnimals() {
             );
         }
 
-        const energyPct = (chicken.energy !== undefined ? chicken.energy : 100) / 100;
-        ctx2.fillStyle = "black";
-        ctx2.fillRect(screenX + 2, screenY - 4, 12, 2);
-        ctx2.fillStyle = "#FFD700"; 
-        ctx2.fillRect(screenX + 2, screenY - 4, 12 * Math.max(0, energyPct), 2);
+        const isTargeted = (hero.target && hero.target.id === chicken.id);
+
+        drawUnitPlate(ctx2, chicken, {
+            name: "Chicken",
+            title: "Livestock",
+            titleColor: "#aaa",
+            level: 0,
+            hp: chicken.hp || 30,
+            maxHp: chicken.maxHp || 30,
+            energy: chicken.energy !== undefined ? chicken.energy : 100,
+            maxEnergy: 100,
+            isTargeted: isTargeted,
+            hpColor: "#2ecc71"
+        });
     });
 }
 
@@ -938,24 +1116,23 @@ export function drawRemotePlayers(ctx2, remotePlayersData, roomMatrix) {
             ctx2.fill();
         }
 
-        ctx2.fillStyle = p.isOffline ? "#888888" : "white"; 
-        ctx2.font = "8px Arial";
-        ctx2.textAlign = "center";
-        const displayName = p.isOffline ? "SLEEPING" : p.id.substring(0, 4);
-        ctx2.fillText(displayName, sx + 8, sy - 8); 
-        
-        const barW = 16, barH = 2;
-        ctx2.fillStyle = "black";
-        ctx2.fillRect(sx, sy - 4, barW, barH);
-        
-        if (p.shield && p.shield > 0) {
-            ctx2.fillStyle = "rgba(100, 150, 255, 0.8)"; 
-            const shieldRatio = Math.min(1.0, p.shield / (p.maxHp || 100)); 
-            ctx2.fillRect(sx, sy - 2, barW * shieldRatio, barH);
-        }
+        const isTargeted = (hero.target && hero.target.id === p.id);
+        const pLevel = getLevelInfo(p.xp || 0).level;
+        const displayName = p.wallet ? (p.wallet.startsWith('0x') ? p.wallet.substring(0, 6) : p.wallet) : p.id.substring(0, 4);
 
-        ctx2.fillStyle = "#FF0000"; 
-        ctx2.fillRect(sx, sy - 4, barW * (p.hp / (p.maxHp || 100)), barH);
+        drawUnitPlate(ctx2, p, {
+            name: displayName,
+            title: p.charClass || "Paladin",
+            titleColor: "#ffd700",
+            level: pLevel,
+            hp: p.hp || 100,
+            maxHp: p.maxHp || 100,
+            energy: p.energy !== undefined ? p.energy : 100,
+            maxEnergy: 100,
+            shield: p.shield || 0,
+            isTargeted: isTargeted,
+            hpColor: "#e74c3c"
+        });
 
         if (p.pet && p.pet.active) {
             const petSx = Math.floor(p.pet.x + viewport.offset[0]);
@@ -1026,17 +1203,33 @@ export function drawHobbits(ctx2, activeHobbits, roomMatrix) {
             );
         }
 
-        const hpPct = hobbit.hp / hobbit.maxHp;
-        ctx2.fillStyle = "black";
-        ctx2.fillRect(screenX + 2, screenY - 4, 12, 1);
-        ctx2.fillStyle = "green";
-        ctx2.fillRect(screenX + 2, screenY - 4, 12 * Math.max(0, hpPct), 1);
+        if (hobbit.thoughtBubble) {
+            ctx2.font = "12px Arial";
+            ctx2.textAlign = "center";
+            ctx2.fillText(hobbit.thoughtBubble.icon, screenX + 8, screenY - 8);
+        }
 
-        const energyPct = (hobbit.energy !== undefined ? hobbit.energy : 100) / 100;
-        ctx2.fillStyle = "black";
-        ctx2.fillRect(screenX + 2, screenY - 2, 12, 1);
-        ctx2.fillStyle = "#FFD700"; 
-        ctx2.fillRect(screenX + 2, screenY - 2, 12 * Math.max(0, energyPct), 1);
+        const isTargeted = (hero.target && hero.target.id === hobbit.id);
+        
+        let roleTitle = hobbit.villageRole || hobbit.job || "Citizen";
+        let roleColor = "#f4b41b";
+        if (hobbit.villageRole === 'GUARD') roleColor = "#00ff7f";
+        else if (hobbit.villageRole === 'QUARTERMASTER') roleColor = "#e74c3c";
+        else if (hobbit.villageRole === 'FARM_MANAGER') roleColor = "#f4b41b";
+        else if (hobbit.job === 'Forager') roleColor = "#8a9a5b";
+
+        drawUnitPlate(ctx2, hobbit, {
+            name: hobbit.name.split(' ')[0],
+            title: roleTitle,
+            titleColor: roleColor,
+            level: hobbit.level || 0,
+            hp: hobbit.hp || 40,
+            maxHp: hobbit.maxHp || 40,
+            energy: hobbit.energy !== undefined ? hobbit.energy : 100,
+            maxEnergy: 100,
+            isTargeted: isTargeted,
+            hpColor: (hobbit.villageRole === 'GUARD') ? "#00ff7f" : "#2ecc71"
+        });
     });
 
     if (rtsState.enabled && rtsState.dragStart && rtsState.dragCurrent) {
@@ -1229,10 +1422,6 @@ export function drawTargetCircle(ctx2, target) {
     ctx2.beginPath();
     ctx2.arc(screenX, screenY, radius, 0, Math.PI * 2);
     ctx2.stroke();
-    
-    if (!target.isOre) {
-        drawHealthBar(ctx2, target, isAlly ? "#00FFFF" : "#FF4444"); 
-    }
 }
 
 export function drawWorkingIndicator(ctx2, workingObj) {
@@ -1278,40 +1467,23 @@ export function drawHeroRange(ctx2, hero) {
 }
 
 export function drawHealthBar(ctx, entity, color = "#00FF00") {
-    const barW = 16;
-    const barH = 2;
-    
-    let percent = 0;
-    if (entity.hp !== undefined) {
-        percent = entity.hp / (entity.maxHp || 100);
-    } else if (entity.hunger !== undefined) {
-        percent = (100 - entity.hunger) / 100;
-    }
-
-    const screenX = viewport.offset[0] + entity.x + 8 - (barW / 2);
-    const screenY = viewport.offset[1] + entity.y - 4; 
-
-    ctx.fillStyle = "black";
-    ctx.fillRect(screenX, screenY, barW, barH);
-    ctx.fillStyle = color;
-    ctx.fillRect(screenX, screenY, barW * Math.max(0, percent), barH);
+    const info = getLevelInfo(entity.xp || 0);
+    drawUnitPlate(ctx, entity, {
+        name: entity.wallet ? (entity.wallet.startsWith('0x') ? entity.wallet.substring(0, 6) : entity.wallet) : "Hero",
+        title: entity.charClass || "Paladin",
+        titleColor: "#ffd700",
+        level: info.level,
+        hp: entity.hp || 100,
+        maxHp: entity.maxHp || 100,
+        energy: entity.energy !== undefined ? entity.energy : 100,
+        maxEnergy: entity.maxEnergy || 100,
+        shield: entity.shield || 0,
+        isTargeted: false,
+        hpColor: color
+    });
 }
 
-export function drawEnergyBar(ctx, entity, color = "#FFD700") {
-    if (entity.energy === undefined || hero.charClass === 'Overseer') return; 
-
-    const barW = 16;
-    const barH = 2;
-    const percent = entity.energy / (entity.maxEnergy || 100);
-
-    const screenX = viewport.offset[0] + entity.x + 8 - (barW / 2);
-    const screenY = viewport.offset[1] + entity.y - 1; 
-
-    ctx.fillStyle = "black";
-    ctx.fillRect(screenX, screenY, barW, barH);
-    ctx.fillStyle = color;
-    ctx.fillRect(screenX, screenY, barW * Math.max(0, percent), barH);
-}
+export function drawEnergyBar(ctx, entity, color = "#FFD700") {}
 
 export function drawJoystick(ctxUI) {
     if (inputState.inputType === 'keyboard' || !inputState.leftJoystick.active || hero.charClass === 'Overseer') return;

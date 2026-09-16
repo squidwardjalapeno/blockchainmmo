@@ -76,6 +76,7 @@ export function getBacteriaData(gx, gy) {
     return { data, idx };
 }
 
+// src/bacteria.js
 export function updateBacteria(worldMatrix, fertilityMatrix) {
     const focus = getFocusCoordinates();
     const heroGTX = Math.floor(focus.x / CONFIG.TILE_SIZE);
@@ -97,69 +98,13 @@ export function updateBacteria(worldMatrix, fertilityMatrix) {
                     const deltaSeconds = (now - lastTime) / 1000;
                     
                     if (deltaSeconds > 3.0) {
-                        catchUpChunkBacteria(targetCX, targetCY, deltaSeconds, fertilityMatrix);
+                        catchUpChunkBacteria(targetCX, targetCY, deltaSeconds, fertilityMatrix, worldMatrix);
                     }
                 }
                 
                 chunkLastUpdated.set(key, now);
                 processCellSpread(targetCX, targetCY, worldMatrix, fertilityMatrix);
             }
-        }
-    }
-}
-
-export function catchUpChunkBacteria(cx, cy, deltaSeconds, fertilityMatrix) {
-    const cellKey = `${cx}_${cy}`;
-    const data = bacteriaCells.get(cellKey);
-    if (!data) return;
-
-    for (let idx = 0; idx < 10000; idx++) {
-        let traits = data[idx];
-        if (traits === 0) continue;
-
-        let typeID = (traits >> 20) & 0xFF;
-        if (typeID === 60 || typeID === 61 || typeID === 16 || typeID === 17) continue; 
-
-        let h = traits & 0xFF;
-        let v = (traits >> 8) & 0xFF;
-        let r = (traits >> 16) & 0x0F;
-        let hasPeaked = (traits >>> 31);
-
-        let timeRemaining = deltaSeconds;
-
-        if (h > 0) {
-            const hDecay = Math.min(h, Math.floor(timeRemaining));
-            h -= hDecay;
-            timeRemaining -= hDecay;
-        }
-
-        if (h === 0 && timeRemaining > 0) {
-            let bFert = 0;
-            if (typeID === 1) bFert = ITEM_TYPES.BASS?.baseFertility || 100;
-            else if (typeID === 3) bFert = ITEM_TYPES.PLANT_MATTER?.baseFertility || 20;
-            else if (typeID === 4) bFert = ITEM_TYPES.CHICKEN_POOP?.baseFertility || 200;
-            else if (typeID === 5) bFert = ITEM_TYPES.COOKED_BASS?.baseFertility || 80;
-            else if (typeID === 16) bFert = ITEM_TYPES.EGG?.baseFertility || 15;
-
-            const vDecayRate = 50 / 100; 
-            const leakProgress = Math.min(1.0, timeRemaining / 100.0);
-
-            if (bFert > 0 && fertilityMatrix[cx]?.[cy]) {
-                const currentF = fertilityMatrix[cx][cy][idx];
-                fertilityMatrix[cx][cy][idx] = Math.min(255, currentF + (bFert * leakProgress));
-            }
-
-            v = Math.max(0, v - Math.floor(timeRemaining * vDecayRate));
-        }
-
-        if (h === 0 && v === 0) {
-            data[idx] = 0; 
-        } else {
-            data[idx] = ((h & 0xFF) | 
-                        ((v & 0xFF) << 8) | 
-                        ((r & 0x0F) << 16) | 
-                        ((typeID & 0xFF) << 20) | 
-                        (hasPeaked ? 0x80000000 : 0)) >>> 0;
         }
     }
 }
@@ -313,6 +258,9 @@ function processCellSpread(cx, cy, worldMatrix, fertilityMatrix) {
     }
 }
 
+// src/bacteria.js
+
+// 🎯 REAL-TIME INFECTION & DAMAGE LOGIC
 export function attemptInfection(gx, gy, attackerTraits, worldMatrix) {
     const cx = Math.floor(gx / 100);
     const cy = Math.floor(gy / 100);
@@ -341,50 +289,156 @@ export function attemptInfection(gx, gy, attackerTraits, worldMatrix) {
     const aHealth = attackerTraits & 0xFF;
 
     let dTypeID = (defenderTraits >> 20) & 0xFF; 
-    if (dTypeID === 60 || dTypeID === 61) return; 
+    if (dTypeID === 60 || dTypeID === 61) return; // Keys and daggers don't catch bacteria
 
     let dHealth = defenderTraits & 0xFF;
     let dVir    = (defenderTraits >> 8) & 0xFF;
     let dPeak   = (defenderTraits >>> 31);
 
+    const existingPlant = plants.get(plantKey);
+
     if (defenderTraits === 0) {
-        const existingPlant = plants.get(plantKey);
         if (existingPlant) {
-            dTypeID = 2;   
+            dTypeID = 2; // organic_plant
             dHealth = existingPlant.health; 
         } else {
-            dTypeID = 0;   
+            dTypeID = 0; // Empty dirt tile
             dHealth = 0;   
         }
         dVir = 0;
         dPeak = 0;
     }
 
+    // 🎯 YOUR 20% TRANSFER FORMULA: 30 -> 6 -> 1 -> 0
     const infectionStrength = Math.floor(aVir * 0.20);
+    if (infectionStrength <= 0) return;
     
-    if (aHealth === 0 && dTypeID !== 0) {
+    // Direct health damage to plants
+    if (existingPlant && dTypeID === 2) {
         dHealth = Math.max(0, dHealth - infectionStrength);
+        existingPlant.health = dHealth;
 
-        const targetPlant = plants.get(plantKey);
-        if (targetPlant) {
-            targetPlant.health = dHealth;
+        if (dHealth === 0) {
+            dTypeID = 3; // Wither into rotting mulch (plant_matter)
+            plants.delete(plantKey); 
+            console.log(`💀 Plant at [${ix},${iy}] withered into rotting mulch from bacteria.`);
         }
     }
 
     let newVir = Math.min(255, dVir + infectionStrength);
     const newRange = Math.max(aRange, (defenderTraits >> 16) & 0x0F);
 
-    if (dTypeID === 2 && dHealth === 0) {
-        dTypeID = 3;
-        plants.delete(plantKey); 
-        console.log(`💀 Plant at [${ix},${iy}] withered into rotting mulch.`);
-    }
-
     data[idx] = ((Math.floor(dHealth) & 0xFF) | 
                 ((newVir & 0xFF) << 8) | 
                 ((newRange & 0x0F) << 16) | 
                 ((dTypeID & 0x0F) << 20) | 
                 (dPeak << 31)) >>> 0;
+}
+
+// 🎯 STATISTICAL OFFLINE CATCH-UP (SIMULATES UP TO 1 HOUR OF ROTTING & JUMPING IN 1MS)
+export function catchUpChunkBacteria(cx, cy, deltaSeconds, fertilityMatrix, worldMatrix) {
+    const cellKey = `${cx}_${cy}`;
+    const data = bacteriaCells.get(cellKey);
+    if (!data) return;
+
+    const timeRemaining = Math.min(deltaSeconds, 3600); // Cap simulation to 1 hour
+
+    for (let idx = 0; idx < 10000; idx++) {
+        let traits = data[idx];
+        if (traits === 0) continue;
+
+        let typeID = (traits >> 20) & 0xFF;
+        if (typeID === 60 || typeID === 61 || typeID === 16 || typeID === 17) continue; 
+
+        let h = traits & 0xFF;
+        let v = (traits >> 8) & 0xFF;
+        let r = (traits >> 16) & 0x0F || 2;
+        let hasPeaked = (traits >>> 31);
+
+        const curGX = (cx * 100) + (idx % 100);
+        const curGY = (cy * 100) + Math.floor(idx / 100);
+
+        // 1. Freshness decays to 0
+        if (h > 0) {
+            const hDecay = Math.min(h, Math.floor(timeRemaining));
+            h -= hDecay;
+        }
+
+        // 2. Rotting & Spore Release Phase
+        if (h === 0 && timeRemaining > 20) {
+            // If it hadn't peaked, simulate the peak virulence
+            if (!hasPeaked) {
+                v = Math.min(50, v + 30);
+                hasPeaked = 1;
+            }
+
+            // 🎯 SIMULATE RESIDUAL CASCADING JUMPS TO NEIGHBOR TILES
+            // In real time, a tile emits spores with ~1% chance per second.
+            // Over 1 hour, a rotting item has guaranteed spore emissions.
+            let currentVirCascade = v;
+            let currentX = curGX;
+            let currentY = curGY;
+
+            while (currentVirCascade >= 5) {
+                // Cascade jumps: Generation 1 (dist r), Generation 2 (dist r)
+                const jumpX = currentX + Math.floor((Math.random() * (r * 2 + 1)) - r);
+                const jumpY = currentY + Math.floor((Math.random() * (r * 2 + 1)) - r);
+
+                const plantKey = `${jumpX}_${jumpY}`;
+                const targetPlant = plants.get(plantKey);
+
+                const infStrength = Math.floor(currentVirCascade * 0.20);
+
+                if (targetPlant) {
+                    // Direct damage to the plant
+                    targetPlant.health = Math.max(0, targetPlant.health - infStrength);
+
+                    // Probiotic growth benefit applied over the hours
+                    const boost = 1.0 + (infStrength * 0.025);
+                    const growthGained = (targetPlant.growthRate || 0.4) * 0.1 * boost * (timeRemaining * 0.5);
+                    targetPlant.growth = Math.min(100, targetPlant.growth + growthGained);
+
+                    if (targetPlant.health <= 0) {
+                        plants.delete(plantKey);
+                        seedBacteria(jumpX, jumpY, "plant_matter", 0, 10);
+                    }
+                    break; // Plant absorbed the bacteria hit
+                }
+
+                // If it hit an empty tile, 10% chance of making another cascade leap before dying
+                if (Math.random() < 0.10) {
+                    currentVirCascade = infStrength;
+                    currentX = jumpX;
+                    currentY = jumpY;
+                } else {
+                    break; // 90% of empty tiles naturally neutralize the bacteria
+                }
+            }
+
+            // 3. Dessication into Soil Fertility
+            let bFert = 100;
+            if (typeID === 1) bFert = ITEM_TYPES.BASS?.baseFertility || 100;
+            else if (typeID === 3) bFert = ITEM_TYPES.PLANT_MATTER?.baseFertility || 20;
+            else if (typeID === 4) bFert = ITEM_TYPES.CHICKEN_POOP?.baseFertility || 200;
+            else if (typeID === 5) bFert = ITEM_TYPES.COOKED_BASS?.baseFertility || 80;
+
+            if (fertilityMatrix && fertilityMatrix[cx]?.[cy]) {
+                fertilityMatrix[cx][cy][idx] = Math.min(255, fertilityMatrix[cx][cy][idx] + bFert);
+            }
+
+            v = 0; // Desiccates completely after 1 hour
+        }
+
+        if (h === 0 && v === 0) {
+            data[idx] = 0; 
+        } else {
+            data[idx] = ((h & 0xFF) | 
+                        ((v & 0xFF) << 8) | 
+                        ((r & 0x0F) << 16) | 
+                        ((typeID & 0xFF) << 20) | 
+                        (hasPeaked ? 0x80000000 : 0)) >>> 0;
+        }
+    }
 }
 
 export function seedBacteria(gx, gy, typeName, health, virulence, isRemote = false) {

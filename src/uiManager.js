@@ -140,7 +140,18 @@ export const STORAGE_CONFIGS = {
         limit: 16,
         transferEvent: 'requestChestTransfer',
         updateEvent: 'updateChest'
-    }
+    },
+    // src/uiManager.js (Inside STORAGE_CONFIGS)
+    CORPSE: {
+        title: "💀 FALLEN CORPSE",
+        subtitle: "Loot the belongings of the deceased.",
+        paneTitle: "REMAINS",
+        unloadLabel: "LOOT ALL",
+        filter: () => true,
+        limit: 16,
+        transferEvent: 'requestChestTransfer',
+        updateEvent: 'updateChest'
+    },
 };
 
 export let altarItem = null;
@@ -1770,88 +1781,29 @@ export function initTwoTierMenu(socketInstance) {
     });
 }
 
+// src/uiManager.js
+
 export function setupClaimPeacefullyButton(socketInstance, wellX, wellY, hobbitCount) {
     const claimBtn = document.getElementById('village-claim-btn');
-    const syncBtn = document.getElementById('village-sync-btn');
-
-    // 🎯 Bind the Global Sync Button Click Handler
-    if (syncBtn) {
-        syncBtn.onclick = () => {
-            syncBtn.innerText = "SYNCING...";
-            syncBtn.disabled = true;
-            if (socket) {
-                socket.emit('requestSyncVillage', { wellX, wellY });
-            }
-        };
-    }
     if (!claimBtn) return;
 
+    // Clone button to strip any lingering listeners
     const newClaimBtn = claimBtn.cloneNode(true);
     claimBtn.parentNode.replaceChild(newClaimBtn, claimBtn);
 
-    newClaimBtn.onclick = async () => {
-        if (!window.ethereum) {
-            alert("MetaMask is required to claim a village peacefully!");
-            return;
-        }
+    newClaimBtn.onclick = () => {
+        newClaimBtn.innerText = "CLAIMING...";
+        newClaimBtn.disabled = true;
 
-        try {
-            newClaimBtn.innerText = "SIGNING...";
-            newClaimBtn.disabled = true;
+        console.log(`📡 Requesting gasless claim for Village at [${wellX}, ${wellY}]...`);
 
-            // Dynamically import Ethers v6 directly from the CDN
-            const ethersModule = await import("https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.min.js");
-            const ethers = ethersModule.ethers;
+        // 🎯 1-Click Gasless Request to Server Relayer
+        socketInstance.emit('requestGaslessVillageClaim', {
+            wellX: wellX,
+            wellY: wellY
+        });
 
-            const provider = new ethers.BrowserProvider(window.ethereum);
-            const signer = await provider.getSigner();
-            // uiManager.js - inside setupClaimPeacefullyButton()
-
-            // 🎯 UPDATED: Changed from the old spawner address to your newly deployed SovereignSpawner
-            const spawner = new ethers.Contract("0x2cc5AEd48645f7E8F59c02aD038Acd314adCC2E3", spawnerAbi, signer);
-            
-            const salt = ethers.solidityPackedKeccak256(["uint256", "uint256"], [wellX, wellY]);
-
-            // 🎯 SECURE HOBBIT COUNT QUERY
-            // Query all living hobbits explicitly assigned to this village
-            let activeHobbitCount = 0;
-
-            hobbits.forEach(hob => {
-                if (hob.hp <= 0) return; // Must be alive
-
-                const village = getHobbitVillage(hob);
-                if (village && village.x === wellX && village.y === wellY) {
-                    activeHobbitCount++;
-                }
-            });
-
-            // Enforce a minimum baseline of 3 if the area is empty or uninitialized
-            const finalHobbitCount = Math.max(3, activeHobbitCount);
-
-            console.log(`🛰️ Sending claim for well [${wellX}, ${wellY}] with ${finalHobbitCount} Hobbits...`);
-            
-            // 🎯 PASS DYNAMIC HOBBIT COUNT TO THE METAMASK TRANSACTION
-            const tx = await spawner.claimVillagePeacefully(salt, finalHobbitCount);
-            
-            alert("Transaction sent! Mining... please wait.");
-            const receipt = await tx.wait();
-
-            socketInstance.emit('villageClaimed', {
-                txHash: receipt.hash,
-                wellX: wellX,
-                wellY: wellY,
-                buyerAddress: await signer.getAddress(),
-                hobbitCount: finalHobbitCount // Pass the exact count to the server
-            });
-
-            document.getElementById('village-menu').classList.add('hidden');
-
-        } catch (err) {
-            console.error("Claim transaction failed:", err);
-            alert("Transaction failed or was rejected.");
-            newClaimBtn.innerText = "CLAIM TERRITORY";
-            newClaimBtn.disabled = false;
-        }
+        document.getElementById('village-menu').classList.add('hidden');
     };
 }
 
@@ -2124,6 +2076,11 @@ export function updateHUD() {
         tgvDisplay.innerText = `TGV: ${(gameState.tvl || 0).toFixed(8)} UNI`;
     }
 
+    // src/uiManager.js (inside updateHUD)
+
+    // ==========================================
+    // 🧝 SPECTATE BANNER & DIAGNOSTIC CARD
+    // ==========================================
     const spectateBanner = document.getElementById('spectate-banner');
     const spectateName = document.getElementById('spectate-target-name');
     const spectatePanel = document.getElementById('spectate-info-panel');
@@ -2138,6 +2095,7 @@ export function updateHUD() {
         if (gameState.spectatedHobbitId && window.hobbits) {
             const hob = window.hobbits.find(h => h.id === gameState.spectatedHobbitId);
             if (hob) {
+                // 1. FACTION RESOLUTION LOGIC
                 let factionName = "THE WILDS";
                 let factionColor = "#ffffff";
 
@@ -2153,15 +2111,18 @@ export function updateHUD() {
                     factionColor = getFactionColor(factionName);
                 }
 
+                // Update Spectate Header Banner
                 spectateName.innerText = hob.name;
                 spectateName.style.color = factionColor; 
                 spectateBanner.classList.remove('hidden');
 
+                // 2. DIAGNOSTIC INFO PANEL
                 if (spectatePanel && specName && specRole && specGoal && specState && specEnergy && specItems) {
                     specName.innerText = hob.name;
                     specName.style.color = factionColor; 
-                    specRole.innerText = hob.job ? hob.job.toUpperCase() : "IDLE";
+                    specRole.innerText = hob.villageRole ? `${hob.villageRole} (${hob.job})` : hob.job.toUpperCase();
 
+                    // Inject or update Faction Display element
                     let specFaction = document.getElementById('spec-info-faction');
                     if (!specFaction) {
                         const factionDiv = document.createElement('div');
@@ -2176,33 +2137,25 @@ export function updateHUD() {
                         specFaction.style.color = factionColor; 
                     }
 
+                    // Map all current goal states
                     const goalMap = {
                         'wander': 'WANDERING',
-                        'food': 'LOOKING FOR FOOD',
-                        'harvest_food': 'HARVESTING SUSTENANCE',
+                        'sleep': 'RESTING AT HOME',
                         'harvest': 'HARVESTING CROPS',
-                        'collect_egg': 'COLLECTING NEST EGGS',
-                        'get_food_from_chest': 'RETRIEVING SUPPLIES',
-                        'deposit_pm': 'STORING FODDER',
-                        'sell_food': 'SELLING PRODUCTS',
-                        'sell_pm': 'MARKETING RAW MATERIALS',
-                        'withdraw_pm': 'PREPARING TRADES',
-                        'gohome': 'RETURNING HOME',
-                        'sleep': 'RESTING',
-                        'unlock_door': 'OPENING PREMISES',
-                        'lock_door': 'SECURING PREMISES',
-                        'wait_at_barn': 'GUARDING BARN',
-                        'attack_enemy': '⚔️ ENGAGING FOE',
-                        'march': '🪖 MARCHING THE ROAD'
+                        'deposit_chest': 'STORING HARVEST',
+                        'social_walk': '🚶 RING ROAD STROLL'
                     };
 
-                    specGoal.innerText = goalMap[hob.goal] || hob.goal.toUpperCase().replace('_', ' ');
-                    specState.innerText = hob.state ? hob.state.toUpperCase() : "IDLE";
+                    specGoal.innerText = goalMap[hob.goal] || hob.goal.toUpperCase();
+                    specState.innerText = hob.isFleeing ? "🏃 FLEEING" : (hob.isSearching ? "🔍 SEARCHING" : (hob.combatTargetId ? "⚔️ IN COMBAT" : hob.state.toUpperCase()));
 
+                    // Live Energy & Socialization Telemetry
                     const energyPct = (hob.energy !== undefined ? hob.energy : 100);
-                    specEnergy.innerText = `${Math.floor(energyPct)}%`;
+                    const socialPct = (hob.socialization !== undefined ? hob.socialization : 100);
+                    specEnergy.innerText = `EN: ${Math.floor(energyPct)}% | SOC: ${Math.floor(socialPct)}%`;
 
-                    const nonKeyItems = hob.inventory.filter(item => !item.isKey);
+                    // Render Backpack Items
+                    const nonKeyItems = (hob.inventory || []).filter(item => !item.isKey);
                     if (nonKeyItems.length === 0) {
                         specItems.innerHTML = `<span style="color:#666;">EMPTY</span>`;
                     } else {
@@ -2211,6 +2164,49 @@ export function updateHUD() {
                                 ${getItemIcon(item)} ${item.name} (${item.count})
                             </span>
                         `).join('');
+                    }
+
+                    // 3. RENDER LIVE MEMORY BANK / SECRETS
+                    let specSecretsContainer = document.getElementById('spec-info-secrets');
+                    if (!specSecretsContainer) {
+                        const secretsDiv = document.createElement('div');
+                        secretsDiv.style.borderTop = '2px dashed var(--bg-dark)';
+                        secretsDiv.style.paddingTop = '6px';
+                        secretsDiv.style.marginTop = '6px';
+                        secretsDiv.innerHTML = `
+                            <div style="margin-bottom: 4px; color: var(--banana); font-weight:bold;">MEMORY BANK (SECRETS):</div>
+                            <div id="spec-info-secrets" style="display: flex; flex-direction: column; gap: 4px; max-height: 120px; overflow-y: auto;"></div>
+                        `;
+                        specItems.parentNode.parentNode.appendChild(secretsDiv);
+                        specSecretsContainer = document.getElementById('spec-info-secrets');
+                    }
+
+                    if (specSecretsContainer) {
+                        const now = Date.now();
+                        const activeSecrets = (hob.secrets || []).filter(s => s.expiresAt > now);
+
+                        if (activeSecrets.length === 0) {
+                            specSecretsContainer.innerHTML = `<span style="color:#666; font-size:6px;">NO RECENT SECRETS</span>`;
+                        } else {
+                            specSecretsContainer.innerHTML = activeSecrets.map(sec => {
+                                const ageSec = Math.floor((now - sec.timestamp) / 1000);
+                                let icon = '💬';
+                                let label = sec.type;
+
+                                if (sec.type === 'CRIME_MURDER') { icon = '💀'; label = `Murder by ${sec.targetId}`; }
+                                else if (sec.type === 'CRIME_ATTACK') { icon = '⚔️'; label = `Assault by ${sec.targetId}`; }
+                                else if (sec.type === 'CRIME_THEFT') { icon = '💰'; label = `Theft at [${sec.location.x},${sec.location.y}]`; }
+                                else if (sec.type === 'OFFICER_INTEL') { icon = '🛡️'; label = `Guard Intel (${sec.details?.name || 'Officer'})`; }
+                                else if (sec.type === 'MARKET_DEMAND') { icon = '📈'; label = `Market Demand`; }
+
+                                return `
+                                    <div style="background: rgba(0,0,0,0.5); padding: 3px; border: 1px solid #444; font-size: 6px; line-height: 1.2;">
+                                        <span>${icon} <strong style="color:#fff;">${label}</strong></span><br>
+                                        <span style="color:#aaa;">📍 [${sec.location.x}, ${sec.location.y}] • ${ageSec}s ago</span>
+                                    </div>
+                                `;
+                            }).join('');
+                        }
                     }
 
                     spectatePanel.classList.remove('hidden');

@@ -76,6 +76,15 @@ export function initMultiplayer() {
         socket = socketIoFunc(window.location.origin, {
             transports: ['websocket'] 
         });
+
+        // 🎯 Reset requested chunks on connect/reconnect so local flora is refreshed
+        socket.on('connect', () => {
+            import('./cellDecorator.js').then(m => {
+                if (m.requestedBacteriaChunks) {
+                    m.requestedBacteriaChunks.clear();
+                }
+            });
+        });
         
         socket.on('secret', (data) => {
             myID = data.myId;
@@ -111,18 +120,23 @@ export function initMultiplayer() {
             ui.setupMultiplayerListeners(socket);
         });
 
-        // client/multiplayer.js - Add these inside initMultiplayer() or setupMultiplayerListeners()
+        // 🎯 TARGETED HIT: Targeted hit feedback
+        socket.on('hobbitHit', (data) => {
+            if (!hobbits) return;
 
-    
+            const victim = hobbits.find(h => h.id === data.targetId);
+            if (victim) {
+                victim.hp = data.newHp;
 
-    // 🆕 2. Listen for the WARM loop coordinate and state updates
-    // multiplayer.js - Inside initMultiplayer() / setupMultiplayerListeners()
+                if (victim.courage === 'FIGHT') {
+                    victim.combatTargetId = data.attackerId;
+                }
+            }
+        });
 
-        // multiplayer.js - Inside setupMultiplayerListeners()
-
-    socket.on('hobbits_update', (data) => {
-            if (hobbits) {
-                // Remove local hobbits that are no longer present on the server
+        // 🎯 SAFE HOBBITS UPDATE (Preserves active walking coordinates)
+        socket.on('hobbits_update', (data) => {
+            if (hobbits && data.hobbits) {
                 for (let i = hobbits.length - 1; i >= 0; i--) {
                     const localH = hobbits[i];
                     if (!data.hobbits.some(h => h.id === localH.id)) {
@@ -130,19 +144,13 @@ export function initMultiplayer() {
                     }
                 }
 
-                // Add or update server hobbits dynamically
                 data.hobbits.forEach(serverHobbit => {
                     const localHobbit = hobbits.find(h => h.id === serverHobbit.id);
                     if (localHobbit) {
-                        // Smoothly update positions and activities
-                        localHobbit.x = serverHobbit.x;
-                        localHobbit.y = serverHobbit.y;
+                        localHobbit.hp = serverHobbit.hp;
                         localHobbit.job = serverHobbit.job;
                         localHobbit.energy = serverHobbit.energy;
-                        localHobbit.state = serverHobbit.state;
-                        localHobbit.goal = serverHobbit.goal;
                     } else {
-                        // Spawn new server-recognized hobbits with matching server IDs
                         spawnHobbit(
                             Math.floor(serverHobbit.x / 16), 
                             Math.floor(serverHobbit.y / 16), 
@@ -151,32 +159,30 @@ export function initMultiplayer() {
                             serverHobbit.homeY, 
                             serverHobbit.job,
                             serverHobbit.id,
-                            serverHobbit.name // 🎯 PASS SERVER-GENERATED NAME
+                            serverHobbit.name
                         );
                     }
                 });
             }
         });
 
-    // src/multiplayer.js
-socket.on('hobbitSpawned', (data) => {
-    import('./hobbitCore.js').then(m => {
-        // Prevent duplicate local instantiations if the hobbit is already tracked
-        const exists = m.hobbits.some(h => h.id === data.id);
-        if (!exists) {
-            m.spawnHobbit(
-                Math.floor(data.x / 16), 
-                Math.floor(data.y / 16), 
-                null,
-                data.homeX, 
-                data.homeY, 
-                data.job,
-                data.id,
-                data.name
-            );
-        }
-    });
-});
+        socket.on('hobbitSpawned', (data) => {
+            import('./hobbitCore.js').then(m => {
+                const exists = m.hobbits.some(h => h.id === data.id);
+                if (!exists) {
+                    m.spawnHobbit(
+                        Math.floor(data.x / 16), 
+                        Math.floor(data.y / 16), 
+                        data.houseId,
+                        data.homeX, 
+                        data.homeY, 
+                        data.job,
+                        data.id,
+                        data.name
+                    );
+                }
+            });
+        });
 
         socket.on('forcedMovement', (data) => {
             const p = (data.id === myID) ? hero : remotePlayers.get(data.id);
@@ -190,7 +196,28 @@ socket.on('hobbitSpawned', (data) => {
             }
         });
 
+        socket.on('chunkBacteriaData', (data) => {
+            const { cx, cy, buffer } = data;
+            const cellKey = `${cx}_${cy}`;
 
+            const incomingBacteria = new Uint32Array(buffer, 0, 10000);
+            const incomingFertility = new Uint8Array(buffer, 40000, 10000);
+
+            import('./bacteria.js').then(m => {
+                let cell = m.bacteriaCells.get(cellKey);
+                if (!cell) {
+                    cell = new Uint32Array(10000);
+                    m.bacteriaCells.set(cellKey, cell);
+                }
+                cell.set(incomingBacteria);
+            });
+
+            import('./game.js').then(g => {
+                if (g.fertilityMatrix && g.fertilityMatrix[cx] && g.fertilityMatrix[cx][cy]) {
+                    g.fertilityMatrix[cx][cy].set(incomingFertility);
+                }
+            });
+        });
 
         socket.on('playerHit', (data) => {
             const victim = (data.victimId === myID) ? hero : remotePlayers.get(data.victimId);
@@ -228,8 +255,6 @@ socket.on('hobbitSpawned', (data) => {
 
         socket.on('receiveAllyBuff', (data) => {
             if (data.buffType === 'fleetingBulwark') {
-                console.log("🛡️ Received Fleeting Bulwark from an ally!");
-                
                 hero.bulwarkTimer = data.duration;
                 hero.bulwarkArmorBonus = data.armor;
                 hero.bulwarkMrBonus = data.mr;
@@ -301,6 +326,35 @@ socket.on('hobbitSpawned', (data) => {
                         plantsMod.createPlant(tx, ty, null, p.growth, p.type, 0, true);
                     }
                 });
+            }).catch(err => {
+                console.error("❌ Error in chunkPlantsData:", err);
+            });
+        });
+
+        // 🎯 Ingest binary plants with robust buffer fallback and error handling
+        // 🎯 Ingest binary plants with robust buffer fallback and error handling
+        socket.on('chunkPlantsBinary', (data) => {
+            const { cx, cy, buffer } = data;
+            Promise.all([
+                import('./plants.js'),
+                import('./game.js')
+            ]).then(([plantsMod, gameMod]) => {
+                // Use activeWorldMatrix first, fallback to gameMod
+                const matrix = (activeWorldMatrix && activeWorldMatrix.length > 0) 
+                    ? activeWorldMatrix 
+                    : (gameMod.worldMatrix && gameMod.worldMatrix.length > 0 ? gameMod.worldMatrix : null);
+
+                const room = (gameMod.roomMatrix && gameMod.roomMatrix.length > 0) ? gameMod.roomMatrix : null;
+
+                plantsMod.loadBinaryPlantsForChunk(
+                    cx, 
+                    cy, 
+                    buffer, 
+                    matrix, 
+                    room
+                );
+            }).catch(err => {
+                console.error("❌ Error in chunkPlantsBinary:", err);
             });
         });
 
@@ -342,11 +396,25 @@ socket.on('hobbitSpawned', (data) => {
             serverProjectiles = projectiles || []; 
         });
 
+        socket.on('chickenTelemetryReport', (data) => {
+            console.group("🌾 [CHICKEN CATCH-UP & ACTIVITY TELEMETRY]");
+            console.log("Summary of chickens currently active on the map:");
+            console.table(data.summaries);
+            console.groupEnd();
+        });
+
+        // src/multiplayer.js (inside initMultiplayer)
+
+        socket.on('timeSync', (data) => {
+            import('./clock.js').then(clock => {
+                Object.assign(clock.worldTime, data);
+            });
+        });
+
         socket.on('animals', (data) => {
             const { animals: serverAnimals } = data;
 
             if (serverAnimals) {
-                // Ensure the module is cached before resolving references
                 const updatePass = (m) => {
                     serverAnimals.forEach(sa => {
                         const localA = m.animals.find(la => la.id === sa.id);
@@ -393,18 +461,17 @@ socket.on('hobbitSpawned', (data) => {
 
         socket.on('plantCreated', (data) => {
             import('./plants.js').then(m => {
-                m.createPlant(data.gx, data.gy, fertilityMatrix, data.growth, data.type);
+                m.createPlant(data.gx, data.gy, null, data.growth, data.type);
             });
         });
 
         socket.on('plantRemoved', (data) => {
             import('./plants.js').then(m => {
-                m.plants.delete(`${data.gx}_${data.gy}`);
+                m.deletePlant(data.gx, data.gy);
             });
         });
 
         socket.on('remoteAbility', (data) => {}); 
-
         socket.on('playerLeft', (id) => {
             remotePlayers.delete(id);
         });
@@ -429,7 +496,7 @@ export function syncInventoryWithServer() {
  * Runs synchronously without Promise thrashing to eliminate stutters
  */
 export function interpolateEntities(delta) {
-    // 1. Interpolate Remote Players (HOT - 30 Hz updates)
+    // 1. Interpolate Remote Players
     remotePlayers.forEach(p => {
         if (p.targetX !== undefined && p.targetY !== undefined) {
             const dx = p.targetX - p.x;
@@ -449,24 +516,39 @@ export function interpolateEntities(delta) {
         }
     });
 
-    // 2. Interpolate Pasture Animals (WARM - 5 Hz updates)
-    // Synchronous array iteration via our cached module reference
+    // src/multiplayer.js (inside interpolateEntities)
+
+    // 2. Interpolate Pasture Animals smoothly from authoritative server stream
     if (animalsModule && animalsModule.animals) {
         animalsModule.animals.forEach(animal => {
-            if (saIsTargetValid(animal)) {
+            if (animal.targetX !== undefined && animal.targetY !== undefined) {
                 const dx = animal.targetX - animal.x;
                 const dy = animal.targetY - animal.y;
                 const dist = Math.hypot(dx, dy);
 
-                if (dist > 120) {
+                if (Math.abs(dx) > 0.5) {
+                    animal.dir = dx > 0 ? 'East' : 'West';
+                }
+
+                // Snap if far away (e.g., initial spawn)
+                if (dist > 48) {
                     animal.x = animal.targetX;
                     animal.y = animal.targetY;
-                } else if (dist > 0.1) {
-                    animal.x += dx * 8 * delta;
-                    animal.y += dy * 8 * delta;
+                    animal.state = 'idle';
+                } 
+                // Smooth step interpolation along the 16px tile path
+                else if (dist > 1.2) {
+                    const step = Math.min(dist, (animal.speed || 20) * delta);
+                    animal.x += (dx / dist) * step;
+                    animal.y += (dy / dist) * step;
+                    animal.state = 'walking';
+                    animal.animTimer = (animal.animTimer || 0) + delta * 10;
+                    animal.frame = Math.floor(animal.animTimer) % 4;
                 } else {
                     animal.x = animal.targetX;
                     animal.y = animal.targetY;
+                    animal.state = 'idle';
+                    animal.frame = 0;
                 }
             }
         });

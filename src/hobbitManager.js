@@ -1,1075 +1,856 @@
 // src/hobbitManager.js
+import { getTileData } from './physics.js';
+import { getTilePath, isTilePassable } from './hobbitNavigation.js';
+import { worldTime } from './clock.js';
+import { socket, chestCache, remotePlayers, myID, doorStates } from './multiplayer.js';
+import { plants, deletePlant } from './plants.js';
+import { createItem, ITEM_TYPES } from './items.js';
+import { hobbits, giveItemToHobbit, getHobbitVillage, YIELD_MAP } from './hobbitCore.js';
+import { hero } from './entities.js';
+import { trySocialGossip, learnSecret, SECRET_TYPES } from './secrets.js';
+import { spawnCorpse } from './corpses.js';
+import { staticObjects } from './staticObjects.js';
 
-import { viewport } from './viewport.js';
-import { moveEntity, getTileData } from './physics.js'; 
-import { hero, getFocusCoordinates } from './entities.js'; 
-import { worldTime } from './clock.js'; 
-import { plants } from './plants.js';
-import { ITEM_TYPES, createItem } from './items.js';
-import { getBacteriaData } from './bacteria.js';
-import { plannedWells } from './cellDecorator.js'; 
-import { 
-    socket, 
-    doorStates, 
-    storeDbCache, 
-    hayStorageCache, 
-    chestCache, 
-    myID, 
-    playerWallet, 
-    remotePlayers 
-} from './multiplayer.js';
-
-import { 
-    hobbits, 
-    getHobbitVillage, 
-    spawnHobbit, 
-    YIELD_MAP,
-    HOBBIT_FOOD_VALUES 
-} from './hobbitCore.js';
-
-import { 
-    isWalkableForHobbit, 
-    assignRandomWalk, 
-    findPathToCoords, 
-    findNextRoadStep, 
-    findOffScreenPath 
-} from './hobbitNavigation.js';
-
-import { 
-    eatFoodIfAvailable, 
-    findNearestStoreCounter, 
-    findHomeHayStorage, 
-    findNearestMaturePlant, 
-    findNearestEgg, 
-    giveItemToHobbit, 
-    tryHobbitTrade, 
-    findMilitaryTarget, 
-    estimateCatchUpStep,
-    runForagerBehavior,
-    runTraderBehavior,
-    runUsherBehavior
-} from './hobbitBehavior.js';
-
-if (typeof window !== 'undefined') {
-    if (window.logStep) logStep("hobbitManager.js loaded");
-}
-
-export let minionSpawnTimer = 10.0;
 export const macroTravelers = [];
 
-/**
- * Handles the instantiation of a complete squad with a Sergeant and followers.
- */
-export function spawnSquad(gx, gy, homeX, homeY) {
-    const squadId = 'squad_' + Math.random().toString(36).substr(2, 9);
-    
-    // 1. Spawn 1 Sergeant (Leader)
-    spawnHobbit(gx, gy, null, homeX, homeY, 'Military');
-    const sergeant = hobbits[hobbits.length - 1];
-    if (sergeant) {
-        sergeant.squadId = squadId;
-        sergeant.squadRole = 'Sergeant';
-        sergeant.name = "[Sergeant] " + sergeant.name;
-        sergeant.hp = 60; 
-        sergeant.maxHp = 60;
-        sergeant.speed = 38; 
+export function updateHobbits(modifier, worldMatrix, roomMatrix) {
+    // 1. Clean up deceased hobbits and spawn lootable corpses
+    for (let i = hobbits.length - 1; i >= 0; i--) {
+        if (hobbits[i].hp <= 0) {
+            const dead = hobbits[i];
+            spawnCorpse(dead.x, dead.y, dead.name, dead.inventory, false);
+            hobbits.splice(i, 1);
+        }
     }
 
-    // 2. Spawn 4 Military Followers with slight offsets
-    const offsets = [
-        { dx: -1, dy: 1 },
-        { dx: 1, dy: 1 },
-        { dx: -2, dy: 2 },
-        { dx: 2, dy: 2 }
-    ];
+    // 2. Tick individual brains and social interactions
+    for (let i = 0; i < hobbits.length; i++) {
+        tickHobbit(hobbits[i], modifier, worldMatrix, roomMatrix);
 
-    offsets.forEach(offset => {
-        spawnHobbit(gx + offset.dx, gy + offset.dy, null, homeX, homeY, 'Military');
-        const follower = hobbits[hobbits.length - 1];
-        if (follower) {
-            follower.squadId = squadId;
-            follower.squadRole = 'Military';
+        // Social gossip & Secret Highway interaction check between neighbors
+        for (let j = i + 1; j < hobbits.length; j++) {
+            trySocialGossip(hobbits[i], hobbits[j]);
         }
-    });
+    }
 }
 
-/**
- * Orchestrates the active hobbit entity lifecycle loops across Tiers 1, 2, and 3.
- */
-export function updateHobbits(modifier, worldMatrix, roomMatrix) {
-    const focus = getFocusCoordinates(); 
-    const heroCX = Math.floor(focus.x / 1600);
-    const heroCY = Math.floor(focus.y / 1600);
+function tickHobbit(hobbit, delta, worldMatrix, roomMatrix) {
+    // Metabolic & Social Drain
+    hobbit.energy = Math.max(0, (hobbit.energy || 100) - (delta * 0.15));
+
+    // Socialization decays slowly while working in isolation
+    if (hobbit.goal !== 'social_walk') {
+        hobbit.socialization = Math.max(0, (hobbit.socialization || 100) - (delta * 0.15));
+    }
+
+    if (hobbit.thoughtBubble) {
+        hobbit.thoughtBubble.timer -= delta;
+        if (hobbit.thoughtBubble.timer <= 0) hobbit.thoughtBubble = null;
+    }
+
+    // ========================================================================
+    // 🏃 60 FPS VISUAL INTERPOLATION & STEP ENGINE
+    // ========================================================================
+    if (hobbit.path && hobbit.path.length > 0) {
+        const nextNode = hobbit.path[0];
+        const nextWorldX = nextNode.x * 16;
+        const nextWorldY = nextNode.y * 16;
+
+        const dx = nextWorldX - hobbit.x;
+        const dy = nextWorldY - hobbit.y;
+        const dist = Math.hypot(dx, dy);
+
+        if (dist > 1.5) {
+            const speedMultiplier = (hobbit.combatTargetId || hobbit.isSearching || hobbit.isFleeing) ? 1.35 : 1.0;
+            const step = Math.min(dist, hobbit.speed * speedMultiplier * delta);
+            hobbit.x += (dx / dist) * step;
+            hobbit.y += (dy / dist) * step;
+            hobbit.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'East' : 'West') : (dy > 0 ? 'South' : 'North');
+            hobbit.state = 'walking';
+
+            hobbit.animTimer = (hobbit.animTimer || 0) + delta * 10;
+            hobbit.frame = Math.floor(hobbit.animTimer) % 4;
+
+            // 🚪 1. Auto-open doors underfoot or directly ahead in path
+            const checkTX = Math.floor((hobbit.x + 8) / 16);
+            const checkTY = Math.floor((hobbit.y + 8) / 16);
+
+            const currentTile = getTileData(checkTX * 16 + 8, checkTY * 16 + 8, worldMatrix, roomMatrix);
+            if (currentTile && [49, 12].includes(currentTile.tileID)) {
+                setDoorOpen(checkTX, checkTY, true, worldMatrix, roomMatrix);
+                hobbit.recentDoor = { x: checkTX, y: checkTY };
+            }
+
+            if (nextNode) {
+                const nextTile = getTileData(nextNode.x * 16 + 8, nextNode.y * 16 + 8, worldMatrix, roomMatrix);
+                if (nextTile && [49, 12].includes(nextTile.tileID)) {
+                    setDoorOpen(nextNode.x, nextNode.y, true, worldMatrix, roomMatrix);
+                    hobbit.recentDoor = { x: nextNode.x, y: nextNode.y };
+                }
+            }
+
+            // 🚪 2. Auto-close doors behind the hobbit once stepped past (> 22px away)
+            if (hobbit.recentDoor) {
+                const doorCenterDist = Math.hypot(
+                    (hobbit.x + 8) - (hobbit.recentDoor.x * 16 + 8), 
+                    (hobbit.y + 8) - (hobbit.recentDoor.y * 16 + 8)
+                );
+                if (doorCenterDist > 22) {
+                    setDoorOpen(hobbit.recentDoor.x, hobbit.recentDoor.y, false, worldMatrix, roomMatrix);
+                    hobbit.recentDoor = null;
+                }
+            }
+        } else {
+            hobbit.x = nextWorldX;
+            hobbit.y = nextWorldY;
+            hobbit.path.shift();
+
+            // Breadcrumbs to prevent 2x2 loop oscillations
+            if (!hobbit.recentTiles) hobbit.recentTiles = [];
+            hobbit.recentTiles.push(`${nextNode.x}_${nextNode.y}`);
+            if (hobbit.recentTiles.length > 6) hobbit.recentTiles.shift();
+        }
+    } else if (hobbit.state !== 'attacking') {
+        hobbit.state = 'idle';
+        hobbit.frame = 0;
+    }
+
+    const currentTX = Math.floor((hobbit.x + 8) / 16);
+    const currentTY = Math.floor((hobbit.y + 8) / 16);
+    const currentRoomRaw = getTileData(hobbit.x + 8, hobbit.y + 8, worldMatrix, roomMatrix)?.roomID || 0;
+    const currentRoom = (currentRoomRaw === 9999) ? 0 : currentRoomRaw;
     const now = Date.now();
 
-    // ==========================================
-    // 🌍 MACRO CATCH-UP ENGINE (Unpacks Projections)
-    // ==========================================
-    for (let i = macroTravelers.length - 1; i >= 0; i--) {
-        const mt = macroTravelers[i];
-        
-        mt.progressTicks += modifier;
-        const ratio = Math.min(1.0, mt.progressTicks / mt.totalTicksNeeded);
-        
-        mt.currentTileX = mt.homeX + (mt.targetX - mt.homeX) * ratio;
-        mt.currentTileY = mt.homeY + (mt.targetY - mt.homeY) * ratio;
-
-        const currentCX = Math.floor(mt.currentTileX / 100);
-        const currentCY = Math.floor(mt.currentTileY / 100);
-        const enteredActiveArea = Math.abs(currentCX - heroCX) <= 1 && Math.abs(currentCY - heroCY) <= 1;
-
-        if (enteredActiveArea) {
-            spawnSquad(
-                Math.floor(mt.currentTileX), 
-                Math.floor(mt.currentTileY), 
-                mt.homeX, 
-                mt.homeY
+    // ========================================================================
+    // 📢 RALLY SHOUT PULSE (Spread threat to allies while in alert/combat)
+    // ========================================================================
+    if (hobbit.combatTargetId || hobbit.isSearching || hobbit.isFleeing) {
+        hobbit.rallyPulseTimer = (hobbit.rallyPulseTimer || 0) - delta;
+        if (hobbit.rallyPulseTimer <= 0) {
+            hobbit.rallyPulseTimer = 1.2;
+            const activeSecret = hobbit.secrets?.find(s => 
+                (s.type === SECRET_TYPES.MURDER || s.type === SECRET_TYPES.ATTACK) && s.expiresAt > now
             );
-            macroTravelers.splice(i, 1);
-        } else if (ratio >= 1.0) {
-            macroTravelers.splice(i, 1);
-        }
-    }
-
-    // Clean up dead entities
-    for (let i = hobbits.length - 1; i >= 0; i--) {
-        const hob = hobbits[i];
-        if (hob.hp <= 0) {
-            hob.inventory.forEach(item => {
-                import('./bacteria.js').then(m => {
-                    const dropHealth = item.isKey ? item.houseId : item.health;
-                    m.seedBacteria(Math.floor(hob.x / 16), Math.floor(hob.y / 16), item.seedType, dropHealth, item.virulence);
-                });
-            });
-
-            import('./bacteria.js').then(m => m.seedBacteria(
-                Math.floor(hob.x / 16), 
-                Math.floor(hob.y / 16), 
-                "raw_chicken", 50, 0
-            ));
-
-            if (hob.squadRole === 'Sergeant' && hob.squadId) {
-                console.log(`💀 Sergeant ${hob.name} fell in battle! Disbanding followers.`);
-                hobbits.forEach(follower => {
-                    if (follower.squadId === hob.squadId) {
-                        delete follower.squadId;
-                        delete follower.squadRole;
-                    }
-                });
-            }
-
-            hobbits.splice(i, 1);
-            continue;
-        }
-    }
-
-    // ==========================================
-    // ⚙️ OUT-OF-BOUNDS PACKING PRE-PASS
-    // ==========================================
-    const squadsToPack = new Set();
-    const soloToPack = new Set();
-
-    for (let i = 0; i < hobbits.length; i++) {
-        const hob = hobbits[i];
-        const hobbitCX = Math.floor(hob.x / 1600);
-        const hobbitCY = Math.floor(hob.y / 1600);
-        const isInsideActiveChunks = Math.abs(hobbitCX - heroCX) <= 1 && Math.abs(hobbitCY - heroCY) <= 1;
-
-        if (!isInsideActiveChunks) {
-            if (hob.job === 'Military') {
-                if (hob.squadId) {
-                    if (hob.squadRole === 'Sergeant') {
-                        squadsToPack.add(hob.squadId);
-                    }
-                } else {
-                    soloToPack.add(hob.id);
-                }
-            } else {
-                hob.toRemove = true;
-            }
-        }
-    }
-
-    squadsToPack.forEach(squadId => {
-        const representative = hobbits.find(h => h.squadId === squadId && h.squadRole === 'Sergeant') || hobbits.find(h => h.squadId === squadId);
-        if (representative) {
-            const destinationWell = plannedWells.find(well => well.x !== representative.homeX || well.y !== representative.homeY);
-            if (destinationWell) {
-                const currentTX = Math.floor(representative.x / 16);
-                const currentTY = Math.floor(representative.y / 16);
-
-                const totalDist = Math.hypot(destinationWell.x - representative.homeX, destinationWell.y - representative.homeY);
-                const traveledDist = Math.hypot(currentTX - representative.homeX, currentTY - representative.homeY);
-                
-                const ratio = totalDist > 0 ? Math.min(1.0, traveledDist / totalDist) : 0;
-                const totalTicksNeeded = totalDist / 2;
-                const progressTicks = ratio * totalTicksNeeded;
-
-                macroTravelers.push({
-                    id: squadId,
-                    isSquad: true,
-                    homeX: representative.homeX || currentTX,
-                    homeY: representative.homeY || currentTY,
-                    targetX: destinationWell.x,
-                    targetY: destinationWell.y,
-                    currentTileX: currentTX,
-                    currentTileY: currentTY,
-                    progressTicks: progressTicks,
-                    totalTicksNeeded: totalTicksNeeded > 0 ? totalTicksNeeded : 1
-                });
-            }
-        }
-        hobbits.forEach(h => {
-            if (h.squadId === squadId) {
-                h.toRemove = true;
-            }
-        });
-    });
-
-    soloToPack.forEach(id => {
-        const hobbit = hobbits.find(h => h.id === id);
-        if (hobbit) {
-            const destinationWell = plannedWells.find(well => well.x !== hobbit.homeX || well.y !== hobbit.homeY);
-            if (destinationWell) {
-                const currentTX = Math.floor(hobbit.x / 16);
-                const currentTY = Math.floor(hobbit.y / 16);
-
-                const totalDist = Math.hypot(destinationWell.x - hobbit.homeX, destinationWell.y - hobbit.homeY);
-                const traveledDist = Math.hypot(currentTX - hobbit.homeX, currentTY - hobbit.homeY);
-                
-                const ratio = totalDist > 0 ? Math.min(1.0, traveledDist / totalDist) : 0;
-                const totalTicksNeeded = totalDist / 2;
-                const progressTicks = ratio * totalTicksNeeded;
-
-                macroTravelers.push({
-                    id: 'squad_' + Math.random().toString(36).substr(2, 9),
-                    isSquad: false,
-                    homeX: hobbit.homeX || currentTX,
-                    homeY: hobbit.homeY || currentTY,
-                    targetX: destinationWell.x,
-                    targetY: destinationWell.y,
-                    currentTileX: currentTX,
-                    currentTileY: currentTY,
-                    progressTicks: progressTicks,
-                    totalTicksNeeded: totalTicksNeeded > 0 ? totalTicksNeeded : 1
-                });
-            }
-            hobbit.toRemove = true;
-        }
-    });
-
-    for (let i = hobbits.length - 1; i >= 0; i--) {
-        if (hobbits[i].toRemove) {
-            hobbits.splice(i, 1);
-        }
-    }
-
-    // ==========================================
-    // ⚙️ MAIN AI BEHAVIOR LOGIC
-    // ==========================================
-    hobbits.forEach(hobbit => {
-        if (!hobbit.lastUpdated) hobbit.lastUpdated = now;
-        let deltaSeconds = (now - hobbit.lastUpdated) / 1000;
-        if (deltaSeconds < 0) deltaSeconds = 0;
-        hobbit.lastUpdated = now;
-
-        // 🎯 INSERT THE UNSTUCK ROUTINE HERE:
-        if (hobbit.state === 'walking') {
-            if (hobbit.lastX === hobbit.x && hobbit.lastY === hobbit.y) {
-                hobbit.stuckTicks = (hobbit.stuckTicks || 0) + 1;
-                
-                if (hobbit.stuckTicks > 15) { // Stuck for 15 frames
-                    console.log(`🧝 Unstuck Routine: Hobbit ${hobbit.name} is stuck at [${Math.floor(hobbit.x/16)}, ${Math.floor(hobbit.y/16)}]. Clearing path...`);
-                    
-                    // Push them slightly in the opposite direction of their movement
-                    let oppX = 0, oppY = 0;
-                    if (hobbit.dir.includes('North')) oppY = 1;
-                    if (hobbit.dir.includes('South')) oppY = -1;
-                    if (hobbit.dir.includes('West')) oppX = 1;
-                    if (hobbit.dir.includes('East')) oppX = -1;
-                    
-                    // Uses physics engine to push them slightly out of the collider
-                    moveEntity(hobbit, oppX * 8, oppY * 8, worldMatrix, roomMatrix);
-                    
-                    hobbit.path = []; // Force fresh pathfinding recalculation
-                    hobbit.state = 'idle';
-                    hobbit.pathTimer = 1.0; // Enforce 1 second cooldown before retrying
-                    hobbit.stuckTicks = 0;
-                }
-            } else {
-                hobbit.stuckTicks = 0;
-            }
-        }
-        // Save current positions for next frame evaluation
-        hobbit.lastX = hobbit.x;
-        hobbit.lastY = hobbit.y;
-
-        // ==========================================
-        // ❄️ TIER 3: OFFLINE CATCH-UP (Backlogged Fast Forward)
-        // ==========================================
-        if (deltaSeconds > 2.0) {
-            let timeRemaining = Math.min(deltaSeconds, 86400); 
-            let simX = Math.floor(hobbit.x / 16);
-            let simY = Math.floor(hobbit.y / 16);
-
-            while (timeRemaining > 0) {
-                const stepTime = Math.min(30.0, timeRemaining);
-                timeRemaining -= stepTime;
-                hobbit.energy = Math.max(0, hobbit.energy - (stepTime * 0.5));
-
-                if (hobbit.energy < 30) {
-                    eatFoodIfAvailable(hobbit);
-                }
-
-                const hx = hero.x + 8;
-                const hy = hero.y + 8; 
-                const distToHero = Math.hypot(hx - (simX * 16 + 8), hy - (simY * 16 + 8));
-
-                if (distToHero < 80 && hero.hp > 0) {
-                    if (distToHero <= 24) {
-                        hero.hp = Math.max(0, hero.hp - hobbit.ad);
-                        if (socket && socket.connected) {
-                            socket.emit('updateStats', { hp: hero.hp });
-                        }
-                    } else {
-                        const hTX = Math.floor(hx / 16);
-                        const hTY = Math.floor(hy / 16); 
-                        const next = estimateCatchUpStep(simX, simY, hTX, hTY);
-                        simX = next.x; simY = next.y;
-                    }
-                } else if (hobbit.job === 'Trader' || hobbit.job === 'Forager' || hobbit.job === 'Usher') {
-                    // Simple nighttime wait positions during catch-up cycles
-                    if (worldTime.isNight) {
-                        if (simX !== hobbit.homeX || simY !== hobbit.homeY) {
-                            const next = estimateCatchUpStep(simX, simY, hobbit.homeX, hobbit.homeY);
-                            simX = next.x; simY = next.y;
+            
+            if (activeSecret) {
+                hobbits.forEach(ally => {
+                    if (ally.id !== hobbit.id && Math.hypot(ally.x - hobbit.x, ally.y - hobbit.y) <= 64) {
+                        if (learnSecret(ally, activeSecret)) {
+                            if (ally.courage === 'FIGHT' && ally.villageRole === 'CITIZEN') {
+                                ally.thoughtBubble = { icon: '⚔️', timer: 2.5 };
+                            } else if (ally.villageRole === 'GUARD' || ally.villageRole === 'QUARTERMASTER') {
+                                ally.thoughtBubble = { icon: '🚨', timer: 2.5 };
+                            } else {
+                                ally.isFleeing = true;
+                                ally.thoughtBubble = { icon: '😱', timer: 2.5 };
+                            }
                         }
                     }
-                } else {
-                    const dirs = [[0,-1], [0,1], [-1,0], [1,0]];
-                    const valid = dirs.filter(d => isWalkableForHobbit(simX + d[0], simY + d[1], worldMatrix, roomMatrix, hobbit));
-                    if (valid.length > 0) {
-                        const pick = valid[Math.floor(Math.random() * valid.length)];
-                        simX += pick[0]; simY += pick[1];
-                    }
-                }
+                });
             }
+        }
+    }
 
-            hobbit.x = simX * 16;
-            hobbit.y = simY * 16;
-            hobbit.path = [];
+    // ========================================================================
+    // ⚔️ 1. ACTIVE COMBAT PURSUIT
+    // ========================================================================
+    if (hobbit.combatTargetId) {
+        const target = (hobbit.combatTargetId === myID || hobbit.combatTargetId === 'Hero' || (window.playerWallet && hobbit.combatTargetId === window.playerWallet))
+            ? hero 
+            : remotePlayers?.get(hobbit.combatTargetId);
+
+        if (!target || target.hp <= 0) {
+            hobbit.combatTargetId = null;
             hobbit.state = 'idle';
             return;
         }
 
-        const pad = 32; 
-        const screenX = hobbit.x + viewport.offset[0];
-        const screenY = hobbit.y + viewport.offset[1];
-        const inViewport = (
-            screenX >= -pad && 
-            screenX <= viewport.screen[0] + pad && 
-            screenY >= -pad && 
-            screenY <= viewport.screen[1] + pad
-        );
+        const targetTile = getTileData(target.x + 8, target.y + 15, worldMatrix, roomMatrix);
+        const targetRoom = (targetTile?.roomID === 9999) ? 0 : (targetTile?.roomID || 0);
+        const distToTarget = Math.hypot((target.x + 8) - (hobbit.x + 8), (target.y + 8) - (hobbit.y + 8));
 
-        // ==========================================
-        // ❄️ TIER 2: COLD HEARTBEAT (Off-Screen Active Update)
-        // ==========================================
-        if (!inViewport) {
-            hobbit.slowTickTimer -= modifier;
-            if (hobbit.slowTickTimer <= 0) {
-                hobbit.slowTickTimer = 1.5; 
-                hobbit.energy = Math.max(0, hobbit.energy - 0.75);
+        if (distToTarget <= 250) {
+            hobbit.lastKnownTargetPos = { x: Math.floor((target.x + 8) / 16), y: Math.floor((target.y + 8) / 16) };
+        }
 
-                const currTX = Math.floor((hobbit.x + 8) / 16);
-                const currTY = Math.floor((hobbit.y + 15) / 16); 
-
-                let target = null;
-                let targetDist = Infinity;
-                const px = (hero.x + 8) - (hobbit.x + 8);
-                const py = (hero.y + 8) - (hobbit.y + 8);
-                const distToHero = Math.hypot(px, py);
-
-                if (distToHero < 80 && hero.hp > 0) {
-                    target = hero;
-                    targetDist = distToHero;
-                }
-
-                if (hobbit.energy < 30) {
-                    const ate = eatFoodIfAvailable(hobbit);
-                    if (!ate && hobbit.houseId && hobbit.chestX !== null) {
-                        const chestId = `chest_${hobbit.chestX}_${hobbit.chestY}`;
-                        const chestItems = chestCache.get(chestId) || [];
-                        const foodIdx = chestItems.findIndex(i => HOBBIT_FOOD_VALUES[i.seedType] !== undefined);
-                        
-                        if (foodIdx !== -1) {
-                            const foodItem = chestItems[foodIdx];
-                            foodItem.count--;
-                            if (foodItem.count <= 0) {
-                                chestItems.splice(foodIdx, 1);
-                            }
-                            if (socket && socket.connected) {
-                                socket.emit('updateChest', { chestId, items: chestItems });
-                            }
-                            giveItemToHobbit(hobbit, foodItem);
-                            eatFoodIfAvailable(hobbit);
-                        }
-                    }
-                }
-
-                if (!hobbit.path || hobbit.path.length === 0) {
-                    // TETHER CHECK FOR SERGEANT OFFSCREEN
-                    let isWaitingOffscreen = false;
-                    if (hobbit.job === 'Military' && hobbit.squadRole === 'Sergeant' && hobbit.squadId) {
-                        const followers = hobbits.filter(h => h.squadId === hobbit.squadId && h.squadRole === 'Military');
-                        const tooFar = followers.some(f => Math.hypot(f.x - hobbit.x, f.y - hobbit.y) > 48);
-                        if (tooFar) {
-                            hobbit.state = 'idle';
-                            hobbit.path = [];
-                            isWaitingOffscreen = true;
-                        }
-                    }
-
-                    if (isWaitingOffscreen) {
-                        // Standing idle; skip path recalculations
-                    }
-                    else if (hobbit.job === 'Forager') {
-                        runForagerBehavior(hobbit, 1.5, worldMatrix, roomMatrix);
-                    }
-                    else if (hobbit.job === 'Trader') {
-                        runTraderBehavior(hobbit, 1.5, worldMatrix, roomMatrix);
-                    }
-                    else if (hobbit.job === 'Usher') {
-                        runUsherBehavior(hobbit, 1.5, worldMatrix, roomMatrix);
-                    }
-                    else if (hobbit.job === 'Military' && hobbit.squadId && hobbit.squadRole === 'Military') {
-                        const sergeant = hobbits.find(h => h.squadId === hobbit.squadId && h.squadRole === 'Sergeant');
-                        if (sergeant) {
-                            const sTX = Math.floor((sergeant.x + 8) / 16);
-                            const sTY = Math.floor((sergeant.y + 15) / 16);
-                            const path = findOffScreenPath(currTX, currTY, sTX, sTY);
-                            if (path) {
-                                hobbit.path = path;
-                                hobbit.goal = 'march';
-                            }
-                        } else {
-                            delete hobbit.squadId;
-                            delete hobbit.squadRole;
-                        }
-                    }
-                    else if (hobbit.job === 'Military') {
-                        const homeWell = hobbit.cachedWell || getHobbitVillage(hobbit);
-                        let targetWell = null;
-                        let minWellDist = Infinity;
-
-                        plannedWells.forEach(well => {
-                            if (homeWell && well.x === homeWell.x && well.y === homeWell.y) return;
-                            const d = Math.hypot(well.x - currTX, well.y - currTY);
-                            if (d < minWellDist) {
-                                minWellDist = d;
-                                targetWell = well;
-                            }
-                        });
-
-                        if (targetWell) {
-                            const nextStep = findNextRoadStep(currTX, currTY, targetWell.x, targetWell.y, worldMatrix, roomMatrix, hobbit);
-                            if (nextStep) {
-                                hobbit.path = [{ x: nextStep.x, y: nextStep.y }];
-                                hobbit.goal = 'march';
-                                hobbit.state = 'walking';
-                            } else {
-                                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                                hobbit.goal = 'wander';
-                            }
-                        } else {
-                            assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                            hobbit.goal = 'wander';
-                        }
-                    }
-                    else if (target && targetDist > 20) {
-                        const tTX = Math.floor((target.x + 8) / 16);
-                        const tTY = Math.floor((target.y + 8) / 16);
-                        const path = findPathToCoords(currTX, currTY, tTX, tTY, worldMatrix, roomMatrix, hobbit, 15);
-                        if (path) {
-                            hobbit.path = path;
-                            hobbit.goal = 'engage';
-                        }
-                    } else if (hobbit.job === 'Farmer' && hobbit.houseId) {
-                        // Standard Farmer Offscreen Routine
-                        if (worldTime.isNight) {
-                            if (currTX !== hobbit.homeX || currTY !== hobbit.homeY) {
-                                const path = findOffScreenPath(currTX, currTY, hobbit.homeX, hobbit.homeY);
-                                if (path) {
-                                    hobbit.path = path;
-                                    hobbit.goal = 'sleep';
-                                }
-                            }
-                        } else {
-                            assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                            hobbit.goal = 'wander';
-                        }
-                    } else {
-                        assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                        hobbit.goal = 'wander';
-                    }
-                }
-
-                if (hobbit.path && hobbit.path.length > 0) {
-                    const nextNode = hobbit.path.shift();
-                    hobbit.x = nextNode.x * 16;
-                    hobbit.y = nextNode.y * 16;
-
-                    if (!hobbit.visitedHistory) hobbit.visitedHistory = [];
-                    const tileKey = `${nextNode.x}_${nextNode.y}`;
-                    if (hobbit.visitedHistory[hobbit.visitedHistory.length - 1] !== tileKey) {
-                        hobbit.visitedHistory.push(tileKey);
-                        if (hobbit.visitedHistory.length > 32) {
-                            hobbit.visitedHistory.shift();
-                        }
-                    }
-
-                    const currentDistToHero = Math.hypot((hero.x + 8) - (hobbit.x + 8), (hero.y + 8) - (hobbit.y + 8));
-                    if (hobbit.goal === 'engage' && currentDistToHero <= 24) {
-                        if (hero.hp > 0) {
-                            hero.hp = Math.max(0, hero.hp - hobbit.ad);
-                            if (socket) socket.emit('updateStats', { hp: hero.hp });
-                        }
-                        hobbit.path = [];
-                    }
+        if (distToTarget <= 24 && currentRoom === targetRoom) {
+            hobbit.path = [];
+            hobbit.attackCooldown = (hobbit.attackCooldown || 0) - delta;
+            if (hobbit.attackCooldown <= 0) {
+                hobbit.state = 'attacking';
+                hobbit.attackCooldown = 0.8;
+                if (target === hero && hero.hp > 0) {
+                    const heroArmor = Math.max(1, hero.armor || 1);
+                    const armorReduction = Math.pow(0.5, Math.log10(heroArmor));
+                    const finalDamage = Math.max(1, Math.floor(hobbit.ad * armorReduction));
+                    hero.hp = Math.max(0, hero.hp - finalDamage);
+                    if (socket) socket.emit('updateStats', { hp: hero.hp });
                 }
             }
-            return; 
+            return;
         }
 
-        // ==========================================
-        // ⚡ TIER 1: VIEWPORT ACTIVE (On-Screen Real-Time Update)
-        // ==========================================
-        hobbit.energy = Math.max(0, hobbit.energy - (modifier * 0.5));
-        const currTX = Math.floor((hobbit.x + 8) / 16);
-        const currTY = Math.floor((hobbit.y + 15) / 16); 
-        
-        const lx = ((currTX % 100) + 100) % 100;
-        const ly = ((currTY % 100) + 100) % 100;
-        const pCol = roomMatrix[Math.floor(currTX / 100)]?.[Math.floor(currTY / 100)];
-        const roomID = pCol ? pCol[ly * 100 + lx] : 0;
-
-        if (hobbit.cachedWell === undefined) {
-            hobbit.cachedWell = getHobbitVillage(hobbit);
-        }
-        const village = hobbit.cachedWell;
-        let villageOwner = null;
-
-        if (village && typeof window !== 'undefined' && window.villageOwners) {
-            const data = window.villageOwners.get(`${village.x}_${village.y}`);
-            if (data) villageOwner = data.owner;
+        if (distToTarget <= 250) {
+            hobbit.brainTimer = (hobbit.brainTimer || 0) - delta;
+            if (hobbit.brainTimer <= 0) {
+                hobbit.path = getTilePath(currentTX, currentTY, Math.floor((target.x + 8) / 16), Math.floor((target.y + 8) / 16), worldMatrix, roomMatrix, hobbit, 50);
+                hobbit.brainTimer = 0.6;
+            }
+            return;
         }
 
-        let enemyTarget = null; 
-        let enemyDist = Infinity;
+        hobbit.combatTargetId = null;
+        hobbit.isSearching = true;
+        hobbit.searchTimer = 12.0;
+        hobbit.thoughtBubble = { icon: '🔍', timer: 3.0 };
+    }
 
-        // ==========================================
-        // ⚔️ MILITARY JOB STATE MACHINE (ON-SCREEN)
-        // ==========================================
-        if (hobbit.job === 'Military') {
-            let isWaitingForOutfit = false;
-            if (hobbit.squadRole === 'Sergeant' && hobbit.squadId && hobbit.state !== 'attacking') {
-                const followers = hobbits.filter(h => h.squadId === hobbit.squadId && h.squadRole === 'Military');
-                const tooFar = followers.some(f => Math.hypot(f.x - hobbit.x, f.y - hobbit.y) > 48);
-                
-                if (tooFar) {
-                    hobbit.state = 'idle';
+    // ========================================================================
+    // 🔍 2. SEARCHING LAST KNOWN LOCATION
+    // ========================================================================
+    if (hobbit.isSearching) {
+        hobbit.searchTimer = (hobbit.searchTimer || 12.0) - delta;
+
+        const criminalTarget = (hero && hero.hp > 0 && Math.hypot(hero.x - hobbit.x, hero.y - hobbit.y) <= 200) ? hero : null;
+        if (criminalTarget) {
+            hobbit.isSearching = false;
+            hobbit.combatTargetId = window.playerWallet || 'Hero';
+            hobbit.thoughtBubble = { icon: '❗', timer: 3.0 };
+            return;
+        }
+
+        if (hobbit.searchTimer <= 0) {
+            hobbit.isSearching = false;
+            hobbit.lastKnownTargetPos = null;
+            hobbit.path = [];
+            hobbit.thoughtBubble = { icon: '🛡️', timer: 2.0 };
+            return;
+        }
+
+        hobbit.brainTimer = (hobbit.brainTimer || 0) - delta;
+        if (hobbit.brainTimer <= 0 && (!hobbit.path || hobbit.path.length === 0)) {
+            const anchor = hobbit.lastKnownTargetPos || { x: currentTX, y: currentTY };
+            const sweepOffsets = [
+                { dx: 0, dy: 0 }, { dx: 5, dy: 0 }, { dx: -5, dy: 5 },
+                { dx: 5, dy: -5 }, { dx: -5, dy: -5 }, { dx: 0, dy: 6 }
+            ];
+            hobbit.searchIndex = ((hobbit.searchIndex || 0) + 1) % sweepOffsets.length;
+            const destX = anchor.x + sweepOffsets[hobbit.searchIndex].dx;
+            const destY = anchor.y + sweepOffsets[hobbit.searchIndex].dy;
+
+            hobbit.path = getTilePath(currentTX, currentTY, destX, destY, worldMatrix, roomMatrix, hobbit, 40);
+            hobbit.brainTimer = 2.5;
+        }
+        return;
+    }
+
+    // ========================================================================
+    // 🚨 3. THREAT RESPONSE & FLEEING
+    // ========================================================================
+    const crimeSecret = hobbit.secrets?.find(s => 
+        (s.type === SECRET_TYPES.MURDER || s.type === SECRET_TYPES.ATTACK) && s.expiresAt > now
+    );
+
+    if (crimeSecret) {
+        if (hobbit.courage === 'FLEE' && hobbit.villageRole === 'CITIZEN') {
+            const distToPerp = Math.hypot(crimeSecret.location.x - currentTX, crimeSecret.location.y - currentTY);
+
+            if (distToPerp >= 20) {
+                hobbit.isFleeing = false;
+                hobbit.secrets = hobbit.secrets.filter(s => s !== crimeSecret);
+                hobbit.path = [];
+                hobbit.thoughtBubble = { icon: '😌', timer: 2.0 };
+            } else {
+                hobbit.isFleeing = true;
+                const retreatTargetX = hobbit.homeX ? hobbit.homeX + 1 : currentTX;
+                const retreatTargetY = hobbit.homeY ? hobbit.homeY - 1 : currentTY;
+
+                if (currentRoom === hobbit.houseId && hobbit.houseId !== null) {
                     hobbit.path = [];
-                    isWaitingForOutfit = true; 
+                    hobbit.state = 'idle';
+                    hobbit.thoughtBubble = { icon: '🔒', timer: 1.0 };
+                    return;
                 }
-            }
 
-            if (isWaitingForOutfit) {
-                // Sergeant holds position for squad alignment
-            }
-            else if (hobbit.squadId && hobbit.squadRole === 'Military') {
-                const sergeant = hobbits.find(h => h.squadId === hobbit.squadId && h.squadRole === 'Sergeant');
-                
-                if (sergeant) {
-                    const target = sergeant.attackTarget;
-                    hobbit.attackTarget = target;
-                    
-                    if (target && target.hp > 0) {
-                        hobbit.goal = 'attack_enemy';
-                        const distToTarget = Math.hypot((target.x + 8) - (hobbit.x + 8), (target.y + 8) - (hobbit.y + 8));
-                        
-                        if (distToTarget <= 24) {
-                            if (hobbit.state !== 'attacking') {
-                                hobbit.state = 'idle';
-                                hobbit.path = [];
-                            }
-                            if (hobbit.attackTimer <= 0 && hobbit.state !== 'attacking') {
-                                hobbit.state = 'attacking';
-                                hobbit.attackTimer = 0.5;
-                                hobbit.hasStruck = false;
-                                const tdx = target.x - hobbit.x;
-                                const tdy = target.y - hobbit.y;
-                                hobbit.dir = Math.abs(tdx) > Math.abs(tdy) ? (tdx > 0 ? 'East' : 'West') : (tdy > 0 ? 'South' : 'North');
-                            }
-                        } else if (hobbit.pathTimer <= 0) {
-                            hobbit.pathTimer = 0.4 + Math.random() * 0.4;
-                            const targetTX = Math.floor((target.x + 8) / 16);
-                            const targetTY = Math.floor((target.y + 8) / 16);
-                            const path = findPathToCoords(currTX, currTY, targetTX, targetTY, worldMatrix, roomMatrix, hobbit, 15);
-                            if (path) {
-                                hobbit.path = path;
-                                hobbit.state = 'walking';
-                            }
-                        }
-                    } else {
-                        hobbit.goal = 'march';
-                        const sTX = Math.floor((sergeant.x + 8) / 16);
-                        const sTY = Math.floor((sergeant.y + 15) / 16);
-                        
-                        const squadFollowers = hobbits.filter(h => h.squadId === hobbit.squadId && h.squadRole === 'Military');
-                        const myIndex = squadFollowers.indexOf(hobbit);
-                        const formationOffsets = [
-                            { dx: -1, dy: 1 },  
-                            { dx: 1, dy: 1 },   
-                            { dx: -1, dy: -1 }, 
-                            { dx: 1, dy: -1 }   
-                        ];
-                        const offset = formationOffsets[myIndex % 4] || { dx: 0, dy: 0 };
-                        let targetTX = sTX + offset.dx;
-                        let targetTY = sTY + offset.dy;
-                        
-                        if (!isWalkableForHobbit(targetTX, targetTY, worldMatrix, roomMatrix, hobbit)) {
-                            targetTX = sTX;
-                            targetTY = sTY;
-                        }
+                hobbit.brainTimer = (hobbit.brainTimer || 0) - delta;
+                if (hobbit.brainTimer <= 0 || !hobbit.path || hobbit.path.length === 0) {
+                    hobbit.path = getTilePath(currentTX, currentTY, retreatTargetX, retreatTargetY, worldMatrix, roomMatrix, hobbit, 50);
 
-                        const targetX = targetTX * 16;
-                        const targetY = targetTY * 16;
-                        const distToSlot = Math.hypot(targetX - hobbit.x, targetY - hobbit.y);
-                        
-                        if (distToSlot > 16) {
-                            if ((!hobbit.path || hobbit.path.length === 0) && hobbit.pathTimer <= 0) {
-                                hobbit.pathTimer = 0.3;
-                                const path = findPathToCoords(currTX, currTY, targetTX, targetTY, worldMatrix, roomMatrix, hobbit, 12);
-                                if (path) {
-                                    hobbit.path = path;
-                                    hobbit.state = 'walking';
-                                }
-                            }
-                        } else {
-                            if (sergeant.state === 'idle') {
-                                hobbit.state = 'idle';
-                                hobbit.path = [];
-                            }
-                        }
+                    if (!hobbit.path || hobbit.path.length === 0) {
+                        const fleeDX = Math.sign(currentTX - crimeSecret.location.x) || 1;
+                        const fleeDY = Math.sign(currentTY - crimeSecret.location.y) || 1;
+                        const stepTX = Math.max(10, Math.min(9990, currentTX + fleeDX * 6));
+                        const stepTY = Math.max(10, Math.min(9990, currentTY + fleeDY * 6));
+                        hobbit.path = getTilePath(currentTX, currentTY, stepTX, stepTY, worldMatrix, roomMatrix, hobbit, 25);
                     }
-                } else {
-                    delete hobbit.squadId;
-                    delete hobbit.squadRole;
+                    hobbit.brainTimer = 1.0;
                 }
-            }
-            else {
-                const homeWell = hobbit.cachedWell || getHobbitVillage(hobbit);
-                let myWellOwner = null;
-
-                if (homeWell && window.villageOwners) {
-                    const data = window.villageOwners.get(`${homeWell.x}_${homeWell.y}`);
-                    if (data) myWellOwner = data.owner;
-                }
-
-                const aggroResult = findMilitaryTarget(hobbit, homeWell, myWellOwner);
-                const nearestEnemy = aggroResult.target;
-                const nearestEnemyDist = aggroResult.dist;
-
-                if (nearestEnemy) {
-                    hobbit.goal = 'attack_enemy';
-                    hobbit.attackTarget = nearestEnemy; 
-                    
-                    if (nearestEnemyDist <= 24) {
-                        if (hobbit.state !== 'attacking') {
-                            hobbit.state = 'idle';
-                            hobbit.path = [];
-                        }
-                        if (hobbit.attackTimer <= 0 && hobbit.state !== 'attacking') {
-                            hobbit.state = 'attacking';
-                            hobbit.attackTimer = 0.5;
-                            hobbit.hasStruck = false; 
-                            const tdx = nearestEnemy.x - hobbit.x;
-                            const tdy = nearestEnemy.y - hobbit.y;
-                            hobbit.dir = Math.abs(tdx) > Math.abs(tdy) ? (tdx > 0 ? 'East' : 'West') : (tdy > 0 ? 'South' : 'North');
-                        }
-                    } else if (hobbit.pathTimer <= 0) {
-                        hobbit.pathTimer = 0.4 + Math.random() * 0.4;
-                        const enemyTX = Math.floor((nearestEnemy.x + 8) / 16);
-                        const enemyTY = Math.floor((nearestEnemy.y + 8) / 16);
-                        const path = findPathToCoords(currTX, currTY, enemyTX, enemyTY, worldMatrix, roomMatrix, hobbit, 15);
-                        if (path) {
-                            hobbit.path = path;
-                            hobbit.state = 'walking';
-                        } else {
-                            assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                            hobbit.goal = 'wander';
-                            hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
-                            hobbit.moveTimer = 3.0;
-                        }
-                    }
-                } else {
-                    hobbit.goal = 'march';
-                    hobbit.attackTarget = null;
-                    
-                    let targetWell = null;
-                    let minWellDist = Infinity;
-
-                    plannedWells.forEach(well => {
-                        if (homeWell && well.x === homeWell.x && well.y === homeWell.y) return;
-                        const d = Math.hypot(well.x - currTX, well.y - currTY);
-                        if (d < minWellDist) {
-                            minWellDist = d;
-                            targetWell = well;
-                        }
-                    });
-
-                    if (targetWell) {
-                        if (Math.abs(currTX - targetWell.x) <= 2 && Math.abs(currTY - targetWell.y) <= 2) {
-                            hobbit.state = 'idle';
-                            hobbit.path = [];
-                        } else if (!hobbit.path || hobbit.path.length === 0) {
-                            const nextStep = findNextRoadStep(currTX, currTY, targetWell.x, targetWell.y, worldMatrix, roomMatrix, hobbit);
-                            if (nextStep) {
-                                hobbit.path = [{ x: nextStep.x, y: nextStep.y }];
-                                hobbit.state = 'walking';
-                            } else {
-                                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                                hobbit.goal = 'wander';
-                                hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
-                                hobbit.moveTimer = 3.0;
-                            }
-                        }
-                    } else {
-                        if (!hobbit.path || hobbit.path.length === 0) {
-                            assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                            hobbit.goal = 'wander';
-                            hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
-                            hobbit.moveTimer = 3.0;
-                        }
-                    }
-                }
+                return;
             }
         }
 
-        // ==========================================
-        // 🏛️ PEACEFUL JOB STATE MACHINE (ON-SCREEN)
-        // ==========================================
-        else {
-            // src/hobbitManager.js (around line 485)
-let isDefending = false;
-let criminals = null;
-if (village && typeof window !== 'undefined' && window.villageCriminals) {
-    criminals = window.villageCriminals.get(`${village.x}_${village.y}`);
-}
+        if (hobbit.villageRole === 'GUARD' || hobbit.villageRole === 'QUARTERMASTER') {
+            const criminal = (crimeSecret.targetId === myID || crimeSecret.targetId === 'Hero' || crimeSecret.targetId === window.playerWallet)
+                ? hero 
+                : remotePlayers?.get(crimeSecret.targetId);
 
-// Support criminal defensive trigger even inside neutral/unclaimed sectors
-if (criminals && criminals.size > 0) {
-    const px = (hero.x + 8) - (hobbit.x + 8);
-    const py = (hero.y + 8) - (hobbit.y + 8);
-    const distToHero = Math.hypot(px, py);
-
-                if (criminals.has(myID) && hero.hp > 0 && distToHero < 2400) {
-                    enemyTarget = hero;
-                    enemyDist = distToHero;
-                }
-
-                if (!enemyTarget && remotePlayers) {
-                    remotePlayers.forEach((p, id) => {
-                        if (p.hp <= 0) return;
-                        if (criminals.has(id)) {
-                            const dist = Math.hypot((p.x + 8) - (hobbit.x + 8), (p.y + 8) - (hobbit.y + 8));
-                            if (dist < 2400 && dist < enemyDist) {
-                                enemyDist = dist;
-                                enemyTarget = p;
-                            }
-                        }
-                    });
-                }
-
-                if (enemyTarget) {
-                    isDefending = true;
-                    hobbit.goal = 'defend_home';
-                    
-                    if (enemyDist <= 24) {
-                        if (hobbit.state !== 'attacking') {
-                            hobbit.state = 'idle';
-                            hobbit.path = [];
-                        }
-                        if (hobbit.attackTimer <= 0 && hobbit.state !== 'attacking') {
-                            hobbit.state = 'attacking';
-                            hobbit.attackTimer = 0.5;
-                            hobbit.hasStruck = false; 
-                            const tdx = enemyTarget.x - hobbit.x;
-                            const tdy = enemyTarget.y - hobbit.y;
-                            hobbit.dir = Math.abs(tdx) > Math.abs(tdy) ? (tdx > 0 ? 'East' : 'West') : (tdy > 0 ? 'South' : 'North');
-                        }
-                    } else if (hobbit.pathTimer <= 0) {
-                        hobbit.pathTimer = 1.0 + Math.random() * 1.5;
-                        const tTX = Math.floor((enemyTarget.x + 8) / 16);
-                        const tTY = Math.floor((enemyTarget.y + 8) / 16);
-                        const path = findPathToCoords(currTX, currTY, tTX, tTY, worldMatrix, roomMatrix, hobbit, 15); 
-                        if (path) {
-                            hobbit.path = path;
-                            hobbit.state = 'walking';
-                        }
-                    }
-                }
+            if (criminal && criminal.hp > 0 && Math.hypot(criminal.x - hobbit.x, criminal.y - hobbit.y) <= 48) {
+                hobbit.combatTargetId = crimeSecret.targetId;
+                hobbit.thoughtBubble = { icon: '⚔️', timer: 3.0 };
+                return;
             }
 
-            if (!isDefending) {
-                // Route to externalized behaviors for Traders, Foragers, and Ushers
-                if (hobbit.job === 'Forager') {
-                    runForagerBehavior(hobbit, modifier, worldMatrix, roomMatrix);
-                }
-                else if (hobbit.job === 'Trader') {
-                    runTraderBehavior(hobbit, modifier, worldMatrix, roomMatrix);
-                }
-                else if (hobbit.job === 'Usher') {
-                    runUsherBehavior(hobbit, modifier, worldMatrix, roomMatrix);
-                }
-                else if (hobbit.job === 'Farmer' && hobbit.houseId) {
-                    // Farmer Crop and Agricultural State Machine
-                    const hasEggs = hobbit.inventory.some(item => item.seedType === 'egg');
-                    const hasPM = hobbit.inventory.some(item => item.seedType === 'plant_matter');
-
-                    if (worldTime.isNight) {
-                        hobbit.goal = 'sleep';
-                        if (currTX === hobbit.homeX && currTY === hobbit.homeY) {
-                            hobbit.state = 'idle';
-                            hobbit.path = [];
-                        } else {
-                            if ((!hobbit.path || hobbit.path.length === 0) && hobbit.pathTimer <= 0) {
-                                hobbit.pathTimer = 1.5;
-                                const path = findPathToCoords(currTX, currTY, hobbit.homeX, hobbit.homeY, worldMatrix, roomMatrix, hobbit, 40);
-                                if (path) {
-                                    hobbit.state = 'walking';
-                                    hobbit.path = path;
-                                }
-                            }
-                        }
-                    }
-                    else if (hasEggs) {
-                        hobbit.goal = 'sell_food';
-                        const counter = findNearestStoreCounter(hobbit);
-                        if (counter) {
-                            const standX = counter.x;
-                            const standY = counter.y + 1;
-                            const dist = Math.hypot((standX * 16 + 8) - (hobbit.x + 8), (standY * 16 + 8) - (hobbit.y + 8));
-
-                            if (dist <= 24) {
-                                hobbit.state = 'idle';
-                                hobbit.path = [];
-                                tryHobbitTrade(hobbit, counter.x, counter.y);
-                            } else {
-                                if ((!hobbit.path || hobbit.path.length === 0) && hobbit.pathTimer <= 0) {
-                                    hobbit.pathTimer = 1.5;
-                                    const path = findPathToCoords(currTX, currTY, standX, standY, worldMatrix, roomMatrix, hobbit, 40);
-                                    if (path) {
-                                        hobbit.path = path;
-                                        hobbit.state = 'walking';
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    else if (hasPM) {
-                        hobbit.goal = 'deposit_pm';
-                        const storage = findHomeHayStorage(hobbit);
-                        if (storage) {
-                            const dist = Math.hypot((storage.x * 16 + 8) - (hobbit.x + 8), (storage.y * 16 + 8) - (hobbit.y + 8));
-                            if (dist <= 24) {
-                                hobbit.state = 'idle';
-                                hobbit.path = [];
-
-                                const storageId = `hay_${storage.x}_${storage.y}`;
-                                const hayItems = hayStorageCache.get(storageId) || [];
-                                const pmItem = hobbit.inventory.find(i => i.seedType === 'plant_matter');
-
-                                if (pmItem) {
-                                    const existing = hayItems.find(i => i.seedType === 'plant_matter' && i.count < (i.maxStack || 64));
-                                    if (existing) {
-                                        existing.count += pmItem.count;
-                                        hobbit.inventory = hobbit.inventory.filter(i => i !== pmItem);
-                                    } else if (hayItems.length < 8) {
-                                        hayItems.push(pmItem);
-                                        hobbit.inventory = hobbit.inventory.filter(i => i !== pmItem);
-                                    }
-                                }
-                                if (socket && socket.connected) {
-                                    socket.emit('updateHayStorage', { hayStorageId: storageId, items: hayItems });
-                                }
-                            } else {
-                                if ((!hobbit.path || hobbit.path.length === 0) && hobbit.pathTimer <= 0) {
-                                    hobbit.pathTimer = 1.5;
-                                    const path = findPathToCoords(currTX, currTY, storage.x, storage.y, worldMatrix, roomMatrix, hobbit, 30);
-                                    if (path) {
-                                        hobbit.path = path;
-                                        hobbit.state = 'walking';
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    else {
-                        const egg = findNearestEgg(hobbit);
-                        if (egg) {
-                            hobbit.goal = 'collect_egg';
-                            const dist = Math.hypot((egg.gx * 16 + 8) - (hobbit.x + 8), (egg.gy * 16 + 8) - (hobbit.y + 8));
-                            if (dist <= 24) {
-                                hobbit.state = 'idle';
-                                hobbit.path = [];
-                                const eggItem = createItem(ITEM_TYPES.EGG);
-                                giveItemToHobbit(hobbit, eggItem); 
-                                
-                                const { data: chunkData, idx } = getBacteriaData(egg.gx, egg.gy);
-                                if (chunkData) chunkData[idx] = 0;
-                                if (socket && socket.connected) {
-                                    socket.emit('syncTile', { gx: egg.gx, gy: egg.gy, traits: 0 });
-                                }
-                            } else {
-                                if ((!hobbit.path || hobbit.path.length === 0) && hobbit.pathTimer <= 0) {
-                                    hobbit.pathTimer = 2.0;
-                                    const path = findPathToCoords(currTX, currTY, egg.gx, egg.gy, worldMatrix, roomMatrix, hobbit, 30);
-                                    if (path) {
-                                        hobbit.path = path;
-                                        hobbit.state = 'walking';
-                                    }
-                                }
-                            }
-                        } else {
-                            hobbit.goal = 'wander';
-                            if (!hobbit.path || hobbit.path.length === 0) {
-                                assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                                hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
-                            }
-                        }
-                    }
-                }
-                else {
-                    hobbit.goal = 'wander';
-                    if ((!hobbit.path || hobbit.path.length === 0) && hobbit.state !== 'attacking') {
-                        hobbit.moveTimer -= modifier;
-                        if (hobbit.moveTimer <= 0) {
-                            assignRandomWalk(hobbit, currTX, currTY, worldMatrix, roomMatrix);
-                            hobbit.state = hobbit.path.length > 0 ? 'walking' : 'idle';
-                            hobbit.moveTimer = 2 + Math.random() * 3;
-                        }
-                    }
-                }
-            }
+            hobbit.isSearching = true;
+            hobbit.searchTimer = 15.0;
+            hobbit.lastKnownTargetPos = { x: crimeSecret.location.x, y: crimeSecret.location.y };
+            return;
         }
+    } else {
+        hobbit.isFleeing = false;
+        hobbit.musterAlerted = false;
+    }
 
-        // ==========================================
-        // 🗡️ COMBAT HIT-DETECTION & PHYSICS LERP
-        // ==========================================
-        if (hobbit.state === 'attacking') {
-            if (hobbit.attackTimer <= 0.25 && !hobbit.hasStruck) {
-                hobbit.hasStruck = true;
-                let currentEnemy = (hobbit.job === 'Military' && hobbit.attackTarget) ? hobbit.attackTarget : (hobbit.goal === 'defend_home' && enemyTarget ? enemyTarget : hero);
+    // ========================================================================
+    // 🧠 4. STATE ENGINE: WORK ➔ SOCIAL STROLL ➔ STORAGE ➔ REST
+    // ========================================================================
+    hobbit.brainTimer = (hobbit.brainTimer || 0) - delta;
+    if (hobbit.brainTimer > 0) return;
+    hobbit.brainTimer = 0.4 + Math.random() * 0.2;
 
-                if (currentEnemy && currentEnemy.hp > 0) {
-                    const hx = currentEnemy.x + 8;
-                    const pyVal = currentEnemy.y + 8;
-                    const hdist = Math.hypot(hx - (hobbit.x + 8), pyVal - (hobbit.y + 8));
+    const home = getOrCreateHomeMemory(hobbit);
+    const nonKeyItems = (hobbit.inventory || []).filter(i => !i.isKey);
+    const isBackpackFull = nonKeyItems.length >= 4;
+    const isNight = worldTime.isNight;
 
-                    if (hdist <= 32) { 
-                        currentEnemy.hp = Math.max(0, currentEnemy.hp - hobbit.ad);
-                        if (currentEnemy === hero && socket) {
-                            socket.emit('updateStats', { hp: hero.hp });
-                        }
+    // ------------------------------------------------------------------------
+    // 🌙 STATE: NIGHTTIME SHELTER & INSIDE LOCKING
+    // ------------------------------------------------------------------------
+    if (isNight && home) {
+        if (nonKeyItems.length > 0) {
+            hobbit.goal = 'deposit_chest';
+        } else {
+            hobbit.goal = 'sleep';
+            const houseTile = getTileData(home.standX * 16 + 8, home.standY * 16 + 8, worldMatrix, roomMatrix);
+            const houseRoomId = houseTile?.roomID || 0;
+
+            // Inside house: close door, lock, and sleep in bedroll
+            if (currentRoom === houseRoomId && houseRoomId !== 0) {
+                setDoorOpen(home.doorX, home.doorY, false, worldMatrix, roomMatrix);
+                setDoorLock(home.doorX, home.doorY, true);
+
+                const nextToBed = Math.hypot(currentTX - home.bedrollX, currentTY - home.bedrollY) <= 1.5;
+                if (nextToBed) {
+                    hobbit.path = [];
+                    hobbit.state = 'idle';
+                    hobbit.energy = Math.min(100, (hobbit.energy || 0) + delta * 20);
+                    if (Math.random() < 0.05 && !hobbit.thoughtBubble) {
+                        hobbit.thoughtBubble = { icon: '💤', timer: 2.0 };
                     }
+                    hobbit.brainTimer = 1.0;
+                    return;
+                } else {
+                    hobbit.path = getTilePath(currentTX, currentTY, home.bedrollX, home.bedrollY, worldMatrix, roomMatrix, hobbit, 6);
+                    return;
                 }
             }
-            
-            hobbit.frame = 0; 
-            if (hobbit.attackTimer <= 0) {
+
+            // Outside: unlock own door and walk inside
+            setDoorLock(home.doorX, home.doorY, false);
+            navigateTowardPorchOrEnter(hobbit, currentTX, currentTY, currentRoom, home, { x: home.bedrollX, y: home.bedrollY }, worldMatrix, roomMatrix);
+            return;
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // 📦 STATE: DEPOSIT (Backpack full or night deposit)
+    // ------------------------------------------------------------------------
+    if ((isBackpackFull || hobbit.goal === 'deposit_chest') && home) {
+        hobbit.goal = 'deposit_chest';
+
+        const houseTile = getTileData(home.standX * 16 + 8, home.standY * 16 + 8, worldMatrix, roomMatrix);
+        const houseRoomId = houseTile?.roomID || 0;
+
+        if (currentRoom === houseRoomId && houseRoomId !== 0) {
+            const nextToChest = Math.hypot(currentTX - home.chestX, currentTY - home.chestY) <= 1.5;
+
+            if (nextToChest) {
+                hobbit.path = [];
                 hobbit.state = 'idle';
-                hobbit.moveTimer = 1.0; 
+                depositBackpack(hobbit, home.chestX, home.chestY);
+
+                if (isNight) {
+                    hobbit.goal = 'sleep';
+                } else {
+                    setDoorLock(home.doorX, home.doorY, false);
+                    hobbit.goal = (hobbit.socialization < 40) ? 'social_walk' : 'explore';
+                    hobbit.path = getTilePath(currentTX, currentTY, home.porchX, home.porchY, worldMatrix, roomMatrix, hobbit, 8);
+                }
+                hobbit.brainTimer = 0.3;
+                return;
+            } else {
+                hobbit.path = getTilePath(currentTX, currentTY, home.standX, home.standY, worldMatrix, roomMatrix, hobbit, 6);
+                return;
             }
         }
-        else if (hobbit.path && hobbit.path.length > 0) {
-            hobbit.state = 'walking';
 
-            const nextNode = hobbit.path[0];
-            const targetX = nextNode.x * 16;
-            const targetY = nextNode.y * 16;
+        setDoorLock(home.doorX, home.doorY, false);
+        navigateTowardPorchOrEnter(hobbit, currentTX, currentTY, currentRoom, home, { x: home.standX, y: home.standY }, worldMatrix, roomMatrix);
+        return;
+    }
 
-            const dx = targetX - hobbit.x;
-            const dy = targetY - hobbit.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
+    // src/hobbitManager.js (inside tickHobbit)
 
-            const angle = Math.atan2(dy, dx);
-            let positiveAngle = angle < 0 ? angle + Math.PI * 2 : angle;
-            const octant = Math.round(8 * positiveAngle / (Math.PI * 2)) % 8;
-            const directions = ['East', 'SouthEast', 'South', 'SouthWest', 'West', 'NorthWest', 'North', 'NorthEast'];
-            
-            hobbit.dir = directions[octant] || 'South';
+    // ------------------------------------------------------------------------
+    // 🚶 STATE: RING ROAD SOCIAL WALK (Socialization < 40%)
+    // ------------------------------------------------------------------------
+    if ((hobbit.socialization || 100) < 40 && !isNight && hobbit.goal !== 'deposit_chest') {
+        hobbit.goal = 'social_walk';
+    }
 
-            if (dist > 2) {
-                let separationX = 0;
-                let separationY = 0;
-                const separationRadius = 12; 
-                const separationForce = 15;  
+    // When socialization is restored to >= 80%, return to work!
+    if (hobbit.goal === 'social_walk' && (hobbit.socialization || 100) >= 80) {
+        hobbit.goal = 'explore';
+        hobbit.onRingRoad = false; // Reset on-ramp flag
+        hobbit.thoughtBubble = { icon: '😊', timer: 2.0 };
+    }
 
-                hobbits.forEach(other => {
-                    if (other.id === hobbit.id || other.hp <= 0) return;
-                    const hdx = hobbit.x - other.x;
-                    const hdy = hobbit.y - other.y;
-                    const separationDist = Math.hypot(hdx, hdy);
-                    if (separationDist < separationRadius && separationDist > 0) {
-                        separationX += (hdx / separationDist) * separationForce;
-                        separationY += (hdy / separationDist) * separationForce;
+    if (hobbit.goal === 'social_walk' && !isNight) {
+        // Step 1: Step out to porch if still inside house
+        if (currentRoom !== 0 && home) {
+            setDoorLock(home.doorX, home.doorY, false);
+            hobbit.path = getTilePath(currentTX, currentTY, home.porchX, home.porchY, worldMatrix, roomMatrix, hobbit, 8);
+            return;
+        }
+
+        const well = getHobbitVillage(hobbit);
+        if (well) {
+            const numWaypoints = 16;
+            const ringRadius = 20; // 20-tile radius around village center
+            const dirMultiplier = hobbit.walkDirection || 1; // 1 = CW, -1 = CCW
+
+            // Generate the 16 circular ring road coordinates
+            const waypoints = [];
+            for (let i = 0; i < numWaypoints; i++) {
+                const angle = (i / numWaypoints) * Math.PI * 2;
+                waypoints.push({
+                    index: i,
+                    x: Math.floor(well.x + Math.cos(angle) * ringRadius),
+                    y: Math.floor(well.y + Math.sin(angle) * ringRadius)
+                });
+            }
+
+            // Step 2: If not on the ring road yet, find the NEAREST on-ramp waypoint!
+            if (!hobbit.onRingRoad) {
+                let closestWaypoint = waypoints[0];
+                let minDistance = Infinity;
+
+                waypoints.forEach(wp => {
+                    const d = Math.hypot(currentTX - wp.x, currentTY - wp.y);
+                    if (d < minDistance) {
+                        minDistance = d;
+                        closestWaypoint = wp;
                     }
                 });
 
-                const moveX = ((dx / dist) * hobbit.speed + separationX) * modifier;
-                const moveY = ((dy / dist) * hobbit.speed + separationY) * modifier;
+                hobbit.ringWaypointIndex = closestWaypoint.index;
 
-                moveEntity(hobbit, moveX, moveY, worldMatrix, roomMatrix);
-            } else {
-                hobbit.x = targetX;
-                hobbit.y = targetY;
+                // Check if we arrived at the nearest on-ramp
+                if (minDistance <= 2.0) {
+                    hobbit.onRingRoad = true; // Locked onto highway!
+                } else {
+                    // Pathfind to the nearest on-ramp waypoint
+                    if (!hobbit.path || hobbit.path.length === 0 || (hobbit.brainTimer || 0) <= 0) {
+                        hobbit.path = getTilePath(currentTX, currentTY, closestWaypoint.x, closestWaypoint.y, worldMatrix, roomMatrix, hobbit, 30);
+                        hobbit.brainTimer = 1.5;
 
-                if (!hobbit.visitedHistory) hobbit.visitedHistory = [];
-                const tileKey = `${nextNode.x}_${nextNode.y}`;
-                if (hobbit.visitedHistory[hobbit.visitedHistory.length - 1] !== tileKey) {
-                    hobbit.visitedHistory.push(tileKey);
-                    if (hobbit.visitedHistory.length > 32) hobbit.visitedHistory.shift();
+                        // 🎯 FAIL-SAFE RADIAL STEPPER: If A* fails due to building geometry, step directly away from the well!
+                        if (!hobbit.path || hobbit.path.length === 0) {
+                            const awayDX = Math.sign(currentTX - well.x) || 1;
+                            const awayDY = Math.sign(currentTY - well.y) || 1;
+                            const stepX = currentTX + awayDX;
+                            const stepY = currentTY + awayDY;
+
+                            if (isTilePassable(stepX, stepY, worldMatrix, roomMatrix, hobbit, currentTX, currentTY)) {
+                                hobbit.path = [{ x: stepX, y: stepY }];
+                            } else if (isTilePassable(stepX, currentTY, worldMatrix, roomMatrix, hobbit, currentTX, currentTY)) {
+                                hobbit.path = [{ x: stepX, y: currentTY }];
+                            } else if (isTilePassable(currentTX, stepY, worldMatrix, roomMatrix, hobbit, currentTX, currentTY)) {
+                                hobbit.path = [{ x: currentTX, y: stepY }];
+                            }
+                        }
+                    }
+                    return;
                 }
-                hobbit.path.shift(); 
             }
 
-            hobbit.animTimer += modifier * 8;
-            hobbit.frame = Math.floor(hobbit.animTimer) % 4; 
-        } else {
-            let separationX = 0;
-            let separationY = 0;
-            const separationRadius = 10;
-            const separationForce = 12;
+            // Step 3: Cruising the Ring Road highway loop!
+            const targetWaypoint = waypoints[hobbit.ringWaypointIndex];
+            const distToTarget = Math.hypot(currentTX - targetWaypoint.x, currentTY - targetWaypoint.y);
 
-            hobbits.forEach(other => {
-                if (other.id === hobbit.id || other.hp <= 0) return;
-                const hdx = hobbit.x - other.x;
-                const hdy = hobbit.y - other.y;
-                const separationDist = Math.hypot(hdx, hdy);
-                if (separationDist < separationRadius && separationDist > 0) {
-                    separationX += (hdx / separationDist) * separationForce;
-                    separationY += (hdy / separationDist) * separationForce;
-                }
-            });
-
-            if (separationX !== 0 || separationY !== 0) {
-                moveEntity(hobbit, separationX * modifier, separationY * modifier, worldMatrix, roomMatrix);
+            // Arrived at current waypoint -> Advance to next circular waypoint!
+            if (distToTarget <= 2.0) {
+                hobbit.ringWaypointIndex = (hobbit.ringWaypointIndex + dirMultiplier + numWaypoints) % numWaypoints;
             }
-            hobbit.state = 'idle';
+
+            const nextTarget = waypoints[hobbit.ringWaypointIndex];
+            if (!hobbit.path || hobbit.path.length === 0 || (hobbit.brainTimer || 0) <= 0) {
+                hobbit.path = getTilePath(currentTX, currentTY, nextTarget.x, nextTarget.y, worldMatrix, roomMatrix, hobbit, 25);
+                hobbit.brainTimer = 1.0;
+            }
+            return;
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // 🌾 STATE: HARVEST & EXPLORE (Daytime Foraging)
+    // ------------------------------------------------------------------------
+    if (hobbit.job === 'Forager') {
+        // Step out if still inside in the morning
+        if (currentRoom !== 0 && home) {
+            setDoorLock(home.doorX, home.doorY, false);
+            hobbit.goal = 'explore';
+            hobbit.path = getTilePath(currentTX, currentTY, home.porchX, home.porchY, worldMatrix, roomMatrix, hobbit, 8);
+            return;
         }
 
-        if (hobbit.pathTimer > 0) hobbit.pathTimer -= modifier;
-        if (hobbit.attackTimer > 0) hobbit.attackTimer -= modifier;
+        // 1. Concentric scan for visible mature plants within 4 tiles
+        const crop = findNearbyMatureCrop(currentTX, currentTY, 4);
+
+        if (crop) {
+            hobbit.goal = 'harvest';
+            const distToCrop = Math.hypot(currentTX - crop.gx, currentTY - crop.gy);
+
+            if (distToCrop <= 1.5) {
+                hobbit.path = [];
+                hobbit.state = 'idle';
+                harvestPlant(hobbit, crop.gx, crop.gy);
+                hobbit.brainTimer = 0.2; // Rapid chain harvest
+                return;
+            }
+
+            hobbit.path = getTilePath(currentTX, currentTY, crop.gx, crop.gy, worldMatrix, roomMatrix, hobbit, 8);
+            return;
+        }
+
+        // 2. Explore: wander short 2-4 tile distances
+        hobbit.goal = 'explore';
+        if (!hobbit.path || hobbit.path.length === 0) {
+            executeExploreWander(hobbit, currentTX, currentTY, currentRoom, worldMatrix, roomMatrix);
+        }
+        hobbit.brainTimer = 0.4 + Math.random() * 0.2;
+        return;
+    }
+
+    // ------------------------------------------------------------------------
+    // 🏪 OTHER VILLAGE ROLES
+    // ------------------------------------------------------------------------
+    if (hobbit.job === 'Trader' || hobbit.villageRole === 'QUARTERMASTER') {
+        const waypoints = [
+            { x: hobbit.homeX, y: hobbit.homeY - 2 },
+            { x: hobbit.homeX + 2, y: hobbit.homeY - 2 },
+            { x: hobbit.homeX + 1, y: hobbit.homeY - 1 }
+        ];
+        hobbit.patrolIndex = ((hobbit.patrolIndex || 0) + 1) % waypoints.length;
+        hobbit.path = getTilePath(currentTX, currentTY, waypoints[hobbit.patrolIndex].x, waypoints[hobbit.patrolIndex].y, worldMatrix, roomMatrix, hobbit, 30);
+    } 
+    else if (hobbit.job === 'Usher') {
+        const waypoints = [
+            { x: hobbit.homeX + 2, y: hobbit.homeY - 6 },
+            { x: hobbit.homeX + 1, y: hobbit.homeY - 3 },
+            { x: hobbit.homeX + 2, y: hobbit.homeY - 2 }
+        ];
+        hobbit.patrolIndex = ((hobbit.patrolIndex || 0) + 1) % waypoints.length;
+        hobbit.path = getTilePath(currentTX, currentTY, waypoints[hobbit.patrolIndex].x, waypoints[hobbit.patrolIndex].y, worldMatrix, roomMatrix, hobbit, 30);
+    } 
+    else if (hobbit.job === 'Farmer') {
+        const waypoints = [
+            { x: hobbit.homeX + 1, y: hobbit.homeY - 1 },
+            { x: hobbit.homeX + 3, y: hobbit.homeY - 1 },
+            { x: hobbit.homeX + 1, y: hobbit.homeY + 2 }
+        ];
+        hobbit.patrolIndex = ((hobbit.patrolIndex || 0) + 1) % waypoints.length;
+        hobbit.path = getTilePath(currentTX, currentTY, waypoints[hobbit.patrolIndex].x, waypoints[hobbit.patrolIndex].y, worldMatrix, roomMatrix, hobbit, 30);
+    } 
+    else if (hobbit.villageRole === 'GUARD' || hobbit.job === 'Military') {
+        const well = getHobbitVillage(hobbit);
+        if (well) {
+            const waypoints = [
+                { x: well.x, y: well.y + 3 },
+                { x: well.x + 4, y: well.y },
+                { x: well.x, y: well.y - 4 },
+                { x: well.x - 4, y: well.y }
+            ];
+            hobbit.patrolIndex = ((hobbit.patrolIndex || 0) + 1) % waypoints.length;
+            hobbit.path = getTilePath(currentTX, currentTY, waypoints[hobbit.patrolIndex].x, waypoints[hobbit.patrolIndex].y, worldMatrix, roomMatrix, hobbit, 30);
+        }
+    }
+}
+
+// ============================================================================
+// 🧭 HIGH-PERFORMANCE NAVIGATION & STEERING HELPERS
+// ============================================================================
+
+function navigateTowardPorchOrEnter(hobbit, currentTX, currentTY, currentRoom, home, insideDestination, worldMatrix, roomMatrix) {
+    const atPorch = Math.hypot(currentTX - home.porchX, currentTY - home.porchY) <= 1.5;
+
+    if (atPorch || currentRoom !== 0) {
+        hobbit.path = getTilePath(currentTX, currentTY, insideDestination.x, insideDestination.y, worldMatrix, roomMatrix, hobbit, 6);
+        return;
+    }
+
+    if (hobbit.detourPath && hobbit.detourPath.length > 0) {
+        hobbit.path = [hobbit.detourPath.shift()];
+        return;
+    }
+
+    const step = stepDirectlyToward(currentTX, currentTY, home.porchX, home.porchY, worldMatrix, roomMatrix, hobbit);
+
+    if (!step.blocked) {
+        hobbit.path = [{ x: step.x, y: step.y }];
+    } else {
+        const detourX = currentTX + Math.sign(home.porchX - currentTX) * 5;
+        const detourY = currentTY + Math.sign(home.porchY - currentTY) * 5;
+        const detour = getTilePath(currentTX, currentTY, detourX, detourY, worldMatrix, roomMatrix, hobbit, 10);
+
+        if (detour && detour.length > 0) {
+            hobbit.detourPath = detour;
+            hobbit.path = [hobbit.detourPath.shift()];
+        } else {
+            hobbit.path = getTilePath(currentTX, currentTY, home.porchX, home.porchY, worldMatrix, roomMatrix, hobbit, 40);
+        }
+    }
+}
+
+function stepDirectlyToward(currX, currY, targetX, targetY, worldMatrix, roomMatrix, hobbit) {
+    const dx = targetX - currX;
+    const dy = targetY - currY;
+
+    if (dx === 0 && dy === 0) {
+        return { x: currX, y: currY, blocked: false };
+    }
+
+    const stepX = Math.abs(dx) >= Math.abs(dy) ? Math.sign(dx) : 0;
+    const stepY = Math.abs(dy) > Math.abs(dx) ? Math.sign(dy) : 0;
+
+    if (isTilePassable(currX + stepX, currY + stepY, worldMatrix, roomMatrix, hobbit, currX, currY)) {
+        return { x: currX + stepX, y: currY + stepY, blocked: false };
+    }
+
+    const altX = stepX === 0 ? Math.sign(dx) : 0;
+    const altY = stepY === 0 ? Math.sign(dy) : 0;
+    if (altX !== 0 || altY !== 0) {
+        if (isTilePassable(currX + altX, currY + altY, worldMatrix, roomMatrix, hobbit, currX, currY)) {
+            return { x: currX + altX, y: currY + altY, blocked: false };
+        }
+    }
+
+    return { blocked: true };
+}
+
+function findNearbyMatureCrop(currTX, currTY, maxRadius = 4) {
+    for (let r = 0; r <= maxRadius; r++) {
+        for (let ox = -r; ox <= r; ox++) {
+            for (let oy = -r; oy <= r; oy++) {
+                if (Math.max(Math.abs(ox), Math.abs(oy)) !== r) continue;
+                const key = `${currTX + ox}_${currTY + oy}`;
+                const plant = plants.get(key);
+                if (plant && plant.growth >= 20) {
+                    return plant;
+                }
+            }
+        }
+    }
+    return null;
+}
+
+function executeExploreWander(hobbit, currentTX, currentTY, currentRoom, worldMatrix, roomMatrix) {
+    const angles = [0, Math.PI * 0.25, Math.PI * 0.5, Math.PI * 0.75, Math.PI, Math.PI * 1.25, Math.PI * 1.5, Math.PI * 1.75];
+    for (let i = angles.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [angles[i], angles[j]] = [angles[j], angles[i]];
+    }
+
+    const dist = 3 + Math.floor(Math.random() * 2);
+    for (let angle of angles) {
+        const destX = Math.floor(currentTX + Math.cos(angle) * dist);
+        const destY = Math.floor(currentTY + Math.sin(angle) * dist);
+
+        if (hobbit.recentTiles && hobbit.recentTiles.includes(`${destX}_${destY}`)) continue;
+
+        if (isTilePassable(destX, destY, worldMatrix, roomMatrix, hobbit)) {
+            const data = getTileData(destX * 16 + 8, destY * 16 + 8, worldMatrix, roomMatrix);
+            const targetRoom = (data?.roomID === 9999) ? 0 : (data?.roomID || 0);
+
+            if (targetRoom === currentRoom) {
+                hobbit.path = getTilePath(currentTX, currentTY, destX, destY, worldMatrix, roomMatrix, hobbit, 6);
+                if (hobbit.path && hobbit.path.length > 0) return;
+            }
+        }
+    }
+}
+
+function getOrCreateHomeMemory(hobbit) {
+    if (hobbit.homeMemory) return hobbit.homeMemory;
+
+    const currTX = Math.floor(hobbit.x / 16);
+    const currTY = Math.floor(hobbit.y / 16);
+
+    if (hobbit.homeX !== null && hobbit.homeX !== undefined && hobbit.homeY !== null && hobbit.homeY !== undefined) {
+        hobbit.homeMemory = {
+            houseId: hobbit.houseId || 0,
+            homeX: hobbit.homeX,
+            homeY: hobbit.homeY,
+            doorX: hobbit.homeX + 1,
+            doorY: hobbit.homeY,
+            porchX: hobbit.homeX + 1,
+            porchY: hobbit.homeY + 1,
+            standX: hobbit.homeX + 1,
+            standY: hobbit.homeY - 1,
+            chestX: hobbit.homeX,
+            chestY: hobbit.homeY - 1,
+            bedrollX: hobbit.homeX + 3,
+            bedrollY: hobbit.homeY - 1
+        };
+        return hobbit.homeMemory;
+    }
+
+    let nearest = null;
+    let minDist = Infinity;
+    for (let [key, obj] of staticObjects) {
+        if (obj.type === 'CHEST_STORAGE') {
+            const cx = Math.floor(key / 10000);
+            const cy = key % 10000;
+            const dist = Math.hypot(cx - currTX, cy - currTY);
+            if (dist < minDist) {
+                minDist = dist;
+                nearest = { chestX: cx, chestY: cy, houseId: obj.houseId };
+            }
+        }
+    }
+
+    if (nearest) {
+        hobbit.homeMemory = {
+            houseId: nearest.houseId,
+            homeX: nearest.chestX,
+            homeY: nearest.chestY + 1,
+            doorX: nearest.chestX + 1,
+            doorY: nearest.chestY + 1,
+            porchX: nearest.chestX + 1,
+            porchY: nearest.chestY + 2,
+            standX: nearest.chestX + 1,
+            standY: nearest.chestY,
+            chestX: nearest.chestX,
+            chestY: nearest.chestY,
+            bedrollX: nearest.chestX + 3,
+            bedrollY: nearest.chestY
+        };
+        hobbit.homeX = hobbit.homeMemory.homeX;
+        hobbit.homeY = hobbit.homeMemory.homeY;
+        hobbit.houseId = hobbit.homeMemory.houseId;
+    }
+
+    return hobbit.homeMemory;
+}
+
+function depositBackpack(hobbit, chestX, chestY) {
+    const chestId = `chest_${chestX}_${chestY}`;
+    let chestItems = chestCache.get(chestId);
+    if (!chestItems) {
+        chestItems = [];
+        chestCache.set(chestId, chestItems);
+    }
+    const nonKeys = (hobbit.inventory || []).filter(i => !i.isKey);
+
+    let deposited = false;
+    nonKeys.forEach(item => {
+        if (chestItems.length < 16) {
+            let merged = false;
+            if (item.maxStack > 1) {
+                const existing = chestItems.find(i => i.seedType === item.seedType && i.count < item.maxStack);
+                if (existing) {
+                    const space = item.maxStack - existing.count;
+                    if (item.count <= space) {
+                        existing.count += item.count;
+                        merged = true;
+                    } else {
+                        existing.count = item.maxStack;
+                        item.count -= space;
+                    }
+                }
+            }
+            if (!merged) {
+                chestItems.push(item);
+            }
+            hobbit.inventory = hobbit.inventory.filter(i => i !== item);
+            deposited = true;
+        }
     });
+
+    if (deposited) {
+        hobbit.thoughtBubble = { icon: '📦', timer: 2.0 };
+        if (socket && socket.connected) {
+            socket.emit('updateChest', { chestId, items: chestItems });
+        }
+    }
+}
+
+function harvestPlant(hobbit, gx, gy) {
+    const plantKey = `${gx}_${gy}`;
+    const plant = plants.get(plantKey);
+    if (!plant || plant.growth < 20) return;
+
+    // 1. Give harvested crop / plant matter
+    const yieldKey = YIELD_MAP[plant.type] || 'PLANT_MATTER';
+    const itemTemplate = ITEM_TYPES[yieldKey] || ITEM_TYPES.PLANT_MATTER;
+    if (itemTemplate) {
+        giveItemToHobbit(hobbit, createItem(itemTemplate));
+    }
+
+    // 2. Give seeds (1-2x seeds from wild flora)
+    const seedKey = `${plant.type.toUpperCase()}_SEED`;
+    const seedTemplate = ITEM_TYPES[seedKey];
+    if (seedTemplate) {
+        const seedCount = Math.floor(Math.random() * 2) + 1;
+        const seedItem = createItem(seedTemplate);
+        seedItem.count = seedCount;
+        giveItemToHobbit(hobbit, seedItem);
+    }
+
+    deletePlant(gx, gy);
+
+    if (socket && socket.connected) {
+        socket.emit('syncTile', { gx, gy, traits: 0 });
+        socket.emit('plantWithered', { gx, gy });
+    }
+}
+
+function setDoorOpen(tx, ty, isOpen, worldMatrix, roomMatrix) {
+    const tile = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix);
+    if (!tile) return;
+
+    if (isOpen) {
+        if (tile.tileID === 49 || tile.tileID === 12) {
+            const openTile = (tile.tileID === 49) ? 35 : 13;
+            worldMatrix[tile.cx][tile.cy][(tile.ly * 100) + tile.lx] = openTile;
+            if (socket && socket.connected) {
+                socket.emit('syncTile', { gx: tile.gx, gy: tile.gy, traits: openTile });
+            }
+        }
+    } else {
+        if (tile.tileID === 35 || tile.tileID === 13) {
+            const closedTile = (tile.tileID === 35) ? 49 : 12;
+            worldMatrix[tile.cx][tile.cy][(tile.ly * 100) + tile.lx] = closedTile;
+            if (socket && socket.connected) {
+                socket.emit('syncTile', { gx: tile.gx, gy: tile.gy, traits: closedTile });
+            }
+        }
+    }
+}
+
+function setDoorLock(tx, ty, isLocked) {
+    const doorKey = `${tx}_${ty}`;
+    doorStates.set(doorKey, { locked: isLocked });
+    if (socket && socket.connected) {
+        socket.emit('setDoorLock', { gx: tx, gy: ty, locked: isLocked });
+    }
 }

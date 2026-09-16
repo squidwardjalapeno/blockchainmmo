@@ -9,6 +9,10 @@ export const CONFIG = {
     MAP_SIZE: 100,          // The 100x100 "Logic" Grid
     CELL_SIZE: 100,         // Tiles inside each Cell (100x100)
     TILE_SIZE: 16,          // Pixel size of one tile
+
+    // --- Plant & Flora Lifecycle Speed ---
+    // 1.0 = Normal speed | 10.0 = 10x speed (growth, seeding, and withering)
+    PLANT_LIFECYCLE_SPEED: 10.0,
     
     // --- Physics & Terrain ---
     LAND_THRESHOLD: 55,     // Value >= 67 is Land, < 67 is Water

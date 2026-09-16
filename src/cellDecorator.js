@@ -314,11 +314,13 @@ export function drawBarn(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, world
 
 // src/cellDecorator.js
 
+// src/cellDecorator.js
+
 export function drawRanch(gx, gy, width, height, gateX, barnType, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     let hasBarn = (barnType !== 'NONE');
     let bX = 0, bY = 0, bW = 0, bH = 0;
 
-    // 🎯 FIX 2: Pre-calculate the barn's exact layout once to prevent RNG desyncs
+    // 1. Pre-calculate the barn's exact layout once to prevent RNG desyncs
     if (hasBarn) {
         bY = gy - height + 1; // Top boundary alignment
         const isLeft = (seededRandom() > 0.5); 
@@ -332,13 +334,13 @@ export function drawRanch(gx, gy, width, height, gateX, barnType, worldMatrix, r
         }
     }
 
-    // Initialize pasture soil fertility
+    // 2. Initialize pasture soil fertility
     for (let i = 0; i < width; i++) {
         for (let j = -(height - 1); j <= 0; j++) {
             const tx = gx + i, ty = gy + j;
             setGlobalTile(tx, ty, 63, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
             const cx = Math.floor(tx / 100), cy = Math.floor(ty / 100);
-            const lx = ((tx % 100) + 100) % 100, ly = ((ty % 100) + 100) % 100;
+            const lx = ((tx % 100) + 100) % 100, ly = ((ty % 100) + 100) % 100; // 🎯 Fixed ly
             if (fertilityMatrix[cx]?.[cy]) {
                 fertilityMatrix[cx][cy][(ly * 100) + lx] = 255;
             }
@@ -347,13 +349,14 @@ export function drawRanch(gx, gy, width, height, gateX, barnType, worldMatrix, r
 
     let placedNestingBox = false;
 
-    // Draw boundaries, gates, nesting boxes, and inner pasture flora
+    // 3. Draw boundaries, gates, nesting boxes, and inner pasture flora
     for (let i = 0; i < width; i++) {
         for (let j = -(height - 1); j <= 0; j++) {
             const tx = gx + i, ty = gy + j;
             
-            // 🎯 FIX 2: Skip drawing fences if the coordinate sits inside the barn structure
+            // Skip drawing fences if the coordinate sits inside the barn structure
             if (hasBarn && tx >= bX && tx < bX + bW && ty >= bY - bH + 1 && ty <= bY) {
+                import('./plants.js').then(m => m.deletePlant(tx, ty));
                 continue; 
             }
 
@@ -361,29 +364,33 @@ export function drawRanch(gx, gy, width, height, gateX, barnType, worldMatrix, r
             const isLeftBorder = (i === 0), isRightBorder = (i === width - 1);
 
             if (isTop || isBottom || isLeftBorder || isRightBorder) {
-                // Keep underlying terrain tile intact
                 const currentTile = getTileData(tx * 16 + 8, ty * 16 + 8, worldMatrix, roomMatrix).tileID;
                 if (currentTile === undefined || currentTile === 17) {
                     setGlobalTile(tx, ty, 63, 0, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
                 }
 
-                // Determine fence classification and orientation
-                let fenceType = 'H'; // Horizontal
-                if (isLeftBorder || isRightBorder) fenceType = 'V'; // Vertical
-                if ((isTop || isBottom) && (isLeftBorder || isRightBorder)) fenceType = 'C'; // Corner
+                let fenceType = 'H';
+                if (isLeftBorder || isRightBorder) fenceType = 'V';
+                if ((isTop || isBottom) && (isLeftBorder || isRightBorder)) fenceType = 'C';
                 
                 if (isBottom && i === gateX) {
                     registerObject(tx, ty, 'RANCH_FENCE', { fenceType: 'G', orientation: 'H', open: false });
                 } else {
                     registerObject(tx, ty, 'RANCH_FENCE', { fenceType, open: false });
                 }
+
+                import('./plants.js').then(m => m.deletePlant(tx, ty));
             } else {
+                // Interior pasture ground (roomID 9999)
                 setGlobalTile(tx, ty, 63, 9999, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
+                
                 if (!placedNestingBox && seededRandom() > 0.8) {
                     setGlobalTile(tx, ty, 44, 9999, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
                     placedNestingBox = true; 
+                    import('./plants.js').then(m => m.deletePlant(tx, ty));
                     continue; 
                 }
+
                 if (seededRandom() > 0.85) {
                     const initialAge = Math.floor(seededRandom() * 100);
                     const cropList = ['turnip', 'tomato', 'eggplant', 'strawberry', 'pumpkin', 'watermelon', 'corn', 'pineapple', 'potato', 'wheat'];
@@ -394,19 +401,14 @@ export function drawRanch(gx, gy, width, height, gateX, barnType, worldMatrix, r
         }
     }
 
-    // Draw the barn structure flush using pre-calculated coordinates
+    // 4. Draw the barn structure flush
     if (barnType === 'LARGE_BARN') {
         if (width >= 8) drawLargeBarn(bX, bY, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
         else if (width >= 6) drawBarn(bX, bY, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     } else if (barnType === 'BARN') {
         if (width >= 6) drawBarn(bX, bY, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
     }
-
-    if (socket && socket.connected) {
-        socket.emit('registerRanch', { gx, gy, w: width, h: height });
-    }
 }
-
 
 export function drawStorageRoom(gx, gy, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     const currentId = stampBuildingFoundation(gx, gy, 5, 5, worldMatrix, roomMatrix, fertilityMatrix, worldMap, 'STANDARD');
@@ -1295,13 +1297,14 @@ function promotePath(startNode, endNode, adj, tileID, thickness, maxRangeSq, wor
     }
 }
 
+// src/cellDecorator.js
+
+export const requestedBacteriaChunks = new Set(); // 👈 Prevents duplicate requests
+
 export function ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix, worldMap) {
     const focus = getFocusCoordinates();
     const heroCX = Math.floor(focus.x / 1600);
     const heroCY = Math.floor(focus.y / 1600);
-
-    // Track coordinates currently in the player's centered 3x3 grid
-    const current3x3Keys = new Set();
 
     for (let ox = -1; ox <= 1; ox++) {
         for (let oy = -1; oy <= 1; oy++) {
@@ -1311,7 +1314,6 @@ export function ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix,
             if (cx < 0 || cx >= CONFIG.MAP_SIZE || cy < 0 || cy >= CONFIG.MAP_SIZE) continue;
 
             const cellKey = `${cx}_${cy}`;
-            current3x3Keys.add(cellKey);
             const zone = zoneLookup.get(cellKey);
 
             if (zone) {
@@ -1323,27 +1325,18 @@ export function ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix,
                 }
             }
 
-            // ⚡ CENTERED 3x3 STREAMING ENGINE:
-            // If a cell entering the player's centered 3x3 grid has not fetched its plants, request them now
-            if (!activeFloraChunks.has(cellKey)) {
-                activeFloraChunks.add(cellKey);
-                if (socket && socket.connected) {
-                    socket.emit('requestChunkPlants', { cx, cy });
-                }
-            }
+            // In src/cellDecorator.js around line 826:
+if (!requestedBacteriaChunks.has(cellKey)) {
+    if (socket && socket.connected) {
+        requestedBacteriaChunks.add(cellKey);
+        socket.emit('requestChunkPlants', { cx, cy });
+        socket.emit('requestChunkBacteria', { cx, cy });
+    }
+}
 
-            
             autoTileLayerChunk(cx, cy, worldMatrix, [0, 10, 11, 17], 0, 'sand');
             autoTileLayerChunk(cx, cy, worldMatrix, [208], 208, 'stone');
             autoTileLayerChunk(cx, cy, worldMatrix, [337], 337, 'dirt');
-            
-        }
-    }
-
-    // Clear cells that fall out of the player's centered 3x3 grid
-    for (let key of activeFloraChunks) {
-        if (!current3x3Keys.has(key)) {
-            activeFloraChunks.delete(key);
         }
     }
 }

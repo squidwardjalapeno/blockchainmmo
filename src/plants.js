@@ -1,167 +1,342 @@
 // src/plants.js
-import { seedBacteria } from './bacteria.js';
-import { ITEM_TYPES } from './items.js';
+import { seedBacteria, getBacteriaData } from './bacteria.js';
 import { hero, getFocusCoordinates } from './entities.js';
 import { viewport } from './viewport.js'; 
 import { socket } from './multiplayer.js'; 
-
-if (typeof window !== 'undefined') {
-    logStep("plants.js loaded");
-}
+import { getObjectAt, solidTiles } from './staticObjects.js';
+import { PLANT_DEFS } from './plantDefs.js';
+import { CONFIG } from './config.js';
 
 export const plants = new Map();
+// Fast spatial grid: chunkKey -> Array(10000) for 0ms screen-space rendering
+export const plantChunks = new Map();
 
-// Standard botanical definitions
-export const PLANT_DEFS = {
-    grass: { stages: [59, 58, 57, 56, 55], growthRate: 0.5, fertilityReq: 3, spreadRange: 2 },
-    rose: { stages: [10, 9, 8, 7, 6], growthRate: 0.25, fertilityReq: 8, spreadRange: 2 },
-    violet: { stages: [22, 21, 20, 19, 18], growthRate: 0.25, fertilityReq: 8, spreadRange: 2 },
-    sunflower: { stages: [118, 117, 116, 115, 114], growthRate: 0.25, fertilityReq: 12, spreadRange: 2 },
-    turnip: { stages: [4, 3, 2, 1], growthRate: 0.4, fertilityReq: 5, spreadRange: 1 },
-    tomato: { 
-        stages: [23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12], 
-        tileset: 'cropTileset2', 
-        growthRate: 0.2, 
-        fertilityReq: 40, 
-        spreadRange: 1,
-        isCyclical: true,        
-        resetGrowth: 26,         
-        flowerGrowth: 34,        
-        flowerFertilityCost: 15,  
-        harvestWindow: 3 
-    },
-    eggplant: { 
-        stages: [46, 45, 44, 43, 42, 41, 40, 39, 38, 37], 
-        tileset: 'cropTileset2', 
-        growthRate: 0.15, 
-        fertilityReq: 85, 
-        spreadRange: 1,
-        isCyclical: true,        
-        resetGrowth: 31,         
-        flowerGrowth: 41,        
-        flowerFertilityCost: 20  
-    },
-    strawberry: { 
-        stages: [82, 81, 80, 79, 78, 77, 76, 75, 74, 73], 
-        tileset: 'cropTileset2',
-        growthRate: 0.24, 
-        fertilityReq: 45, 
-        spreadRange: 1,
-        isCyclical: true,        
-        resetGrowth: 31,         
-        flowerGrowth: 41,        
-        flowerFertilityCost: 10  
-    },
-    pumpkin: { stages: [100, 99, 98, 97], growthRate: 0.35, fertilityReq: 25, spreadRange: 1 },
-    watermelon: { stages: [34, 33, 32, 31], growthRate: 0.35, fertilityReq: 28, spreadRange: 1 },
-    corn: { stages: [112, 111, 110, 109], growthRate: 0.35, fertilityReq: 8, spreadRange: 1 },
-    wheat: { stages: [64, 63, 62, 61], growthRate: 0.4, fertilityReq: 6, spreadRange: 1 },
-    pineapple: { stages: [53, 52, 51, 50, 49], growthRate: 0.05, fertilityReq: 25, spreadRange: 1 },
-    potato: { stages: [89, 88, 87, 86, 85], growthRate: 0.15, fertilityReq: 32, spreadRange: 1 }
-};
+const ID_TO_TYPE = [
+    'grass', 'turnip', 'tomato', 'eggplant', 'strawberry',
+    'pumpkin', 'watermelon', 'corn', 'pineapple', 'potato',
+    'wheat', 'rose', 'violet', 'sunflower'
+];
 
-// 🧠 HELPER: Deletes a plant, refunds nutrients to soil, and spawns compost
-function witherPlant(plant, key, fertilityMatrix) {
-    const cx = Math.floor(plant.gx / 100);
-    const cy = Math.floor(plant.gy / 100);
-    const lx = ((plant.gx % 100) + 100) % 100;
-    const ly = ((plant.gy % 100) + 100) % 100;
-    const idx = (ly * 100) + lx;
+/**
+ * 0ms Spatial Lookup: used by renderer.js to draw only visible screen tiles
+ */
+export function getPlantAtTile(gx, gy) {
+    const cx = Math.floor(gx / 100);
+    const cy = Math.floor(gy / 100);
+    const grid = plantChunks.get(`${cx}_${cy}`);
+    if (!grid) return null;
+    const lx = ((gx % 100) + 100) % 100;
+    const ly = ((gy % 100) + 100) % 100;
+    return grid[(ly * 100) + lx] || null;
+}
 
-    // Instant Nutrient Refund
-    if (fertilityMatrix[cx] && fertilityMatrix[cx][cy]) {
-        fertilityMatrix[cx][cy][idx] = Math.min(255, fertilityMatrix[cx][cy][idx] + PLANT_DEFS[plant.type].fertilityReq);
+/**
+ * 🎯 CENTRALIZED PLANT DELETION HELPER
+ * Keeps both the logical Map and the fast spatial render grid strictly in sync.
+ */
+export function deletePlant(gx, gy) {
+    const key = `${gx}_${gy}`;
+    plants.delete(key);
+
+    const cx = Math.floor(gx / 100);
+    const cy = Math.floor(gy / 100);
+    const grid = plantChunks.get(`${cx}_${cy}`);
+    if (grid) {
+        const lx = ((gx % 100) + 100) % 100;
+        const ly = ((gy % 100) + 100) % 100;
+        grid[(ly * 100) + lx] = null;
+    }
+}
+
+/**
+ * Loads raw binary chunk data directly into typed spatial memory,
+ * silently rejecting any plants on roads, road borders, buildings, or fences.
+ */
+// In src/plants.js:
+// In src/plants.js:
+// src/plants.js (inside loadBinaryPlantsForChunk)
+
+export function loadBinaryPlantsForChunk(cx, cy, rawBuffer, worldMatrix, roomMatrix) {
+    if (!rawBuffer) return;
+
+    let arrayBuffer;
+    if (rawBuffer instanceof ArrayBuffer) {
+        arrayBuffer = rawBuffer;
+    } else if (rawBuffer.buffer instanceof ArrayBuffer) {
+        arrayBuffer = rawBuffer.buffer.slice(rawBuffer.byteOffset, rawBuffer.byteOffset + rawBuffer.byteLength);
+    } else if (rawBuffer.data && Array.isArray(rawBuffer.data)) {
+        arrayBuffer = new Uint8Array(rawBuffer.data).buffer;
+    } else {
+        return;
     }
 
-    // Wipe the bacteria anchor and drop compost
-    import('./bacteria.js').then(m => {
-        const bac = m.getBacteriaData(plant.gx, plant.gy);
-        if (bac && bac.data) bac.data[bac.idx] = 0;
-        m.seedBacteria(plant.gx, plant.gy, "grass_item", 12, 2);
-    });
+    const view = new DataView(arrayBuffer);
+    if (view.byteLength < 12) return;
 
-    plants.delete(key);
+    const plantCount = view.getUint32(8, true);
+    const chunkKey = `${cx}_${cy}`;
+
+    let grid = plantChunks.get(chunkKey);
+    if (!grid) {
+        grid = new Array(10000);
+        plantChunks.set(chunkKey, grid);
+    } else {
+        grid.fill(null);
+    }
+
+    let loadedCount = 0;
+    let rejectedCount = 0;
+    const rejectedCoordinates = []; // 🎯 Collect phantom plants on roads/buildings
+
+    let offset = 12;
+    for (let i = 0; i < plantCount; i++) {
+        if (offset + 8 > view.byteLength) break;
+
+        const localIdx = view.getUint16(offset, true);
+        const typeId = view.getUint8(offset + 2);
+        const growth = view.getUint8(offset + 3);
+        const seedsRemaining = view.getUint8(offset + 4);
+        const generation = view.getUint8(offset + 5) |
+                          (view.getUint8(offset + 6) << 8) |
+                          (view.getUint8(offset + 7) << 16);
+
+        const lx = localIdx % 100;
+        const ly = Math.floor(localIdx / 100);
+        const gx = cx * 100 + lx;
+        const gy = cy * 100 + ly;
+
+        const tileID = (worldMatrix && worldMatrix[cx] && worldMatrix[cx][cy]) ? worldMatrix[cx][cy][localIdx] : undefined;
+        const rID = (roomMatrix && roomMatrix[cx] && roomMatrix[cx][cy]) ? roomMatrix[cx][cy][localIdx] : 0;
+        const obj = getObjectAt(gx, gy);
+        const isSolid = solidTiles.has(`${gx}_${gy}`);
+
+        let isValidTile = true;
+
+        // 1. Terrain Check (Must be natural grass 63 or 56, never roads 337/208 or road borders 300..367)
+        const isNaturalLand = (tileID === 63 || tileID === 56);
+        if (!isNaturalLand) {
+            isValidTile = false;
+        }
+
+        // 2. Building Interior Check (0 = wilderness, 9999 = ranch pasture)
+        if (rID !== 0 && rID !== 9999) {
+            isValidTile = false;
+        }
+
+        // 3. Static Object Check (Trees, Fences, Wells)
+        if (obj || isSolid) {
+            isValidTile = false;
+        }
+
+        // 🎯 IF ON A ROAD / BUILDING / OBSTACLE: Mark for server purge
+        if (!isValidTile) {
+            rejectedCount++;
+            rejectedCoordinates.push({ gx, gy });
+            offset += 8;
+            continue;
+        }
+
+        const type = ID_TO_TYPE[typeId] || 'grass';
+        const key = `${gx}_${gy}`;
+
+        const plantObj = {
+            gx, gy,
+            type,
+            growth,
+            seedsRemaining,
+            generation,
+            growthRate: PLANT_DEFS[type]?.growthRate || 0.4,
+            health: type === 'grass' ? 60 : 40,
+            seedTimer: 15.0 + Math.random() * 10.0,
+            hasFlowered: growth >= 100,
+            lastUpdated: Date.now()
+        };
+
+        grid[localIdx] = plantObj;
+        plants.set(key, plantObj);
+        loadedCount++;
+
+        offset += 8;
+    }
+
+    // 🎯 EMIT PURGE TO SERVER: Wipe phantom road plants from memory and .bin files forever
+    if (rejectedCoordinates.length > 0 && socket && socket.connected) {
+        socket.emit('purgePhantomPlants', { cx, cy, tiles: rejectedCoordinates });
+    }
+
+    console.log(`🌿 Chunk [${cx}, ${cy}]: ${loadedCount} clean plants loaded, ${rejectedCount} phantom road plants purged.`);
+}
+function isGroundClearOfObjects(gx, gy) {
+    if (solidTiles.has(`${gx}_${gy}`)) return false;
+    const obj = getObjectAt(gx, gy);
+    if (obj) return false; 
+    return true;
 }
 
 export function createPlant(gx, gy, fertilityMatrix = null, startingGrowth = 0, type = 'grass', leftoverTime = 0, isServerSync = false) {
     const key = `${gx}_${gy}`;
     if (plants.has(key)) return; 
 
+    if (!isGroundClearOfObjects(gx, gy)) return;
+
     const cx = Math.floor(gx / 100);
     const cy = Math.floor(gy / 100);
     const lx = ((gx % 100) + 100) % 100;
     const ly = ((gy % 100) + 100) % 100;
-    const idx = (ly * 100) + lx; 
+    const localIdx = (ly * 100) + lx; 
 
-    if (fertilityMatrix) {
-        const cell = fertilityMatrix[cx]?.[cy];
-        if (cell) {
-            const required = PLANT_DEFS[type].fertilityReq;
-            cell[idx] = Math.max(0, cell[idx] - required); 
+    const req = PLANT_DEFS[type]?.fertilityReq || 3;
+
+    // Soil chemistry deduction
+    if (fertilityMatrix && fertilityMatrix[cx]?.[cy]) {
+        const currentFert = fertilityMatrix[cx][cy][idxLocal(lx, ly)];
+        if (currentFert < req && !isServerSync) {
+            return; // Soil depleted
         }
+        fertilityMatrix[cx][cy][idxLocal(lx, ly)] = Math.max(0, currentFert - req); 
     }
 
+    const def = PLANT_DEFS[type];
     const maxHP = (type === 'grass') ? 60 : 40;
-    let initialStage = 0;
-    if (startingGrowth > 30) initialStage = 1;
-    if (startingGrowth > 80) initialStage = 2;
-    if (startingGrowth >= 100) initialStage = 4;
 
-    plants.set(key, {
+    const plantObj = {
         gx, gy,
-        type: type, 
+        type, 
         growth: startingGrowth,
-        growthRate: PLANT_DEFS[type].growthRate,    
+        growthRate: def?.growthRate || 0.5,    
         health: maxHP,      
         maxHealth: maxHP,   
-        spriteStage: initialStage,
-        seedsRemaining: Math.floor(Math.random() * 2) + 3,
-        seedTimer: startingGrowth >= 100 ? (Math.random() * 200.0) : 0,
+        seedsRemaining: 3,
+        seedTimer: startingGrowth >= 100 ? (15.0 + Math.random() * 10.0) : 0,
         hasFlowered: false, 
         lastUpdated: Date.now() - (leftoverTime * 1000) 
-    });
+    };
 
-    // Statically imported and executed synchronously (no Promises allocated)
+    let grid = plantChunks.get(`${cx}_${cy}`);
+    if (!grid) {
+        grid = new Array(10000);
+        plantChunks.set(`${cx}_${cy}`, grid);
+    }
+    grid[localIdx] = plantObj;
+    plants.set(key, plantObj);
+
     seedBacteria(gx, gy, "organic_plant", maxHP, 0);
 
-    // Only emit to server if the plant was generated locally by a client action
     if (!isServerSync && socket && socket.connected) {
         socket.emit('registerWildPlant', { 
-            gx: gx, 
-            gy: gy, 
-            type: type, 
+            gx, gy, 
+            type, 
             growth: startingGrowth,
-            growthRate: PLANT_DEFS[type].growthRate
+            growthRate: def?.growthRate || 0.5
         });
     }
 }
 
+function idxLocal(lx, ly) {
+    return (ly * 100) + lx;
+}
+
+function witherPlant(plant, key, fertilityMatrix) {
+    const cx = Math.floor(plant.gx / 100);
+    const cy = Math.floor(plant.gy / 100);
+    const lx = ((plant.gx % 100) + 100) % 100;
+    const ly = ((plant.gy % 100) + 100) % 100;
+    const localIdx = (ly * 100) + lx;
+
+    // 1. Return ancestral humus to the soil
+    if (fertilityMatrix && fertilityMatrix[cx] && fertilityMatrix[cx][cy]) {
+        const refund = PLANT_DEFS[plant.type]?.fertilityReq || 3;
+        fertilityMatrix[cx][cy][localIdx] = Math.min(255, fertilityMatrix[cx][cy][localIdx] + refund);
+    }
+
+    // 2. Clear bacteria slot
+    const bac = getBacteriaData(plant.gx, plant.gy);
+    if (bac && bac.data) bac.data[bac.idx] = 0;
+
+    // 3. Remove from fast grid and map using unified helper
+    deletePlant(plant.gx, plant.gy);
+
+    // 4. Synchronize with server
+    if (socket && socket.connected) {
+        socket.emit('syncTile', { gx: plant.gx, gy: plant.gy, traits: 0 });
+        socket.emit('plantWithered', { gx: plant.gx, gy: plant.gy });
+    }
+}
+
+/**
+ * 🌾 LIVE SEED DISPERSAL: Plants cast seeds into neighboring tiles across chunks
+ */
+function spreadSeed(parentPlant, fertilityMatrix, worldMatrix, roomMatrix, leftoverTime = 0) {
+    const range = PLANT_DEFS[parentPlant.type]?.spreadRange || 2;
+    const targetX = parentPlant.gx + Math.floor(Math.random() * (range * 2 + 1)) - range;
+    const targetY = parentPlant.gy + Math.floor(Math.random() * (range * 2 + 1)) - range;
+
+    if (targetX === parentPlant.gx && targetY === parentPlant.gy) return;
+
+    const key = `${targetX}_${targetY}`;
+    if (plants.has(key)) return;
+    
+    // 🛡️ Ensure target coordinate is clear of fences, gates, trees, and wells
+    if (!isGroundClearOfObjects(targetX, targetY)) return;
+
+    const cx = Math.floor(targetX / 100);
+    const cy = Math.floor(targetY / 100);
+    const lx = ((targetX % 100) + 100) % 100;
+    const ly = ((targetY % 100) + 100) % 100;
+    const localIdx = (ly * 100) + lx; 
+
+    if (!worldMatrix || !worldMatrix[cx] || !worldMatrix[cx][cy]) return;
+    // Must be natural soil/grass (Tile 63), blocking roads and road borders
+    if (worldMatrix[cx][cy][localIdx] !== 63) return; 
+    
+    const rID = roomMatrix[cx] && roomMatrix[cx][cy] ? roomMatrix[cx][cy][localIdx] : 0;
+    if (rID !== 0 && rID !== 9999) return; // Cannot germinate inside houses
+
+    // Soil check: tile fertility must support seed
+    const reqFert = PLANT_DEFS[parentPlant.type]?.fertilityReq || 3;
+    if (fertilityMatrix && fertilityMatrix[cx]?.[cy] && fertilityMatrix[cx][cy][localIdx] < reqFert) {
+        return;
+    }
+
+    createPlant(targetX, targetY, fertilityMatrix, 0, parentPlant.type, leftoverTime);
+}
+
+/**
+ * ⚡ REAL-TIME SIMULATION LOOP (Runs every 1s tick)
+ */
 export function updatePlants(modifier, fertilityMatrix, worldMatrix, roomMatrix) {
     const focus = getFocusCoordinates();
-    const focusCX = Math.floor(focus.x / 1600); // 🎯 Centers active chunk calculations on current camera focus coordinates
+    const focusCX = Math.floor(focus.x / 1600);
     const focusCY = Math.floor(focus.y / 1600); 
     const now = Date.now();
 
+    // Prevent boot-time chunk culling while the hero initializes
+    if (focusCX === 0 && focusCY === 0 && hero.x > 1600) return;
+
     for (let [key, plant] of plants) {
+        if (plant.health <= 0) {
+            witherPlant(plant, key, fertilityMatrix);
+            continue;
+        }
+
         const plantCX = Math.floor(plant.gx / 100);
         const plantCY = Math.floor(plant.gy / 100);
 
-        // ==========================================
-        // ❄️ TIER 3: FROZEN ZONE (Outside 3x3 Chunks centered on focus)
-        // ==========================================
-        const isInsideActiveChunks = Math.abs(plantCX - focusCX) <= 1 && Math.abs(plantCY - focusCY) <= 1;
-        if (!isInsideActiveChunks) {
-            // Purge distant plants from client memory to prevent unbound RAM leakage
-            plants.delete(key); 
+        // Chunk culling outside active 3x3 window
+        if (Math.abs(plantCX - focusCX) > 1 || Math.abs(plantCY - focusCY) > 1) {
+            deletePlant(plant.gx, plant.gy);
             continue; 
         }
 
-        // Initialize elapsed duration
         if (!plant.lastUpdated) plant.lastUpdated = now;
         let deltaSeconds = (now - plant.lastUpdated) / 1000;
         if (deltaSeconds < 0) deltaSeconds = 0;
 
-        // Viewport check
+        // Cap local time step to 2 seconds to prevent withering avalanches during lag
+        if (deltaSeconds > 2.0) {
+            deltaSeconds = 2.0;
+        }
+
         const pad = 32; 
         const screenX = (plant.gx * 16) + viewport.offset[0];
         const screenY = (plant.gy * 16) + viewport.offset[1];
@@ -172,47 +347,45 @@ export function updatePlants(modifier, fertilityMatrix, worldMatrix, roomMatrix)
             screenY <= viewport.screen[1] + pad
         );
 
-        // ==========================================
-        // ❄️ TIER 2: COLD HEARTBEAT (Off-Screen Active)
-        // ==========================================
         if (!inViewport && deltaSeconds < 1.5) {
             continue; 
         }
 
         plant.lastUpdated = now;
-        let simulatedTime = deltaSeconds;
+        
+        const speed = CONFIG.PLANT_LIFECYCLE_SPEED || 1.0;
+        let simulatedTime = deltaSeconds * speed;
+        const def = PLANT_DEFS[plant.type];
 
-        // ==========================================
-        // ⚡ TIER 1: VIEWPORT ACTIVE (On-Screen Real-Time / Catch-up)
-        // ==========================================
+        let tileVirulence = 0;
+        const bac = getBacteriaData(plant.gx, plant.gy);
+        if (bac && bac.data) {
+            tileVirulence = (bac.data[bac.idx] >> 8) & 0xFF;
+        }
+        const virulenceBoost = 1.0 + (tileVirulence * 0.025);
 
         // --- 1. GROWTH PHASE ---
         if (plant.growth < 100) {
-            const ratePerSec = plant.growthRate * 0.1; 
+            const ratePerSec = (plant.growthRate || 0.4) * 0.1 * virulenceBoost; 
             const growthAdded = ratePerSec * simulatedTime;
-            const def = PLANT_DEFS[plant.type];
 
-            // Cyclical flower drain
-            if (def.isCyclical && !plant.hasFlowered && plant.growth >= def.flowerGrowth) {
+            if (def?.isCyclical && !plant.hasFlowered && plant.growth >= def.flowerGrowth) {
                 plant.hasFlowered = true;
-                
                 const cx = Math.floor(plant.gx / 100);
                 const cy = Math.floor(plant.gy / 100);
                 const lx = ((plant.gx % 100) + 100) % 100;
                 const ly = ((plant.gy % 100) + 100) % 100;
                 
-                if (fertilityMatrix[cx] && fertilityMatrix[cx][cy]) {
-                    const idx = (ly * 100) + lx;
-                    fertilityMatrix[cx][cy][idx] = Math.max(0, fertilityMatrix[cx][cy][idx] - def.flowerFertilityCost);
+                if (fertilityMatrix && fertilityMatrix[cx] && fertilityMatrix[cx][cy]) {
+                    const localIdx = (ly * 100) + lx;
+                    fertilityMatrix[cx][cy][localIdx] = Math.max(0, fertilityMatrix[cx][cy][localIdx] - def.flowerFertilityCost);
                 }
-                console.log(`🌸 ${plant.type} flowered! Drained ${def.flowerFertilityCost} fertility.`);
             }
             
             if (plant.growth + growthAdded >= 100) {
                 const timeTo100 = (100 - plant.growth) / ratePerSec;
                 plant.growth = 100;
-                plant.spriteStage = def.stages.length - 1; 
-                plant.seedTimer = 100.0; 
+                plant.seedTimer = 15.0 + Math.random() * 10.0;
                 simulatedTime -= timeTo100; 
             } else {
                 plant.growth += growthAdded;
@@ -222,10 +395,17 @@ export function updatePlants(modifier, fertilityMatrix, worldMatrix, roomMatrix)
         
         // --- 2. SEEDING & WITHERING PHASE ---
         if (plant.growth >= 100 && simulatedTime > 0) {
+            // Cyclical crops (tomatoes, etc.) stay mature with harvestable fruit
+            if (def?.isCyclical) {
+                simulatedTime = 0;
+                continue;
+            }
+
+            // Wild flora casts seeds and eventually withers
             while (simulatedTime > 0 && plant.seedsRemaining > 0) {
                 if (simulatedTime >= plant.seedTimer) {
                     simulatedTime -= plant.seedTimer;
-                    spreadSeed(plant, fertilityMatrix, worldMatrix, roomMatrix, simulatedTime); 
+                    spreadSeed(plant, fertilityMatrix, worldMatrix, roomMatrix, simulatedTime / speed); 
                     plant.seedsRemaining--;
 
                     if (plant.seedsRemaining <= 0) {
@@ -233,7 +413,7 @@ export function updatePlants(modifier, fertilityMatrix, worldMatrix, roomMatrix)
                         simulatedTime = 0; 
                         break; 
                     } else {
-                        plant.seedTimer = 100.0 + (Math.random() * 100.0);
+                        plant.seedTimer = 20.0 + (Math.random() * 10.0);
                     }
                 } else {
                     plant.seedTimer -= simulatedTime;
@@ -242,29 +422,4 @@ export function updatePlants(modifier, fertilityMatrix, worldMatrix, roomMatrix)
             }
         }
     }
-}
-
-function spreadSeed(parentPlant, fertilityMatrix, worldMatrix, roomMatrix, leftoverTime = 0) {
-    const range = PLANT_DEFS[parentPlant.type].spreadRange || 2;
-    const targetX = parentPlant.gx + Math.floor(Math.random() * (range * 2 + 1)) - range;
-    const targetY = parentPlant.gy + Math.floor(Math.random() * (range * 2 + 1)) - range;
-
-    if (targetX === parentPlant.gx && targetY === parentPlant.gy) return;
-
-    const key = `${targetX}_${targetY}`;
-    if (plants.has(key)) return;
-
-    const cx = Math.floor(targetX / 100);
-    const cy = Math.floor(targetY / 100);
-    const lx = ((targetX % 100) + 100) % 100;
-    const ly = ((targetY % 100) + 100) % 100;
-    const idx = (ly * 100) + lx; 
-
-    if (!worldMatrix || !worldMatrix[cx] || !worldMatrix[cx][cy]) return;
-    if (worldMatrix[cx][cy][idx] !== 63) return;
-    
-    const rID = roomMatrix[cx] && roomMatrix[cx][cy] ? roomMatrix[cx][cy][idx] : 0;
-    if (rID !== 0 && rID !== 9999) return;
-
-    createPlant(targetX, targetY, fertilityMatrix, 0, parentPlant.type, leftoverTime);
 }

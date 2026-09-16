@@ -55,12 +55,17 @@ export function getPetAnimationData(pet, images) {
     };
 }
 
+// In src/animations.js:
+
 export function getAnimalAnimationData(animal, images) {
     const srcW = 16; 
     const srcH = 16; 
 
     const isMoving = animal.state === 'walking';
-    const imgKey = `chickenWalk${animal.dir}`;
+    
+    // 🐔 Chickens only use East and West spritesheets (flips on X axis)
+    const dir = (animal.dir === 'West') ? 'West' : 'East';
+    const imgKey = `chickenWalk${dir}`;
     const img = images[imgKey] || images.chickenWalkEast;
     const frame = isMoving ? Math.floor(Date.now() / 150) % 4 : 0; 
 
