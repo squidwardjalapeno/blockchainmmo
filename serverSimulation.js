@@ -690,7 +690,39 @@ export async function tickWorld(io) {
         }
     });
 
-    if (io) io.emit('animals', { animals: serverAnimals });
+    // serverSimulation.js (inside tickWorld)
+
+    // ==========================================
+    // 🧝 HOBBIT WORKFORCE MOVEMENT & SYNC
+    // ==========================================
+    serverHobbits.forEach(h => {
+        if (h.path && h.path.length > 0) {
+            const nextNode = h.path[0];
+            const nextWorldX = nextNode.x * 16;
+            const nextWorldY = nextNode.y * 16;
+
+            const dx = nextWorldX - h.x;
+            const dy = nextWorldY - h.y;
+            const dist = Math.hypot(dx, dy);
+
+            if (dist > 1.5) {
+                const step = Math.min(dist, (h.speed || 35) * delta);
+                h.x += (dx / dist) * step;
+                h.y += (dy / dist) * step;
+                h.state = 'walking';
+            } else {
+                h.x = nextWorldX;
+                h.y = nextWorldY;
+                h.path.shift();
+                h.state = 'idle';
+            }
+        }
+    });
+
+    if (io) {
+        io.emit('hobbits_update', { hobbits: serverHobbits });
+        io.emit('animals', { animals: serverAnimals });
+    }
 
     // ==========================================
     // 🌽 3. AGRICULTURE TICK LOOP (PLANTS)

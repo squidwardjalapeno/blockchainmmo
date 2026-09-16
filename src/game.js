@@ -148,10 +148,12 @@ var update = function (modifier) {
         ensureLocalCells(hero, worldMatrix, roomMatrix, fertilityMatrix, worldMap);
         handleHeroUpdate(modifier, worldMatrix, roomMatrix);
         
+        /*
         // Step Hobbit AI and pathfinding smoothly at 60 FPS
         if (DEBUG_FLAGS.ENABLE_WORLD_SIM) {
             updateHobbits(modifier, worldMatrix, roomMatrix); 
         }
+            */
     }
 
     // Smooth client-side LERP engine for remote players and pasture animals

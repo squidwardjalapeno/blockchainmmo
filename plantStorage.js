@@ -125,60 +125,52 @@ export function savePlantChunk(cx, cy, plantsMap, timestamp = Date.now()) {
  * Loads a chunk's binary data. If enough time has passed, invokes
  * plantWorker.js to simulate the offline delta.
  */
-export function loadPlantChunkWithCatchUpAsync(cx, cy, worldSeed) {
-    return new Promise((resolve) => {
-        const filePath = getPlantChunkPath(cx, cy);
+// plantStorage.js
 
-        // File does not exist yet; signal server to generate initial baseline
-        if (!fs.existsSync(filePath)) {
-            resolve(null);
-            return;
-        }
+export async function loadPlantChunkWithCatchUpAsync(cx, cy, worldSeed) {
+    const filePath = getPlantChunkPath(cx, cy);
 
-        const rawBuffer = fs.readFileSync(filePath);
-        if (rawBuffer.length < 12) {
-            resolve(null);
-            return;
-        }
+    if (!fs.existsSync(filePath)) {
+        return null;
+    }
 
-        const savedTimestamp = Number(rawBuffer.readBigInt64LE(0));
-        const deltaSeconds = Math.max(0, (Date.now() - savedTimestamp) / 1000);
+    const rawBuffer = fs.readFileSync(filePath);
+    if (rawBuffer.length < 12) {
+        return null;
+    }
 
-        // If the chunk was updated less than 15 seconds ago, skip thread overhead
-        if (deltaSeconds <= 15.0) {
-            resolve(rawBuffer);
-            return;
-        }
+    const savedTimestamp = Number(rawBuffer.readBigInt64LE(0));
+    const deltaSeconds = Math.max(0, (Date.now() - savedTimestamp) / 1000);
 
-        // Delegate mathematical catch-up to the worker thread
-        const workerPath = path.join(__dirname, 'plantWorker.js');
-        const worker = new Worker(workerPath);
-        const transfer = rawBuffer.buffer.slice(rawBuffer.byteOffset, rawBuffer.byteOffset + rawBuffer.byteLength);
+    // If updated recently (< 15s), return buffer directly
+    if (deltaSeconds <= 15.0) {
+        return rawBuffer;
+    }
 
-        worker.postMessage({
-            cx,
-            cy,
-            rawBuffer: transfer,
-            deltaSeconds,
-            worldSeed
-        }, [transfer]);
+    // ⚡ INLINE CATCH-UP (No Worker thread overhead)
+    const plantCount = rawBuffer.readUInt32LE(8);
+    const speed = CONFIG.PLANT_LIFECYCLE_SPEED || 1.0;
+    const updatedBuffer = Buffer.from(rawBuffer);
 
-        worker.on('message', (result) => {
-            const finalBuf = Buffer.from(result.buffer);
-            
-            // Persist the caught-up generation directly to disk
-            fs.writeFileSync(filePath, finalBuf);
-            
-            console.log(`🌾 Generational Catch-Up: Chunk [${result.cx}, ${result.cy}] advanced through ${result.elapsedGenerations} generation(s). Total lineage: ${result.plantCount} plants.`);
+    let offset = 12;
+    for (let i = 0; i < plantCount; i++) {
+        if (offset + 8 > updatedBuffer.length) break;
 
-            worker.terminate();
-            resolve(finalBuf);
-        });
+        const typeId = updatedBuffer.readUInt8(offset + 2);
+        let growth = updatedBuffer.readUInt8(offset + 3);
+        const typeName = ID_TO_TYPE[typeId] || 'grass';
+        const def = PLANT_DEFS[typeName];
+        const rate = (def?.growthRate || 0.4) * 0.1 * speed;
 
-        worker.on('error', (err) => {
-            console.error(`Worker error in chunk [${cx}, ${cy}]:`, err);
-            worker.terminate();
-            resolve(rawBuffer);
-        });
-    });
+        growth = Math.min(100, Math.floor(growth + (rate * deltaSeconds)));
+        updatedBuffer.writeUInt8(growth, offset + 3);
+
+        offset += 8;
+    }
+
+    // Update timestamp
+    updatedBuffer.writeBigInt64LE(BigInt(Date.now()), 0);
+    fs.writeFileSync(filePath, updatedBuffer);
+
+    return updatedBuffer;
 }

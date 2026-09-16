@@ -1024,20 +1024,34 @@ export function drawRemotePlayers(ctx2, remotePlayersData, roomMatrix) {
     const rCol = roomMatrix[Math.floor(hTX / 100)]?.[Math.floor(hTY / 100)];
     const heroHouseId = rCol ? rCol[((hTY % 100 + 100) % 100 * 100) + ((hTX % 100 + 100) % 100)] : 0;
 
+    // src/renderer.js (inside drawRemotePlayers)
+
     remotePlayersData.forEach(p => {
         if (p.charClass === 'Overseer' || p.isOverseer) return;
 
+        // Sample center of player body (y + 8 instead of y + 15)
         const pTX = Math.floor((p.x + 8) / 16);
-        const pTY = Math.floor((p.y + 15) / 16);
+        const pTY = Math.floor((p.y + 8) / 16);
         const pCol = roomMatrix[Math.floor(pTX / 100)]?.[Math.floor(pTY / 100)];
-        const pRoomId = pCol ? pCol[((pTY % 100 + 100) % 100 * 100) + ((pTX % 100 + 100) % 100)] : 0;
+        const wCol = worldMatrix[Math.floor(pTX / 100)]?.[Math.floor(pTY / 100)];
+        
+        const localIdx = (((pTY % 100 + 100) % 100) * 100) + ((pTX % 100 + 100) % 100);
+        let pRoomId = pCol ? pCol[localIdx] : 0;
+        const currentTileID = wCol ? wCol[localIdx] : 0;
+
+        // 🧱 If standing on an exterior wall tile, treat as OUTDOORS (roomID = 0)
+        const exteriorWallTiles = [40, 48, 50, 52, 1, 3, 5, 27, 46, 47];
+        if (exteriorWallTiles.includes(currentTileID)) {
+            pRoomId = 0;
+        }
 
         if (heroHouseId !== 0 && heroHouseId !== 9999) {
             if (pRoomId !== heroHouseId) return;
         } else {
             if (pRoomId !== 0 && pRoomId !== 9999) return;
         }
-
+        
+        // ... (continue drawing player) ...
         let sx = Math.floor(p.x + viewport.offset[0]);
         let sy = Math.floor(p.y + viewport.offset[1]);
 
