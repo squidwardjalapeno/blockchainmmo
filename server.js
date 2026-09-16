@@ -41,13 +41,17 @@ const io = new Server(http, {
     }
 });
 
-// Static assets & script routes
+// Serve root directory and public folder for CSS, HTML, and Images
+app.use(express.static(__dirname));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/src', express.static(path.join(__dirname, 'src')));
 app.use('/js', express.static(path.join(__dirname, 'src')));
 
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    const indexPath = fs.existsSync(path.join(__dirname, 'public', 'index.html'))
+        ? path.join(__dirname, 'public', 'index.html')
+        : path.join(__dirname, 'index.html');
+    res.sendFile(indexPath);
 });
 
 // ==========================================

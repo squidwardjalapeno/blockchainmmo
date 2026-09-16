@@ -274,8 +274,8 @@ var render = function () {
     // Pass 8: Projectiles & Spell VFX
     drawProjectiles(ctx2, serverProjectiles);
     
-    // Pass 9: Remote Players
-    drawRemotePlayers(ctx2, remotePlayers, roomMatrix); 
+    // Pass 9: Remote Players (pass worldMatrix as 4th argument)
+    drawRemotePlayers(ctx2, remotePlayers, roomMatrix, worldMatrix);
     
     // Pass 10: Village Hobbits (Workforce & Walkers)
     drawHobbits(ctx2, hobbits, roomMatrix);    
